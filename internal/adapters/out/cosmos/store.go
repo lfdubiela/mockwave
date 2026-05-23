@@ -1,3 +1,7 @@
+// Package cosmos provides a DataStore backed by Azure Cosmos DB using the
+// MongoDB wire protocol. Cosmos DB requires TLS (ssl=true) and retryWrites=false
+// for compatibility with the MongoDB driver; EnsureCosmosParams applies these
+// automatically to any connection URI.
 package cosmos
 
 import (
