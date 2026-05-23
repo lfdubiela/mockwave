@@ -11,8 +11,12 @@ import (
 
 	"github.com/mockwave/mockwave/internal/adapters/cfg/restapi"
 	grpcadapter "github.com/mockwave/mockwave/internal/adapters/in/grpc"
+	cosmos "github.com/mockwave/mockwave/internal/adapters/out/cosmos"
+	dynamostore "github.com/mockwave/mockwave/internal/adapters/out/dynamodb"
 	"github.com/mockwave/mockwave/internal/adapters/out/jsonfile"
+	mongodb "github.com/mockwave/mockwave/internal/adapters/out/mongodb"
 	"github.com/mockwave/mockwave/internal/server"
+	"github.com/mockwave/mockwave/store"
 	"github.com/spf13/cobra"
 )
 
@@ -29,23 +33,30 @@ func rootCmd() *cobra.Command {
 }
 
 func startCmd() *cobra.Command {
-	var configFile string
-	var mockPort, adminPort, grpcPort int
-	var protocolsStr, grpcProto string
+	var (
+		configFile   string
+		mockPort     int
+		adminPort    int
+		protocolsStr string
+		grpcPort     int
+		grpcProto    string
+		storeType    string
+		opts         storeOpts
+	)
 
 	cmd := &cobra.Command{
 		Use:   "start",
 		Short: "Start the mock server",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			store, err := jsonfile.NewStore(configFile)
+			s, err := buildStore(storeType, configFile, opts)
 			if err != nil {
-				return fmt.Errorf("load config: %w", err)
+				return fmt.Errorf("init store: %w", err)
 			}
-			srv, err := server.New(server.Config{MockPort: mockPort, AdminPort: adminPort, Store: store})
+			srv, err := server.New(server.Config{MockPort: mockPort, AdminPort: adminPort, Store: s})
 			if err != nil {
 				return err
 			}
-			adminMux := restapi.NewMux(store, func() {
+			adminMux := restapi.NewMux(s, func() {
 				if err := srv.Rebuild(); err != nil {
 					log.Printf("hot-reload failed: %v", err)
 				}
@@ -80,18 +91,74 @@ func startCmd() *cobra.Command {
 				}()
 			}
 
-			log.Printf("mock server listening on :%d (protocols: %s)", mockPort, protocolsStr)
+			log.Printf("mock server listening on :%d (protocols: %s, store: %s)", mockPort, protocolsStr, storeType)
 			return http.ListenAndServe(fmt.Sprintf(":%d", mockPort), srv.MockHandler(protocols))
 		},
 	}
-	cmd.Flags().StringVarP(&configFile, "config", "f", "", "path to JSON config file (required)")
+
+	cmd.Flags().StringVarP(&configFile, "config", "f", "", "path to JSON config file (required for --store=json)")
 	cmd.Flags().IntVar(&mockPort, "port", 8080, "mock server port")
 	cmd.Flags().IntVar(&adminPort, "admin-port", 9090, "admin API port")
 	cmd.Flags().StringVar(&protocolsStr, "protocols", "http", "comma-separated: http,graphql,soap,grpc")
 	cmd.Flags().IntVar(&grpcPort, "grpc-port", 50051, "gRPC server port")
 	cmd.Flags().StringVar(&grpcProto, "grpc-proto", "", "path to compiled .pb descriptor for gRPC proto conversion")
-	_ = cmd.MarkFlagRequired("config")
+
+	// Store selection
+	cmd.Flags().StringVar(&storeType, "store", "json", "storage backend: json|dynamodb|mongo|cosmos")
+
+	// DynamoDB flags
+	cmd.Flags().StringVar(&opts.DynamoRulesTable, "dynamo-rules-table", "mockwave-rules", "DynamoDB table for rules")
+	cmd.Flags().StringVar(&opts.DynamoSimsTable, "dynamo-sims-table", "mockwave-simulations", "DynamoDB table for simulations")
+	cmd.Flags().StringVar(&opts.DynamoRegion, "dynamo-region", "us-east-1", "AWS region for DynamoDB")
+	cmd.Flags().StringVar(&opts.DynamoEndpoint, "dynamo-endpoint", "", "custom DynamoDB endpoint (e.g. http://localhost:8000)")
+
+	// MongoDB flags
+	cmd.Flags().StringVar(&opts.MongoURI, "mongo-uri", "mongodb://localhost:27017", "MongoDB connection URI")
+	cmd.Flags().StringVar(&opts.MongoDB, "mongo-db", "mockwave", "MongoDB database name")
+
+	// Cosmos DB flags
+	cmd.Flags().StringVar(&opts.CosmosURI, "cosmos-uri", "", "Cosmos DB connection string (MongoDB API)")
+	cmd.Flags().StringVar(&opts.CosmosDB, "cosmos-db", "mockwave", "Cosmos DB database name")
+
 	return cmd
+}
+
+// storeOpts holds connection details for non-JSON store backends.
+type storeOpts struct {
+	// DynamoDB
+	DynamoRulesTable string
+	DynamoSimsTable  string
+	DynamoRegion     string
+	DynamoEndpoint   string // optional; empty = use AWS default endpoint
+
+	// MongoDB
+	MongoURI string
+	MongoDB  string
+
+	// Cosmos DB
+	CosmosURI string
+	CosmosDB  string
+}
+
+// buildStore constructs the DataStore for the chosen backend.
+func buildStore(storeType, configFile string, opts storeOpts) (store.DataStore, error) {
+	switch storeType {
+	case "json":
+		return jsonfile.NewStore(configFile)
+	case "dynamodb":
+		return dynamostore.NewStore(dynamostore.Config{
+			RulesTable: opts.DynamoRulesTable,
+			SimsTable:  opts.DynamoSimsTable,
+			Region:     opts.DynamoRegion,
+			Endpoint:   opts.DynamoEndpoint,
+		})
+	case "mongo":
+		return mongodb.NewStore(opts.MongoURI, opts.MongoDB)
+	case "cosmos":
+		return cosmos.NewStore(opts.CosmosURI, opts.CosmosDB)
+	default:
+		return nil, fmt.Errorf("unknown store %q — valid: json, dynamodb, mongo, cosmos", storeType)
+	}
 }
 
 func splitProtocols(s string) []string {
