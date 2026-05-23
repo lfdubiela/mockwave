@@ -13,7 +13,7 @@ import (
 	// its init(), even if server.go is ever refactored to drop its direct import.
 	_ "github.com/mockwave/mockwave/internal/adapters/in/grpc"
 	"github.com/mockwave/mockwave/internal/adapters/out/jsonfile"
-	"github.com/mockwave/mockwave/internal/domain"
+	"github.com/mockwave/mockwave/domain"
 	"github.com/mockwave/mockwave/internal/server"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

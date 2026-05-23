@@ -3,18 +3,22 @@ package pipeline
 import (
 	"context"
 	"fmt"
-
-	"github.com/mockwave/mockwave/internal/domain/ports"
 )
+
+// ScriptRunner executes a JavaScript string against request/response maps.
+// Internal interface — not exposed in the public store package.
+type ScriptRunner interface {
+	Run(script string, req map[string]interface{}, resp map[string]interface{}) (map[string]interface{}, error)
+}
 
 type ScriptProvider func(pctx *PipelineContext) string
 
 type ScriptStage struct {
-	runner    ports.ScriptRunner
+	runner    ScriptRunner
 	getScript ScriptProvider
 }
 
-func NewScriptStage(runner ports.ScriptRunner, getScript ScriptProvider) *ScriptStage {
+func NewScriptStage(runner ScriptRunner, getScript ScriptProvider) *ScriptStage {
 	return &ScriptStage{runner: runner, getScript: getScript}
 }
 

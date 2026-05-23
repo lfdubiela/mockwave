@@ -1,6 +1,6 @@
 package pipeline
 
-import "github.com/mockwave/mockwave/internal/domain"
+import "github.com/mockwave/mockwave/domain"
 
 type NormalizedRequest struct {
 	Protocol string

@@ -6,7 +6,7 @@ import (
 	"os"
 	"sync"
 
-	"github.com/mockwave/mockwave/internal/domain"
+	"github.com/mockwave/mockwave/domain"
 )
 
 type Store struct {

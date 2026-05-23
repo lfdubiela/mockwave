@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/mockwave/mockwave/internal/domain"
+	"github.com/mockwave/mockwave/domain"
 	"github.com/mockwave/mockwave/internal/domain/pipeline"
 	"github.com/mockwave/mockwave/internal/domain/simulation"
 	"github.com/stretchr/testify/assert"

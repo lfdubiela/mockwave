@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/mockwave/mockwave/internal/domain"
+	"github.com/mockwave/mockwave/domain"
 	"github.com/mockwave/mockwave/internal/domain/pipeline"
 	"github.com/mockwave/mockwave/internal/domain/routing"
 	"github.com/stretchr/testify/assert"

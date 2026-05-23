@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mockwave/mockwave/internal/domain"
+	"github.com/mockwave/mockwave/domain"
 	"github.com/mockwave/mockwave/internal/server"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

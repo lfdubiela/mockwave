@@ -9,16 +9,16 @@ import (
 	"strings"
 
 	"github.com/mockwave/mockwave/internal/domain/pipeline"
-	"github.com/mockwave/mockwave/internal/domain/ports"
+	"github.com/mockwave/mockwave/store"
 )
 
 var templateRe = regexp.MustCompile(`\{\{request\.path\[(\d+)\]\}\}`)
 
 type SimulationStage struct {
-	store ports.DataStore
+	store store.DataStore
 }
 
-func NewSimulationStage(store ports.DataStore) *SimulationStage {
+func NewSimulationStage(store store.DataStore) *SimulationStage {
 	return &SimulationStage{store: store}
 }
 

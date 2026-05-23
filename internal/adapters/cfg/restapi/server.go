@@ -4,13 +4,13 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/mockwave/mockwave/internal/domain"
-	"github.com/mockwave/mockwave/internal/domain/ports"
+	"github.com/mockwave/mockwave/domain"
+	"github.com/mockwave/mockwave/store"
 )
 
 type OnReload func()
 
-func NewMux(store ports.DataStore, onReload OnReload) *http.ServeMux {
+func NewMux(store store.DataStore, onReload OnReload) *http.ServeMux {
 	mux := http.NewServeMux()
 	api := &adminAPI{store: store, onReload: onReload}
 	mux.HandleFunc("/api/health", api.health)
@@ -22,7 +22,7 @@ func NewMux(store ports.DataStore, onReload OnReload) *http.ServeMux {
 }
 
 type adminAPI struct {
-	store    ports.DataStore
+	store    store.DataStore
 	onReload OnReload
 }
 

@@ -13,7 +13,7 @@ import (
 	soapadapter "github.com/mockwave/mockwave/internal/adapters/in/soap"
 	"github.com/mockwave/mockwave/internal/domain/matching"
 	"github.com/mockwave/mockwave/internal/domain/pipeline"
-	"github.com/mockwave/mockwave/internal/domain/ports"
+	"github.com/mockwave/mockwave/store"
 	"github.com/mockwave/mockwave/internal/domain/routing"
 	"github.com/mockwave/mockwave/internal/domain/simulation"
 	"github.com/mockwave/mockwave/internal/scripting"
@@ -23,7 +23,7 @@ import (
 type Config struct {
 	MockPort  int
 	AdminPort int
-	Store     ports.DataStore
+	Store     store.DataStore
 }
 
 type Server struct {
