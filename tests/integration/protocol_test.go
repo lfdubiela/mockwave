@@ -9,7 +9,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	_ "github.com/mockwave/mockwave/internal/adapters/in/grpc" // register RawCodec via init()
+	// Explicitly import the gRPC adapter to guarantee RawCodec is registered via
+	// its init(), even if server.go is ever refactored to drop its direct import.
+	_ "github.com/mockwave/mockwave/internal/adapters/in/grpc"
 	"github.com/mockwave/mockwave/internal/adapters/out/jsonfile"
 	"github.com/mockwave/mockwave/internal/domain"
 	"github.com/mockwave/mockwave/internal/server"
@@ -41,7 +43,12 @@ func startGRPCServer(t *testing.T, cfg domain.Config) string {
 	grpcSrv := srv.GRPCServer(nil)
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
-	go func() { _ = grpcSrv.Serve(lis) }()
+	go func() {
+		if err := grpcSrv.Serve(lis); err != nil {
+			// Serve returns nil on GracefulStop/Stop; any other error is unexpected.
+			t.Errorf("gRPC server exited unexpectedly: %v", err)
+		}
+	}()
 	t.Cleanup(grpcSrv.GracefulStop)
 	return lis.Addr().String()
 }
@@ -264,8 +271,10 @@ func TestIntegration_SOAP_NoMatch(t *testing.T) {
 	var buf bytes.Buffer
 	_, err = buf.ReadFrom(resp.Body)
 	require.NoError(t, err)
-	// Response should be a SOAP Fault envelope
-	assert.Contains(t, buf.String(), "Fault")
+	// Response must be a well-formed SOAP Fault envelope
+	body := buf.String()
+	assert.Contains(t, body, "soap:Envelope", "expected SOAP envelope wrapper")
+	assert.Contains(t, body, "<soap:Fault>", "expected SOAP Fault element")
 }
 
 // --------------------------------------------------------------------------
