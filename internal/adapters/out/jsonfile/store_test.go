@@ -80,3 +80,84 @@ func TestStore_FileNotFound(t *testing.T) {
 	_, err := jsonfile.NewStore(filepath.Join(t.TempDir(), "nope.json"))
 	assert.Error(t, err)
 }
+
+func TestStore_SaveSimulation(t *testing.T) {
+	store, err := jsonfile.NewStore(writeConfig(t, domain.Config{}))
+	require.NoError(t, err)
+	sim := domain.Simulation{ID: "s-new", Protocol: "http", Response: domain.HTTPResponse{Status: 201}}
+	require.NoError(t, store.SaveSimulation(sim))
+	got, err := store.GetSimulation("s-new")
+	require.NoError(t, err)
+	assert.Equal(t, 201, got.Response.Status)
+}
+
+func TestStore_SaveSimulation_UpdatesExisting(t *testing.T) {
+	cfg := domain.Config{Simulations: []domain.Simulation{{ID: "s1", Protocol: "http", Response: domain.HTTPResponse{Status: 200}}}}
+	store, err := jsonfile.NewStore(writeConfig(t, cfg))
+	require.NoError(t, err)
+	updated := domain.Simulation{ID: "s1", Protocol: "http", Response: domain.HTTPResponse{Status: 404}}
+	require.NoError(t, store.SaveSimulation(updated))
+	got, err := store.GetSimulation("s1")
+	require.NoError(t, err)
+	assert.Equal(t, 404, got.Response.Status)
+}
+
+func TestStore_DeleteSimulation(t *testing.T) {
+	cfg := domain.Config{Simulations: []domain.Simulation{
+		{ID: "s1", Protocol: "http", Response: domain.HTTPResponse{Status: 200}},
+		{ID: "s2", Protocol: "http", Response: domain.HTTPResponse{Status: 201}},
+	}}
+	store, err := jsonfile.NewStore(writeConfig(t, cfg))
+	require.NoError(t, err)
+	require.NoError(t, store.DeleteSimulation("s1"))
+	_, err = store.GetSimulation("s1")
+	assert.Error(t, err)
+	got, err := store.GetSimulation("s2")
+	require.NoError(t, err)
+	assert.Equal(t, 201, got.Response.Status)
+}
+
+func TestStore_DeleteSimulation_NotFound(t *testing.T) {
+	store, err := jsonfile.NewStore(writeConfig(t, domain.Config{}))
+	require.NoError(t, err)
+	assert.Error(t, store.DeleteSimulation("nope"))
+}
+
+func TestStore_DeleteRule_NotFound(t *testing.T) {
+	store, err := jsonfile.NewStore(writeConfig(t, domain.Config{}))
+	require.NoError(t, err)
+	assert.Error(t, store.DeleteRule("nope"))
+}
+
+func TestStore_SaveRule_UpdatesExisting(t *testing.T) {
+	cfg := domain.Config{Rules: []domain.Rule{
+		{ID: "r1", Match: domain.MatchCriteria{Path: "/old"}, Buckets: []domain.WeightedBucket{bucket()}},
+	}}
+	store, err := jsonfile.NewStore(writeConfig(t, cfg))
+	require.NoError(t, err)
+	updated := domain.Rule{ID: "r1", Match: domain.MatchCriteria{Path: "/new"}, Buckets: []domain.WeightedBucket{bucket()}}
+	require.NoError(t, store.SaveRule(updated))
+	rules, err := store.GetRules()
+	require.NoError(t, err)
+	require.Len(t, rules, 1)
+	assert.Equal(t, "/new", rules[0].Match.Path)
+}
+
+func TestStore_Reload(t *testing.T) {
+	cfg := domain.Config{Rules: []domain.Rule{{ID: "r1", Match: domain.MatchCriteria{Path: "/foo"}, Buckets: []domain.WeightedBucket{bucket()}}}}
+	path := writeConfig(t, cfg)
+	store, err := jsonfile.NewStore(path)
+	require.NoError(t, err)
+	// Update the file externally
+	newCfg := domain.Config{Rules: []domain.Rule{{ID: "r2", Match: domain.MatchCriteria{Path: "/bar"}, Buckets: []domain.WeightedBucket{bucket()}}}}
+	f, err := os.Create(path)
+	require.NoError(t, err)
+	require.NoError(t, json.NewEncoder(f).Encode(newCfg))
+	require.NoError(t, f.Close())
+	// Reload
+	require.NoError(t, store.Reload())
+	rules, err := store.GetRules()
+	require.NoError(t, err)
+	require.Len(t, rules, 1)
+	assert.Equal(t, "r2", rules[0].ID)
+}

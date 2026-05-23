@@ -53,3 +53,15 @@ func TestPercentileRouterStage_NilMatched(t *testing.T) {
 	stage := routing.NewPercentileRouterStage()
 	assert.Error(t, stage.Execute(context.Background(), &pipeline.PipelineContext{Matched: nil}))
 }
+
+func TestPercentileRouterStage_Name(t *testing.T) {
+	stage := routing.NewPercentileRouterStage()
+	assert.Equal(t, "percentile-router", stage.Name())
+}
+
+func TestPercentileRouterStage_EmptyBuckets(t *testing.T) {
+	stage := routing.NewPercentileRouterStage()
+	rule := &domain.Rule{Buckets: []domain.WeightedBucket{}}
+	pctx := &pipeline.PipelineContext{Matched: rule}
+	assert.Error(t, stage.Execute(context.Background(), pctx))
+}

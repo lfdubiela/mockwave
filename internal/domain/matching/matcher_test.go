@@ -59,3 +59,37 @@ func TestConditionMatchStage_MethodMismatch(t *testing.T) {
 	pctx := &pipeline.PipelineContext{Request: pipeline.NormalizedRequest{Protocol: "http", Method: "DELETE", Path: "/foo"}}
 	assert.Error(t, stage.Execute(context.Background(), pctx))
 }
+
+func TestConditionMatchStage_Name(t *testing.T) {
+	stage := matching.NewConditionMatchStage(nil)
+	assert.Equal(t, "condition-match", stage.Name())
+}
+
+func TestConditionMatchStage_ProtocolMismatch(t *testing.T) {
+	stage := matching.NewConditionMatchStage([]domain.Rule{mkRule("r1", "GET", "/foo", nil)})
+	pctx := &pipeline.PipelineContext{Request: pipeline.NormalizedRequest{Protocol: "grpc", Method: "GET", Path: "/foo"}}
+	assert.Error(t, stage.Execute(context.Background(), pctx))
+}
+
+func TestConditionMatchStage_QueryMatch(t *testing.T) {
+	rule := domain.Rule{
+		ID:      "r1",
+		Match:   domain.MatchCriteria{Protocol: "http", Method: "GET", Path: "/search", Query: map[string]string{"q": "hello"}},
+		Buckets: []domain.WeightedBucket{{Weight: 1, Action: domain.ActionSimulate, SimulationID: "s1"}},
+	}
+	stage := matching.NewConditionMatchStage([]domain.Rule{rule})
+	pctx := &pipeline.PipelineContext{Request: pipeline.NormalizedRequest{Protocol: "http", Method: "GET", Path: "/search", Query: map[string]string{"q": "hello"}}}
+	require.NoError(t, stage.Execute(context.Background(), pctx))
+	assert.Equal(t, "r1", pctx.Matched.ID)
+}
+
+func TestConditionMatchStage_QueryMismatch(t *testing.T) {
+	rule := domain.Rule{
+		ID:      "r1",
+		Match:   domain.MatchCriteria{Protocol: "http", Method: "GET", Path: "/search", Query: map[string]string{"q": "hello"}},
+		Buckets: []domain.WeightedBucket{{Weight: 1, Action: domain.ActionSimulate, SimulationID: "s1"}},
+	}
+	stage := matching.NewConditionMatchStage([]domain.Rule{rule})
+	pctx := &pipeline.PipelineContext{Request: pipeline.NormalizedRequest{Protocol: "http", Method: "GET", Path: "/search", Query: map[string]string{"q": "world"}}}
+	assert.Error(t, stage.Execute(context.Background(), pctx))
+}

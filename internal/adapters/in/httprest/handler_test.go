@@ -67,3 +67,15 @@ func TestHandler_SetsResponseHeaders(t *testing.T) {
 	assert.Equal(t, 201, w.Code)
 	assert.Equal(t, "true", w.Header().Get("x-mock"))
 }
+
+func TestHandler_NilResponseReturns500(t *testing.T) {
+	pipe := &stubPipeline{fn: func(_ context.Context, pctx *pipeline.PipelineContext) error {
+		// don't set pctx.Response
+		return nil
+	}}
+	h := httprest.NewHandler(pipe)
+	req := httptest.NewRequest(http.MethodGet, "/foo", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}

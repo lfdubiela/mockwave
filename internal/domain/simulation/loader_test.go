@@ -57,6 +57,11 @@ func TestSimulationStage_SimNotFound(t *testing.T) {
 	assert.Error(t, stage.Execute(context.Background(), pctx))
 }
 
+func TestSimulationStage_Name(t *testing.T) {
+	stage := simulation.NewSimulationStage(newStore())
+	assert.Equal(t, "simulation", stage.Name())
+}
+
 func TestSimulationStage_PathTemplateRendering(t *testing.T) {
 	sim := domain.Simulation{
 		ID:       "sim-template",
@@ -72,4 +77,47 @@ func TestSimulationStage_PathTemplateRendering(t *testing.T) {
 	body, ok := pctx.Response.Body.(map[string]interface{})
 	require.True(t, ok)
 	assert.Equal(t, "42", body["id"])
+}
+
+func TestSimulationStage_PathTemplateOutOfBounds(t *testing.T) {
+	sim := domain.Simulation{
+		ID:       "sim-oob",
+		Protocol: "http",
+		Response: domain.HTTPResponse{Status: 200, Body: map[string]interface{}{"id": "{{request.path[5]}}"}},
+	}
+	stage := simulation.NewSimulationStage(newStore(sim))
+	pctx := &pipeline.PipelineContext{
+		SimulationID: "sim-oob",
+		Request:      pipeline.NormalizedRequest{PathSegs: []string{"users", "42"}},
+	}
+	require.NoError(t, stage.Execute(context.Background(), pctx))
+	body, ok := pctx.Response.Body.(map[string]interface{})
+	require.True(t, ok)
+	// Template not replaced, raw template left in (or original value preserved)
+	assert.NotNil(t, body["id"])
+}
+
+func TestSimulationStage_NilBody(t *testing.T) {
+	sim := domain.Simulation{
+		ID:       "sim-nil-body",
+		Protocol: "http",
+		Response: domain.HTTPResponse{Status: 204, Body: nil},
+	}
+	stage := simulation.NewSimulationStage(newStore(sim))
+	pctx := &pipeline.PipelineContext{SimulationID: "sim-nil-body"}
+	require.NoError(t, stage.Execute(context.Background(), pctx))
+	require.NotNil(t, pctx.Response)
+	assert.Nil(t, pctx.Response.Body)
+}
+
+func TestSimulationStage_ResponseHeaders(t *testing.T) {
+	sim := domain.Simulation{
+		ID:       "sim-headers",
+		Protocol: "http",
+		Response: domain.HTTPResponse{Status: 200, Headers: map[string]string{"x-custom": "val"}, Body: nil},
+	}
+	stage := simulation.NewSimulationStage(newStore(sim))
+	pctx := &pipeline.PipelineContext{SimulationID: "sim-headers"}
+	require.NoError(t, stage.Execute(context.Background(), pctx))
+	assert.Equal(t, "val", pctx.Response.Headers["x-custom"])
 }
