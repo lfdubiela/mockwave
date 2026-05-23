@@ -5,7 +5,7 @@
 package cosmos
 
 import (
-	"strings"
+	"net/url"
 
 	"github.com/mockwave/mockwave/internal/adapters/out/mongodb"
 	gomongo "go.mongodb.org/mongo-driver/mongo"
@@ -25,18 +25,22 @@ func NewStoreFromClient(client *gomongo.Client, dbName string) *mongodb.Store {
 }
 
 // EnsureCosmosParams appends the required Cosmos DB query parameters to uri
-// if they are not already present. Exported for testing.
+// if they are not already present. Uses proper URL query-parameter parsing to
+// avoid false positives from substring matches. Exported for testing.
 func EnsureCosmosParams(uri string) string {
-	sep := "?"
-	if strings.Contains(uri, "?") {
-		sep = "&"
+	u, err := url.Parse(uri)
+	if err != nil {
+		// Unparseable URI — fall back to appending blindly so callers still get
+		// a useful error from the MongoDB driver rather than a silent wrong URI.
+		return uri + "?ssl=true&retryWrites=false"
 	}
-	if !strings.Contains(uri, "ssl=true") {
-		uri += sep + "ssl=true"
-		sep = "&"
+	q := u.Query()
+	if q.Get("ssl") == "" {
+		q.Set("ssl", "true")
 	}
-	if !strings.Contains(uri, "retryWrites=false") {
-		uri += sep + "retryWrites=false"
+	if q.Get("retryWrites") == "" {
+		q.Set("retryWrites", "false")
 	}
-	return uri
+	u.RawQuery = q.Encode()
+	return u.String()
 }

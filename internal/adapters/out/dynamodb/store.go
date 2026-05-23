@@ -43,22 +43,18 @@ type Store struct {
 // NewStore creates a Store using the default AWS credential chain
 // (env vars, ~/.aws/credentials, IAM role, etc.).
 func NewStore(cfg Config) (*Store, error) {
-	optFns := []func(*awsconfig.LoadOptions) error{
+	awsCfg, err := awsconfig.LoadDefaultConfig(context.Background(),
 		awsconfig.WithRegion(cfg.Region),
-	}
-	if cfg.Endpoint != "" {
-		customResolver := aws.EndpointResolverWithOptionsFunc(
-			func(service, region string, opts ...interface{}) (aws.Endpoint, error) {
-				return aws.Endpoint{URL: cfg.Endpoint, HostnameImmutable: true}, nil
-			},
-		)
-		optFns = append(optFns, awsconfig.WithEndpointResolverWithOptions(customResolver))
-	}
-	awsCfg, err := awsconfig.LoadDefaultConfig(context.Background(), optFns...)
+	)
 	if err != nil {
 		return nil, fmt.Errorf("dynamodb: load aws config: %w", err)
 	}
-	return NewStoreFromClient(dynamodb.NewFromConfig(awsCfg), cfg), nil
+	client := dynamodb.NewFromConfig(awsCfg, func(o *dynamodb.Options) {
+		if cfg.Endpoint != "" {
+			o.BaseEndpoint = aws.String(cfg.Endpoint)
+		}
+	})
+	return NewStoreFromClient(client, cfg), nil
 }
 
 // NewStoreFromClient creates a Store using the provided DynamoClient.

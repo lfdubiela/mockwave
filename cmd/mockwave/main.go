@@ -144,6 +144,9 @@ type storeOpts struct {
 func buildStore(storeType, configFile string, opts storeOpts) (store.DataStore, error) {
 	switch storeType {
 	case "json":
+		if configFile == "" {
+			return nil, fmt.Errorf("--config is required when --store=json")
+		}
 		return jsonfile.NewStore(configFile)
 	case "dynamodb":
 		return dynamostore.NewStore(dynamostore.Config{
