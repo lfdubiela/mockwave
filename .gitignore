@@ -1,0 +1,13 @@
+# Binary
+mockwave
+
+# Build output
+dist/
+mode/
+
+# Test coverage
+cover.out
+coverage.html
+
+# Go workspace
+vendor/
