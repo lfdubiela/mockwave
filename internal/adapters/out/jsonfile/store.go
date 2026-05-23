@@ -15,6 +15,13 @@ type Store struct {
 	config domain.Config
 }
 
+// NewMemStore creates an in-memory store pre-loaded with cfg. No file I/O.
+// Intended for tests — write operations (SaveRule, SaveSimulation, etc.) will
+// fail because path is empty, but read operations work fine.
+func NewMemStore(cfg domain.Config) *Store {
+	return &Store{config: cfg}
+}
+
 func NewStore(path string) (*Store, error) {
 	s := &Store{path: path}
 	if err := s.load(); err != nil {
