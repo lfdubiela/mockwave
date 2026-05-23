@@ -100,6 +100,13 @@ func (a *adminAPI) ruleByID(w http.ResponseWriter, r *http.Request) {
 
 func (a *adminAPI) simulations(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
+	case http.MethodGet:
+		sims, err := a.store.ListSimulations()
+		if err != nil {
+			writeError(w, 500, err.Error())
+			return
+		}
+		writeJSON(w, 200, sims)
 	case http.MethodPost:
 		var sim domain.Simulation
 		if err := json.NewDecoder(r.Body).Decode(&sim); err != nil {

@@ -40,7 +40,8 @@ func (m *memStore) DeleteRule(id string) error {
 	}
 	return fmt.Errorf("not found")
 }
-func (m *memStore) DeleteSimulation(id string) error { return nil }
+func (m *memStore) ListSimulations() ([]domain.Simulation, error) { return m.sims, nil }
+func (m *memStore) DeleteSimulation(id string) error              { return nil }
 
 func TestAdminAPI_GetRules(t *testing.T) {
 	store := &memStore{rules: []domain.Rule{{ID: "r1", Match: domain.MatchCriteria{Path: "/foo"}}}}
@@ -158,12 +159,19 @@ func TestAdminAPI_PostRule_InvalidRule(t *testing.T) {
 	assert.Equal(t, 422, w.Code)
 }
 
-func TestAdminAPI_SimulationsMethodNotAllowed(t *testing.T) {
-	mux := restapi.NewMux(&memStore{}, nil)
+func TestAdminAPI_GetSimulations(t *testing.T) {
+	store := &memStore{sims: []domain.Simulation{
+		{ID: "s1", Protocol: "http", Response: domain.HTTPResponse{Status: 200}},
+	}}
+	mux := restapi.NewMux(store, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/simulations", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
-	assert.Equal(t, 405, w.Code)
+	assert.Equal(t, 200, w.Code)
+	var sims []domain.Simulation
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&sims))
+	require.Len(t, sims, 1)
+	assert.Equal(t, "s1", sims[0].ID)
 }
 
 func TestAdminAPI_SimulationByIDMethodNotAllowed(t *testing.T) {

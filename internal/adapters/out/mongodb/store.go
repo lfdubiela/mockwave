@@ -99,6 +99,24 @@ func (s *Store) GetSimulation(id string) (*domain.Simulation, error) {
 	return &sim, nil
 }
 
+func (s *Store) ListSimulations() ([]domain.Simulation, error) {
+	ctx := context.Background()
+	cur, err := s.sims.Find(ctx, bson.D{})
+	if err != nil {
+		return nil, fmt.Errorf("mongodb: find simulations: %w", err)
+	}
+	defer cur.Close(ctx)
+	var docs []simDoc
+	if err := cur.All(ctx, &docs); err != nil {
+		return nil, fmt.Errorf("mongodb: decode simulations: %w", err)
+	}
+	sims := make([]domain.Simulation, len(docs))
+	for i, d := range docs {
+		sims[i] = d.Data
+	}
+	return sims, nil
+}
+
 func (s *Store) SaveRule(r domain.Rule) error {
 	ctx := context.Background()
 	filter := bson.D{{Key: "_id", Value: r.ID}}

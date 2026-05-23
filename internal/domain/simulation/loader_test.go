@@ -22,6 +22,13 @@ func (s *stubStore) GetSimulation(id string) (*domain.Simulation, error) {
 	}
 	return &sim, nil
 }
+func (s *stubStore) ListSimulations() ([]domain.Simulation, error) {
+	out := make([]domain.Simulation, 0, len(s.sims))
+	for _, sim := range s.sims {
+		out = append(out, sim)
+	}
+	return out, nil
+}
 func (s *stubStore) SaveRule(r domain.Rule) error              { return nil }
 func (s *stubStore) SaveSimulation(s2 domain.Simulation) error { return nil }
 func (s *stubStore) DeleteRule(id string) error                { return nil }

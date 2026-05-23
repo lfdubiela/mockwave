@@ -18,6 +18,9 @@ type DataStore interface {
 	// failure, not a missing record.
 	GetSimulation(id string) (*domain.Simulation, error)
 
+	// ListSimulations returns all simulations in the store.
+	ListSimulations() ([]domain.Simulation, error)
+
 	SaveRule(r domain.Rule) error
 	SaveSimulation(s domain.Simulation) error
 	DeleteRule(id string) error

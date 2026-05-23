@@ -113,6 +113,28 @@ func (s *Store) GetSimulation(id string) (*domain.Simulation, error) {
 	return &sim, nil
 }
 
+func (s *Store) ListSimulations() ([]domain.Simulation, error) {
+	out, err := s.client.Scan(context.Background(), &dynamodb.ScanInput{
+		TableName: aws.String(s.simsTable),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("dynamodb: scan simulations: %w", err)
+	}
+	sims := make([]domain.Simulation, 0, len(out.Items))
+	for _, item := range out.Items {
+		dataAttr, ok := item["data"].(*types.AttributeValueMemberS)
+		if !ok {
+			continue
+		}
+		var sim domain.Simulation
+		if err := json.Unmarshal([]byte(dataAttr.Value), &sim); err != nil {
+			return nil, fmt.Errorf("dynamodb: unmarshal simulation: %w", err)
+		}
+		sims = append(sims, sim)
+	}
+	return sims, nil
+}
+
 func (s *Store) SaveRule(r domain.Rule) error {
 	data, err := json.Marshal(r)
 	if err != nil {

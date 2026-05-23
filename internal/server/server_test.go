@@ -18,6 +18,7 @@ type stubStore struct{}
 
 func (s *stubStore) GetRules() ([]domain.Rule, error)                    { return nil, nil }
 func (s *stubStore) GetSimulation(id string) (*domain.Simulation, error) { return nil, fmt.Errorf("nope") }
+func (s *stubStore) ListSimulations() ([]domain.Simulation, error)       { return nil, nil }
 func (s *stubStore) SaveRule(r domain.Rule) error                        { return nil }
 func (s *stubStore) SaveSimulation(sim domain.Simulation) error          { return nil }
 func (s *stubStore) DeleteRule(id string) error                          { return nil }
@@ -75,10 +76,11 @@ func (s *stubStoreWithData) GetSimulation(id string) (*domain.Simulation, error)
 	}
 	return nil, fmt.Errorf("not found")
 }
-func (s *stubStoreWithData) SaveRule(r domain.Rule) error               { return nil }
-func (s *stubStoreWithData) SaveSimulation(sim domain.Simulation) error { return nil }
-func (s *stubStoreWithData) DeleteRule(id string) error                 { return nil }
-func (s *stubStoreWithData) DeleteSimulation(id string) error           { return nil }
+func (s *stubStoreWithData) ListSimulations() ([]domain.Simulation, error) { return nil, nil }
+func (s *stubStoreWithData) SaveRule(r domain.Rule) error                  { return nil }
+func (s *stubStoreWithData) SaveSimulation(sim domain.Simulation) error    { return nil }
+func (s *stubStoreWithData) DeleteRule(id string) error                    { return nil }
+func (s *stubStoreWithData) DeleteSimulation(id string) error              { return nil }
 
 func newStubStore() *stubStore { return &stubStore{} }
 

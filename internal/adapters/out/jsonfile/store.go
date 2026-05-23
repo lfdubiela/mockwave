@@ -81,6 +81,14 @@ func (s *Store) GetSimulation(id string) (*domain.Simulation, error) {
 	return nil, fmt.Errorf("jsonfile: simulation %q not found", id)
 }
 
+func (s *Store) ListSimulations() ([]domain.Simulation, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]domain.Simulation, len(s.config.Simulations))
+	copy(out, s.config.Simulations)
+	return out, nil
+}
+
 func (s *Store) SaveRule(r domain.Rule) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
