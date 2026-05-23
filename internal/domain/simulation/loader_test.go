@@ -1,0 +1,75 @@
+package simulation_test
+
+import (
+	"context"
+	"fmt"
+	"testing"
+
+	"github.com/mockwave/mockwave/internal/domain"
+	"github.com/mockwave/mockwave/internal/domain/pipeline"
+	"github.com/mockwave/mockwave/internal/domain/simulation"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+type stubStore struct{ sims map[string]domain.Simulation }
+
+func (s *stubStore) GetRules() ([]domain.Rule, error) { return nil, nil }
+func (s *stubStore) GetSimulation(id string) (*domain.Simulation, error) {
+	sim, ok := s.sims[id]
+	if !ok {
+		return nil, fmt.Errorf("not found: %s", id)
+	}
+	return &sim, nil
+}
+func (s *stubStore) SaveRule(r domain.Rule) error              { return nil }
+func (s *stubStore) SaveSimulation(s2 domain.Simulation) error { return nil }
+func (s *stubStore) DeleteRule(id string) error                { return nil }
+func (s *stubStore) DeleteSimulation(id string) error          { return nil }
+
+func newStore(sims ...domain.Simulation) *stubStore {
+	m := make(map[string]domain.Simulation)
+	for _, s := range sims {
+		m[s.ID] = s
+	}
+	return &stubStore{sims: m}
+}
+
+func TestSimulationStage_LoadsResponse(t *testing.T) {
+	sim := domain.Simulation{ID: "sim1", Protocol: "http", Response: domain.HTTPResponse{Status: 200, Body: map[string]interface{}{"ok": true}}}
+	stage := simulation.NewSimulationStage(newStore(sim))
+	pctx := &pipeline.PipelineContext{SimulationID: "sim1"}
+	require.NoError(t, stage.Execute(context.Background(), pctx))
+	require.NotNil(t, pctx.Response)
+	assert.Equal(t, 200, pctx.Response.Status)
+}
+
+func TestSimulationStage_SkippedWhenForward(t *testing.T) {
+	stage := simulation.NewSimulationStage(newStore())
+	pctx := &pipeline.PipelineContext{ShouldForward: true}
+	require.NoError(t, stage.Execute(context.Background(), pctx))
+	assert.Nil(t, pctx.Response)
+}
+
+func TestSimulationStage_SimNotFound(t *testing.T) {
+	stage := simulation.NewSimulationStage(newStore())
+	pctx := &pipeline.PipelineContext{SimulationID: "missing"}
+	assert.Error(t, stage.Execute(context.Background(), pctx))
+}
+
+func TestSimulationStage_PathTemplateRendering(t *testing.T) {
+	sim := domain.Simulation{
+		ID:       "sim-template",
+		Protocol: "http",
+		Response: domain.HTTPResponse{Status: 200, Body: map[string]interface{}{"id": "{{request.path[1]}}"}},
+	}
+	stage := simulation.NewSimulationStage(newStore(sim))
+	pctx := &pipeline.PipelineContext{
+		SimulationID: "sim-template",
+		Request:      pipeline.NormalizedRequest{PathSegs: []string{"users", "42"}},
+	}
+	require.NoError(t, stage.Execute(context.Background(), pctx))
+	body, ok := pctx.Response.Body.(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "42", body["id"])
+}
