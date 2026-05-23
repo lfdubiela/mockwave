@@ -83,7 +83,7 @@ type Simulation struct {
 	Script   string       `json:"script,omitempty"` // optional JS (goja)
 
 	// SOAP: returned as-is as the response body with Content-Type: text/xml
-	SoapEnvelope string `json:"soap_envelope,omitempty"`
+	SOAPEnvelope string `json:"soap_envelope,omitempty"`
 
 	// gRPC: JSON representation of the proto response message
 	GRPCMessage string `json:"grpc_message,omitempty"`

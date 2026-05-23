@@ -1,10 +1,12 @@
 package domain_test
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/mockwave/mockwave/internal/domain"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestWeightedBucket_Validate(t *testing.T) {
@@ -72,24 +74,44 @@ func TestRule_Validate(t *testing.T) {
 	})
 }
 
-func TestSimulation_SOAPFields(t *testing.T) {
+func TestSimulation_SOAP_JSONRoundTrip(t *testing.T) {
 	sim := domain.Simulation{
 		ID:           "sim-soap",
 		Protocol:     "soap",
-		SoapEnvelope: `<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><GetUserResponse><id>42</id></GetUserResponse></soap:Body></soap:Envelope>`,
+		SOAPEnvelope: `<soap:Envelope/>`,
 	}
-	assert.Equal(t, "soap", sim.Protocol)
-	assert.NotEmpty(t, sim.SoapEnvelope)
+	data, err := json.Marshal(sim)
+	require.NoError(t, err)
+
+	// JSON must use snake_case tag
+	assert.Contains(t, string(data), `"soap_envelope"`)
+	// grpc fields omitted when zero-value (omitempty)
+	assert.NotContains(t, string(data), `"grpc_message"`)
+	assert.NotContains(t, string(data), `"grpc_status"`)
+
+	var decoded domain.Simulation
+	require.NoError(t, json.Unmarshal(data, &decoded))
+	assert.Equal(t, sim.SOAPEnvelope, decoded.SOAPEnvelope)
+	assert.Equal(t, sim.Protocol, decoded.Protocol)
 }
 
-func TestSimulation_GRPCFields(t *testing.T) {
+func TestSimulation_GRPC_JSONRoundTrip(t *testing.T) {
 	sim := domain.Simulation{
 		ID:          "sim-grpc",
 		Protocol:    "grpc",
-		GRPCMessage: `{"id":"42","name":"mock"}`,
-		GRPCStatus:  0,
+		GRPCMessage: `{"id":"42"}`,
+		GRPCStatus:  5, // codes.NotFound
 	}
-	assert.Equal(t, "grpc", sim.Protocol)
-	assert.Equal(t, `{"id":"42","name":"mock"}`, sim.GRPCMessage)
-	assert.Equal(t, 0, sim.GRPCStatus)
+	data, err := json.Marshal(sim)
+	require.NoError(t, err)
+
+	assert.Contains(t, string(data), `"grpc_message"`)
+	assert.Contains(t, string(data), `"grpc_status"`)
+	// soap_envelope omitted when empty (omitempty)
+	assert.NotContains(t, string(data), `"soap_envelope"`)
+
+	var decoded domain.Simulation
+	require.NoError(t, json.Unmarshal(data, &decoded))
+	assert.Equal(t, sim.GRPCMessage, decoded.GRPCMessage)
+	assert.Equal(t, sim.GRPCStatus, decoded.GRPCStatus)
 }
