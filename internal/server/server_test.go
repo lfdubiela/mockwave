@@ -1,9 +1,11 @@
 package server_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/mockwave/mockwave/internal/domain"
@@ -73,7 +75,58 @@ func (s *stubStoreWithData) GetSimulation(id string) (*domain.Simulation, error)
 	}
 	return nil, fmt.Errorf("not found")
 }
-func (s *stubStoreWithData) SaveRule(r domain.Rule) error              { return nil }
+func (s *stubStoreWithData) SaveRule(r domain.Rule) error               { return nil }
 func (s *stubStoreWithData) SaveSimulation(sim domain.Simulation) error { return nil }
-func (s *stubStoreWithData) DeleteRule(id string) error                { return nil }
-func (s *stubStoreWithData) DeleteSimulation(id string) error          { return nil }
+func (s *stubStoreWithData) DeleteRule(id string) error                 { return nil }
+func (s *stubStoreWithData) DeleteSimulation(id string) error           { return nil }
+
+func newStubStore() *stubStore { return &stubStore{} }
+
+func TestServer_MockHandler_RoutesGraphQL(t *testing.T) {
+	store := newStubStore()
+	srv, err := server.New(server.Config{Store: store})
+	require.NoError(t, err)
+
+	h := srv.MockHandler([]string{"http", "graphql"})
+
+	body := `{"query":"query GetItem { item { id } }","operationName":"GetItem"}`
+	req := httptest.NewRequest(http.MethodPost, "/graphql", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	// Pipeline returns 404 (no rules), but format is GraphQL errors JSON
+	var resp map[string]interface{}
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	assert.Contains(t, resp, "errors")
+}
+
+func TestServer_MockHandler_RoutesSOAP(t *testing.T) {
+	store := newStubStore()
+	srv, err := server.New(server.Config{Store: store})
+	require.NoError(t, err)
+
+	h := srv.MockHandler([]string{"http", "soap"})
+
+	req := httptest.NewRequest(http.MethodPost, "/service", strings.NewReader(`<soap:Envelope/>`))
+	req.Header.Set("SOAPAction", "GetItem")
+	req.Header.Set("Content-Type", "text/xml")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	// Pipeline returns 404 as SOAP fault
+	assert.Contains(t, w.Header().Get("Content-Type"), "text/xml")
+	assert.Contains(t, w.Body.String(), "soap:Fault")
+}
+
+func TestServer_MockHandler_DefaultsToHTTP(t *testing.T) {
+	store := newStubStore()
+	srv, err := server.New(server.Config{Store: store})
+	require.NoError(t, err)
+
+	h := srv.MockHandler([]string{"http"})
+
+	req := httptest.NewRequest(http.MethodGet, "/users/42", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	// HTTP handler responds with JSON error for no-match
+	assert.Contains(t, w.Header().Get("Content-Type"), "application/json")
+}
