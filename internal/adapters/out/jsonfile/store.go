@@ -1,0 +1,125 @@
+package jsonfile
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"sync"
+
+	"github.com/mockwave/mockwave/internal/domain"
+)
+
+type Store struct {
+	mu     sync.RWMutex
+	path   string
+	config domain.Config
+}
+
+func NewStore(path string) (*Store, error) {
+	s := &Store{path: path}
+	if err := s.load(); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+func (s *Store) load() error {
+	f, err := os.Open(s.path)
+	if err != nil {
+		return fmt.Errorf("jsonfile: open %s: %w", s.path, err)
+	}
+	defer f.Close()
+	var cfg domain.Config
+	if err := json.NewDecoder(f).Decode(&cfg); err != nil {
+		return fmt.Errorf("jsonfile: decode %s: %w", s.path, err)
+	}
+	s.config = cfg
+	return nil
+}
+
+func (s *Store) flush() error {
+	f, err := os.Create(s.path)
+	if err != nil {
+		return fmt.Errorf("jsonfile: write %s: %w", s.path, err)
+	}
+	defer f.Close()
+	enc := json.NewEncoder(f)
+	enc.SetIndent("", "  ")
+	return enc.Encode(s.config)
+}
+
+func (s *Store) Reload() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.load()
+}
+
+func (s *Store) GetRules() ([]domain.Rule, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]domain.Rule, len(s.config.Rules))
+	copy(out, s.config.Rules)
+	return out, nil
+}
+
+func (s *Store) GetSimulation(id string) (*domain.Simulation, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for i := range s.config.Simulations {
+		if s.config.Simulations[i].ID == id {
+			sim := s.config.Simulations[i]
+			return &sim, nil
+		}
+	}
+	return nil, fmt.Errorf("jsonfile: simulation %q not found", id)
+}
+
+func (s *Store) SaveRule(r domain.Rule) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, existing := range s.config.Rules {
+		if existing.ID == r.ID {
+			s.config.Rules[i] = r
+			return s.flush()
+		}
+	}
+	s.config.Rules = append(s.config.Rules, r)
+	return s.flush()
+}
+
+func (s *Store) SaveSimulation(sim domain.Simulation) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, existing := range s.config.Simulations {
+		if existing.ID == sim.ID {
+			s.config.Simulations[i] = sim
+			return s.flush()
+		}
+	}
+	s.config.Simulations = append(s.config.Simulations, sim)
+	return s.flush()
+}
+
+func (s *Store) DeleteRule(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, r := range s.config.Rules {
+		if r.ID == id {
+			s.config.Rules = append(s.config.Rules[:i], s.config.Rules[i+1:]...)
+			return s.flush()
+		}
+	}
+	return fmt.Errorf("jsonfile: rule %q not found", id)
+}
+
+func (s *Store) DeleteSimulation(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, sim := range s.config.Simulations {
+		if sim.ID == id {
+			s.config.Simulations = append(s.config.Simulations[:i], s.config.Simulations[i+1:]...)
+			return s.flush()
+		}
+	}
+	return fmt.Errorf("jsonfile: simulation %q not found", id)
+}
