@@ -102,7 +102,7 @@ func (s *Store) GetSimulation(id string) (*domain.Simulation, error) {
 func (s *Store) SaveRule(r domain.Rule) error {
 	ctx := context.Background()
 	filter := bson.D{{Key: "_id", Value: r.ID}}
-	update := bson.D{{Key: "$set", Value: ruleDoc{ID: r.ID, Data: r}}}
+	update := bson.D{{Key: "$set", Value: bson.D{{Key: "data", Value: r}}}}
 	_, err := s.rules.UpdateOne(ctx, filter, update, options.Update().SetUpsert(true))
 	if err != nil {
 		return fmt.Errorf("mongodb: upsert rule %q: %w", r.ID, err)
@@ -113,7 +113,7 @@ func (s *Store) SaveRule(r domain.Rule) error {
 func (s *Store) SaveSimulation(sim domain.Simulation) error {
 	ctx := context.Background()
 	filter := bson.D{{Key: "_id", Value: sim.ID}}
-	update := bson.D{{Key: "$set", Value: simDoc{ID: sim.ID, Data: sim}}}
+	update := bson.D{{Key: "$set", Value: bson.D{{Key: "data", Value: sim}}}}
 	_, err := s.sims.UpdateOne(ctx, filter, update, options.Update().SetUpsert(true))
 	if err != nil {
 		return fmt.Errorf("mongodb: upsert simulation %q: %w", sim.ID, err)
