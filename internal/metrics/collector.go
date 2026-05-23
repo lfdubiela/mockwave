@@ -61,6 +61,7 @@ func (c *Collector) RecordMiss() {
 
 // Snapshot returns a consistent point-in-time view, sorted by hits descending.
 func (c *Collector) Snapshot() Snapshot {
+	at := time.Now() // capture timestamp before taking the lock
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -84,7 +85,7 @@ func (c *Collector) Snapshot() Snapshot {
 		TotalRequests: c.total,
 		Misses:        c.misses,
 		Rules:         rules,
-		At:            time.Now(),
+		At:            at,
 	}
 }
 
