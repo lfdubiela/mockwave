@@ -26,6 +26,13 @@ func TestWeightedBucket_Validate(t *testing.T) {
 		err := b.Validate()
 		assert.Error(t, err)
 	})
+
+	t.Run("invalid action rejected", func(t *testing.T) {
+		b := domain.WeightedBucket{Weight: 1, Action: "proxy"}
+		err := b.Validate()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "action")
+	})
 }
 
 func TestRule_Validate(t *testing.T) {
@@ -52,5 +59,15 @@ func TestRule_Validate(t *testing.T) {
 		}
 		err := r.Validate()
 		assert.NoError(t, err)
+	})
+
+	t.Run("empty id invalid", func(t *testing.T) {
+		r := domain.Rule{
+			Match:   domain.MatchCriteria{Path: "/foo"},
+			Buckets: []domain.WeightedBucket{{Weight: 1, Action: domain.ActionSimulate, SimulationID: "s1"}},
+		}
+		err := r.Validate()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "id")
 	})
 }
