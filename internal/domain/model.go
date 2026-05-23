@@ -80,7 +80,15 @@ type Simulation struct {
 	ID       string       `json:"id"`
 	Protocol string       `json:"protocol"`
 	Response HTTPResponse `json:"response"`
-	Script   string       `json:"script"` // optional JS (goja)
+	Script   string       `json:"script,omitempty"` // optional JS (goja)
+
+	// SOAP: returned as-is as the response body with Content-Type: text/xml
+	SoapEnvelope string `json:"soap_envelope,omitempty"`
+
+	// gRPC: JSON representation of the proto response message
+	GRPCMessage string `json:"grpc_message,omitempty"`
+	// gRPC: google.golang.org/grpc/codes.Code value (0 = OK)
+	GRPCStatus int `json:"grpc_status,omitempty"`
 }
 
 // Config is the top-level structure of a mockwave JSON config file.

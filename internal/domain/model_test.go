@@ -71,3 +71,25 @@ func TestRule_Validate(t *testing.T) {
 		assert.Contains(t, err.Error(), "id")
 	})
 }
+
+func TestSimulation_SOAPFields(t *testing.T) {
+	sim := domain.Simulation{
+		ID:           "sim-soap",
+		Protocol:     "soap",
+		SoapEnvelope: `<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><GetUserResponse><id>42</id></GetUserResponse></soap:Body></soap:Envelope>`,
+	}
+	assert.Equal(t, "soap", sim.Protocol)
+	assert.NotEmpty(t, sim.SoapEnvelope)
+}
+
+func TestSimulation_GRPCFields(t *testing.T) {
+	sim := domain.Simulation{
+		ID:          "sim-grpc",
+		Protocol:    "grpc",
+		GRPCMessage: `{"id":"42","name":"mock"}`,
+		GRPCStatus:  0,
+	}
+	assert.Equal(t, "grpc", sim.Protocol)
+	assert.Equal(t, `{"id":"42","name":"mock"}`, sim.GRPCMessage)
+	assert.Equal(t, 0, sim.GRPCStatus)
+}
