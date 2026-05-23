@@ -89,7 +89,7 @@ func TestServer_MockHandler_RoutesGraphQL(t *testing.T) {
 	srv, err := server.New(server.Config{Store: store})
 	require.NoError(t, err)
 
-	h := srv.MockHandler([]string{"http", "graphql"})
+	h := srv.MockHandler([]string{"http", "graphql"}, srv.NewProxy())
 
 	body := `{"query":"query GetItem { item { id } }","operationName":"GetItem"}`
 	req := httptest.NewRequest(http.MethodPost, "/graphql", strings.NewReader(body))
@@ -107,7 +107,7 @@ func TestServer_MockHandler_RoutesSOAP(t *testing.T) {
 	srv, err := server.New(server.Config{Store: store})
 	require.NoError(t, err)
 
-	h := srv.MockHandler([]string{"http", "soap"})
+	h := srv.MockHandler([]string{"http", "soap"}, srv.NewProxy())
 
 	req := httptest.NewRequest(http.MethodPost, "/service", strings.NewReader(`<soap:Envelope/>`))
 	req.Header.Set("SOAPAction", "GetItem")
@@ -124,7 +124,7 @@ func TestServer_MockHandler_DefaultsToHTTP(t *testing.T) {
 	srv, err := server.New(server.Config{Store: store})
 	require.NoError(t, err)
 
-	h := srv.MockHandler([]string{"http"})
+	h := srv.MockHandler([]string{"http"}, srv.NewProxy())
 
 	req := httptest.NewRequest(http.MethodGet, "/users/42", nil)
 	w := httptest.NewRecorder()

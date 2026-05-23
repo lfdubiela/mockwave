@@ -48,6 +48,18 @@ func (s *Server) Rebuild() error {
 	return s.rebuild()
 }
 
+// Executor is the pipeline entry point. Any type that wraps the server's
+// pipeline (e.g. a metrics middleware) must implement this interface.
+type Executor interface {
+	Execute(ctx context.Context, pctx *pipeline.PipelineContext) error
+}
+
+// NewProxy returns an Executor backed by this server's active pipeline.
+// Wrap it with middleware before passing to MockHandler or GRPCServer.
+func (s *Server) NewProxy() Executor {
+	return &pipelineProxy{server: s}
+}
+
 func (s *Server) rebuild() error {
 	rules, err := s.cfg.Store.GetRules()
 	if err != nil {
@@ -78,32 +90,30 @@ func (s *Server) HTTPHandler() *httprest.Handler {
 	return httprest.NewHandler(&pipelineProxy{server: s})
 }
 
-// MockHandler returns an http.Handler that routes requests to the appropriate
-// protocol handler based on the active protocol list.
-// "http" is always included. "graphql" and "soap" share the HTTP port.
-func (s *Server) MockHandler(protocols []string) http.Handler {
-	proxy := &pipelineProxy{server: s}
-	httpH := httprest.NewHandler(proxy)
+// MockHandler returns an http.Handler that routes requests through exec to the
+// appropriate protocol handler. "http" is always active; "graphql" and "soap"
+// share the HTTP port and are activated by the protocols list.
+func (s *Server) MockHandler(protocols []string, exec Executor) http.Handler {
+	httpH := httprest.NewHandler(exec)
 
 	var gqlH *graphqladapter.Handler
 	var soapH *soapadapter.Handler
 	for _, p := range protocols {
 		switch strings.ToLower(p) {
 		case "graphql":
-			gqlH = graphqladapter.NewHandler(proxy)
+			gqlH = graphqladapter.NewHandler(exec)
 		case "soap":
-			soapH = soapadapter.NewHandler(proxy)
+			soapH = soapadapter.NewHandler(exec)
 		}
 	}
 
 	return &protocolMux{httpH: httpH, gqlH: gqlH, soapH: soapH}
 }
 
-// GRPCServer returns a configured *grpc.Server backed by the pipeline.
+// GRPCServer returns a configured *grpc.Server backed by exec.
 // registry may be nil — proto JSON conversion is skipped when nil.
-func (s *Server) GRPCServer(registry *grpcadapter.FileRegistry) *googlegrpc.Server {
-	proxy := &pipelineProxy{server: s}
-	h := grpcadapter.NewHandler(proxy, registry)
+func (s *Server) GRPCServer(registry *grpcadapter.FileRegistry, exec Executor) *googlegrpc.Server {
+	h := grpcadapter.NewHandler(exec, registry)
 	return h.NewGRPCServer()
 }
 
