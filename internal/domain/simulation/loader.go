@@ -32,19 +32,41 @@ func (s *SimulationStage) Execute(_ context.Context, pctx *pipeline.PipelineCont
 	if err != nil {
 		return fmt.Errorf("simulation: %w", err)
 	}
-	body, err := renderBody(sim.Response.Body, pctx.Request)
-	if err != nil {
-		return fmt.Errorf("simulation: render body: %w", err)
-	}
-	headers := make(map[string]string)
-	for k, v := range sim.Response.Headers {
-		headers[k] = v
-	}
-	pctx.Response = &pipeline.MockResponse{
-		Status:  sim.Response.Status,
-		Headers: headers,
-		Body:    body,
-		DelayMs: sim.Response.DelayMs,
+
+	switch sim.Protocol {
+	case "soap":
+		status := sim.Response.Status
+		if status == 0 {
+			status = 200
+		}
+		pctx.Response = &pipeline.MockResponse{
+			Status:  status,
+			Headers: map[string]string{"content-type": "text/xml; charset=utf-8"},
+			Body:    sim.SOAPEnvelope,
+			DelayMs: sim.Response.DelayMs,
+		}
+	case "grpc":
+		pctx.Response = &pipeline.MockResponse{
+			Status:  sim.GRPCStatus,
+			Headers: map[string]string{},
+			Body:    sim.GRPCMessage,
+			DelayMs: sim.Response.DelayMs,
+		}
+	default: // "http", "graphql", ""
+		body, err := renderBody(sim.Response.Body, pctx.Request)
+		if err != nil {
+			return fmt.Errorf("simulation: render body: %w", err)
+		}
+		headers := make(map[string]string)
+		for k, v := range sim.Response.Headers {
+			headers[k] = v
+		}
+		pctx.Response = &pipeline.MockResponse{
+			Status:  sim.Response.Status,
+			Headers: headers,
+			Body:    body,
+			DelayMs: sim.Response.DelayMs,
+		}
 	}
 	return nil
 }

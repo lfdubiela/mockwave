@@ -121,3 +121,53 @@ func TestSimulationStage_ResponseHeaders(t *testing.T) {
 	require.NoError(t, stage.Execute(context.Background(), pctx))
 	assert.Equal(t, "val", pctx.Response.Headers["x-custom"])
 }
+
+func TestSimulationStage_SOAPProtocol(t *testing.T) {
+	envelope := `<?xml version="1.0"?><soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><GetUserResponse><id>42</id></GetUserResponse></soap:Body></soap:Envelope>`
+	store := &stubStore{
+		sims: map[string]domain.Simulation{
+			"sim-soap": {
+				ID:           "sim-soap",
+				Protocol:     "soap",
+				SOAPEnvelope: envelope,
+				Response:     domain.HTTPResponse{DelayMs: 0},
+			},
+		},
+	}
+	stage := simulation.NewSimulationStage(store)
+	pctx := &pipeline.PipelineContext{
+		Request:      pipeline.NormalizedRequest{Protocol: "soap"},
+		SimulationID: "sim-soap",
+	}
+	err := stage.Execute(context.Background(), pctx)
+	require.NoError(t, err)
+	require.NotNil(t, pctx.Response)
+	assert.Equal(t, 200, pctx.Response.Status)
+	assert.Equal(t, envelope, pctx.Response.Body)
+	assert.Equal(t, "text/xml; charset=utf-8", pctx.Response.Headers["content-type"])
+}
+
+func TestSimulationStage_GRPCProtocol(t *testing.T) {
+	store := &stubStore{
+		sims: map[string]domain.Simulation{
+			"sim-grpc": {
+				ID:          "sim-grpc",
+				Protocol:    "grpc",
+				GRPCMessage: `{"id":"42"}`,
+				GRPCStatus:  0,
+				Response:    domain.HTTPResponse{DelayMs: 50},
+			},
+		},
+	}
+	stage := simulation.NewSimulationStage(store)
+	pctx := &pipeline.PipelineContext{
+		Request:      pipeline.NormalizedRequest{Protocol: "grpc"},
+		SimulationID: "sim-grpc",
+	}
+	err := stage.Execute(context.Background(), pctx)
+	require.NoError(t, err)
+	require.NotNil(t, pctx.Response)
+	assert.Equal(t, 0, pctx.Response.Status)
+	assert.Equal(t, `{"id":"42"}`, pctx.Response.Body)
+	assert.Equal(t, 50, pctx.Response.DelayMs)
+}
