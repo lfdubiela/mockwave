@@ -202,15 +202,19 @@
   });
 
   // ── Rules ──────────────────────────────────────────────────────────────────
+  let _rulesList = [];
+
   async function loadRules() {
     try {
       const rules = await fetch('/api/rules').then(r => r.json());
       const tbody = document.getElementById('rules-tbody');
       if (!rules || rules.length === 0) {
+        _rulesList = [];
         tbody.innerHTML = '<tr><td colspan="6" class="empty">No rules configured. Click "+ Add Rule" to create one.</td></tr>';
         return;
       }
-      tbody.innerHTML = rules.map(r => `
+      _rulesList = rules;
+      tbody.innerHTML = rules.map((r, i) => `
         <tr>
           <td><span class="badge">${r.id}</span></td>
           <td>${r.name || '<span style="color:var(--muted)">—</span>'}</td>
@@ -218,13 +222,19 @@
           <td><span class="method-badge">${r.match?.method || '*'}</span></td>
           <td class="mono">${r.match?.path || '/'}</td>
           <td style="text-align:right;white-space:nowrap;display:flex;gap:0.4rem;justify-content:flex-end">
-            <button class="btn-sm btn-primary" onclick='editRule(${JSON.stringify(r)})'>Edit</button>
+            <button class="btn-sm btn-primary" onclick="editRuleByIdx(${i})">Edit</button>
             <button class="btn-sm btn-danger" onclick="deleteRule('${r.id}')">Delete</button>
           </td>
         </tr>`).join('');
     } catch (e) {
       console.error('loadRules:', e);
     }
+  }
+
+  function editRuleByIdx(i) {
+    const r = _rulesList[i];
+    if (!r) return;
+    editRule(r);
   }
 
   let _editingRuleID = null;
