@@ -62,39 +62,16 @@
 
 <nav>
   <h1>⚡ Mockwave Admin</h1>
-  <div class="tab active" data-tab="rules">Rules</div>
+  <div class="tab active" data-tab="dashboard">Dashboard <span id="unmatched-badge" style="display:none;background:var(--danger);color:#fff;border-radius:9999px;padding:0.05rem 0.45rem;font-size:0.65rem;margin-left:0.35rem;vertical-align:middle"></span></div>
+  <div class="tab" data-tab="rules">Rules</div>
   <div class="tab" data-tab="simulations">Simulations</div>
-  <div class="tab" data-tab="metrics">Metrics</div>
-  <div class="tab" data-tab="unmatched">Unmatched</div>
 </nav>
 
-<!-- Rules -->
-<div class="tab-content active" id="tab-rules">
-  <div class="section-header">
-    <h2>Rules</h2>
-    <button class="btn-primary" onclick="openRuleModal()">+ Add Rule</button>
+<!-- Dashboard (live metrics + unmatched) -->
+<div class="tab-content active" id="tab-dashboard">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+    <h2><span class="live-dot"></span>Live Metrics</h2>
   </div>
-  <table>
-    <thead><tr><th>ID</th><th>Name</th><th>Protocol</th><th>Method</th><th>Path</th><th></th></tr></thead>
-    <tbody id="rules-tbody"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
-  </table>
-</div>
-
-<!-- Simulations -->
-<div class="tab-content" id="tab-simulations">
-  <div class="section-header">
-    <h2>Simulations</h2>
-    <button class="btn-primary" onclick="openSimModal()">+ Add Simulation</button>
-  </div>
-  <table>
-    <thead><tr><th>ID</th><th>Protocol</th><th>Status</th><th></th></tr></thead>
-    <tbody id="sims-tbody"><tr><td colspan="4" class="empty">Loading…</td></tr></tbody>
-  </table>
-</div>
-
-<!-- Metrics -->
-<div class="tab-content" id="tab-metrics">
-  <h2><span class="live-dot"></span>Live Metrics</h2>
   <div class="stats-grid">
     <div class="stat-card"><div class="stat-label">Total Requests</div><div class="stat-value" id="m-total">—</div></div>
     <div class="stat-card"><div class="stat-label">Matched</div><div class="stat-value" id="m-matched">—</div></div>
@@ -102,20 +79,44 @@
   </div>
   <div class="section-divider">Rule Hit Distribution</div>
   <div id="metrics-bars"><p class="empty">No requests recorded yet.</p></div>
+
+  <div style="margin-top:2rem">
+    <div class="section-header">
+      <h2>Unmatched Requests <span id="dash-unmatched-count" style="color:var(--muted);font-size:0.8rem;font-weight:400"></span></h2>
+      <button class="btn-danger btn-sm" onclick="clearUnmatched()">Clear All</button>
+    </div>
+    <p style="color:var(--muted);font-size:0.8rem;margin-bottom:1rem">
+      Requests with no matching rule. Click "Create Rule" to open a pre-filled form.
+    </p>
+    <table>
+      <thead><tr><th>Time</th><th>Protocol</th><th>Method</th><th>Path</th><th></th></tr></thead>
+      <tbody id="unmatched-tbody"><tr><td colspan="5" class="empty">No unmatched requests captured.</td></tr></tbody>
+    </table>
+  </div>
 </div>
 
-<!-- Unmatched -->
-<div class="tab-content" id="tab-unmatched">
+<!-- Rules -->
+<div class="tab-content" id="tab-rules">
   <div class="section-header">
-    <h2>Unmatched Requests</h2>
-    <button class="btn-danger" onclick="clearUnmatched()">Clear All</button>
+    <h2>Rules</h2>
+    <button class="btn-primary" onclick="openRuleModal()">+ Add Rule</button>
   </div>
-  <p style="color:var(--muted);font-size:0.8rem;margin-bottom:1rem">
-    Requests that arrived with no matching rule. Click "Create Rule" to open a pre-filled rule form.
-  </p>
   <table>
-    <thead><tr><th>Time</th><th>Protocol</th><th>Method</th><th>Path</th><th></th></tr></thead>
-    <tbody id="unmatched-tbody"><tr><td colspan="5" class="empty">No unmatched requests captured.</td></tr></tbody>
+    <thead><tr><th>ID</th><th>Name</th><th>Protocol</th><th>Method</th><th>Path</th><th>Buckets</th><th></th></tr></thead>
+    <tbody id="rules-tbody"><tr><td colspan="7" class="empty">Loading…</td></tr></tbody>
+  </table>
+</div>
+
+<!-- Simulations -->
+<div class="tab-content" id="tab-simulations">
+  <div class="section-header">
+    <h2>Simulations</h2>
+    <button class="btn-primary" onclick="openSimModal()">+ Add Simulation (JSON)</button>
+  </div>
+  <p style="color:var(--muted);font-size:0.8rem;margin-bottom:1rem">Simulations are created automatically when you save a rule. Use this to add raw JSON simulations directly.</p>
+  <table>
+    <thead><tr><th>ID</th><th>Protocol</th><th>Status</th><th></th></tr></thead>
+    <tbody id="sims-tbody"><tr><td colspan="4" class="empty">Loading…</td></tr></tbody>
   </table>
 </div>
 
@@ -197,9 +198,18 @@
       document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
       tab.classList.add('active');
       document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
-      if (tab.dataset.tab === 'unmatched') loadUnmatched();
+      if (tab.dataset.tab === 'rules') loadRules();
+      if (tab.dataset.tab === 'simulations') loadSims();
     });
   });
+
+  // Auto-poll unmatched every 5s (always, regardless of active tab)
+  let _prevUnmatchedCount = 0;
+
+  function pollUnmatched() {
+    loadUnmatched();
+    setTimeout(pollUnmatched, 5000);
+  }
 
   // ── Rules ──────────────────────────────────────────────────────────────────
   let _rulesList = [];
@@ -210,7 +220,7 @@
       const tbody = document.getElementById('rules-tbody');
       if (!rules || rules.length === 0) {
         _rulesList = [];
-        tbody.innerHTML = '<tr><td colspan="6" class="empty">No rules configured. Click "+ Add Rule" to create one.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" class="empty">No rules configured. Click "+ Add Rule" to create one.</td></tr>';
         return;
       }
       _rulesList = rules;
@@ -221,6 +231,7 @@
           <td class="mono">${r.match?.protocol || '<em style="color:var(--muted)">any</em>'}</td>
           <td><span class="method-badge">${r.match?.method || '*'}</span></td>
           <td class="mono">${r.match?.path || '/'}</td>
+          <td style="color:var(--muted);font-size:0.8rem">${(r.buckets||[]).length} bucket${(r.buckets||[]).length !== 1 ? 's' : ''}</td>
           <td style="text-align:right;white-space:nowrap;display:flex;gap:0.4rem;justify-content:flex-end">
             <button class="btn-sm btn-primary" onclick="editRuleByIdx(${i})">Edit</button>
             <button class="btn-sm btn-danger" onclick="deleteRule('${r.id}')">Delete</button>
@@ -380,7 +391,7 @@
     };
     es.onerror = () => {
       es.close();
-      setTimeout(connectMetrics, 3000); // reconnect after 3s
+      setTimeout(connectMetrics, 3000);
     };
   }
 
@@ -408,12 +419,28 @@
     try {
       const items = await fetch('/api/unmatched').then(r => r.json());
       const tbody = document.getElementById('unmatched-tbody');
+      const badge = document.getElementById('unmatched-badge');
+      const countEl = document.getElementById('dash-unmatched-count');
+
       if (!items || items.length === 0) {
         _unmatchedList = [];
         tbody.innerHTML = '<tr><td colspan="5" class="empty">No unmatched requests captured yet.</td></tr>';
+        badge.style.display = 'none';
+        countEl.textContent = '';
+        _prevUnmatchedCount = 0;
         return;
       }
+
       _unmatchedList = items.slice().reverse();
+      countEl.textContent = `(${items.length})`;
+
+      // Show badge when new unmatched arrive and user is not on dashboard
+      if (items.length > _prevUnmatchedCount) {
+        badge.style.display = 'inline';
+        badge.textContent = items.length;
+      }
+      _prevUnmatchedCount = items.length;
+
       tbody.innerHTML = _unmatchedList.map((r, i) => `
         <tr>
           <td style="color:var(--muted);font-size:0.75rem;white-space:nowrap">${new Date(r.at).toLocaleTimeString()}</td>
@@ -437,7 +464,10 @@
 
   async function clearUnmatched() {
     if (!confirm('Clear all captured unmatched requests?')) return;
-    await fetch('/api/unmatched', { method: 'DELETE' });
+    const res = await fetch('/api/unmatched', { method: 'DELETE' });
+    if (!res.ok) { alert('Failed to clear unmatched requests'); return; }
+    _prevUnmatchedCount = 0;
+    document.getElementById('unmatched-badge').style.display = 'none';
     loadUnmatched();
   }
 
@@ -457,6 +487,7 @@
   loadRules();
   loadSims();
   connectMetrics();
+  pollUnmatched(); // start polling immediately; also loads unmatched now
 </script>
 </body>
 </html>
