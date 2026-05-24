@@ -359,15 +359,26 @@ All endpoints are on the admin port (default `:9090`).
 
 ## JavaScript Scripting
 
-Set `"script"` on any simulation to run JavaScript (via [goja](https://github.com/dop251/goja)) on every matched request. The return value replaces `response.body`.
+Set `"script"` on any simulation to run JavaScript (via [goja](https://github.com/dop251/goja)) on every matched request. The script must return an object with a `body` key (and optionally `status`, `headers`, `delay_ms`) to override the response.
 
 ```json
 {
   "id": "dynamic-user",
   "protocol": "http",
   "response": { "status": 200 },
-  "script": "return { id: request.path.split('/').pop(), ts: Date.now() };"
+  "script": "return { body: { id: request.path[request.path.length-1], ts: Date.now() } };"
 }
+```
+
+The return object can override any part of the response:
+
+```js
+return {
+  status: 201,
+  headers: { "X-Custom": "value" },
+  body: { id: request.path[request.path.length-1], ts: Date.now() },
+  delay_ms: 100
+};
 ```
 
 Available in the script context:
@@ -375,9 +386,10 @@ Available in the script context:
 | Variable | Type | Description |
 |----------|------|-------------|
 | `request.method` | string | HTTP method |
-| `request.path` | string | Request path |
+| `request.path` | array | Path segments (e.g. `["users","42"]`) |
 | `request.headers` | object | Request headers (lowercase keys) |
 | `request.body` | string | Raw request body |
+| `request.query` | object | Query string parameters |
 
 ---
 
