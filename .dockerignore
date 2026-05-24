@@ -1,0 +1,17 @@
+# Dev artifacts
+cover.out
+*.pb
+*.json
+docs/
+
+# Go build cache
+vendor/
+
+# Git
+.git
+.gitignore
+
+# IDE
+.idea/
+.vscode/
+*.swp
