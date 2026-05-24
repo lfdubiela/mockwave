@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -15,7 +16,9 @@ import (
 	dynamostore "github.com/mockwave/mockwave/internal/adapters/out/dynamodb"
 	"github.com/mockwave/mockwave/internal/adapters/out/jsonfile"
 	mongodb "github.com/mockwave/mockwave/internal/adapters/out/mongodb"
+	"github.com/mockwave/mockwave/internal/metrics"
 	"github.com/mockwave/mockwave/internal/server"
+	"github.com/mockwave/mockwave/internal/unmatched"
 	"github.com/mockwave/mockwave/store"
 	"github.com/spf13/cobra"
 )
@@ -56,11 +59,23 @@ func startCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+
+			// Metrics instrumentation
+			col := metrics.NewCollector()
+			buf := unmatched.NewBuffer(100)
+			broker := metrics.NewBroker(col)
+			go broker.Start(context.Background())
+
+			// Wrap the pipeline proxy with the metrics middleware.
+			proxy := srv.NewProxy()
+			wrapped := metrics.NewMiddleware(proxy, col, buf)
+
+			// Admin API (includes UI at / once Task 9 is done)
 			adminMux := restapi.NewMux(s, func() {
 				if err := srv.Rebuild(); err != nil {
 					log.Printf("hot-reload failed: %v", err)
 				}
-			})
+			}, col, buf, broker)
 			go func() {
 				log.Printf("admin API listening on :%d", adminPort)
 				if err := http.ListenAndServe(fmt.Sprintf(":%d", adminPort), adminMux); err != nil {
@@ -78,7 +93,7 @@ func startCmd() *cobra.Command {
 						return fmt.Errorf("load grpc proto descriptor: %w", err)
 					}
 				}
-				grpcSrv := srv.GRPCServer(registry)
+				grpcSrv := srv.GRPCServer(registry, wrapped)
 				lis, err := net.Listen("tcp", fmt.Sprintf(":%d", grpcPort))
 				if err != nil {
 					return fmt.Errorf("grpc listen: %w", err)
@@ -92,7 +107,7 @@ func startCmd() *cobra.Command {
 			}
 
 			log.Printf("mock server listening on :%d (protocols: %s, store: %s)", mockPort, protocolsStr, storeType)
-			return http.ListenAndServe(fmt.Sprintf(":%d", mockPort), srv.MockHandler(protocols))
+			return http.ListenAndServe(fmt.Sprintf(":%d", mockPort), srv.MockHandler(protocols, wrapped))
 		},
 	}
 

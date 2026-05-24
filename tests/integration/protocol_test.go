@@ -29,7 +29,7 @@ func startProtocolServer(t *testing.T, protocols []string, cfg domain.Config) *h
 	store := jsonfile.NewMemStore(cfg)
 	srv, err := server.New(server.Config{Store: store})
 	require.NoError(t, err)
-	ts := httptest.NewServer(srv.MockHandler(protocols))
+	ts := httptest.NewServer(srv.MockHandler(protocols, srv.NewProxy()))
 	t.Cleanup(ts.Close)
 	return ts
 }
@@ -40,7 +40,7 @@ func startGRPCServer(t *testing.T, cfg domain.Config) string {
 	store := jsonfile.NewMemStore(cfg)
 	srv, err := server.New(server.Config{Store: store})
 	require.NoError(t, err)
-	grpcSrv := srv.GRPCServer(nil)
+	grpcSrv := srv.GRPCServer(nil, srv.NewProxy())
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	go func() {
