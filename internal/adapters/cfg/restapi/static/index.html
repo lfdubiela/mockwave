@@ -61,7 +61,7 @@
 <body>
 
 <nav>
-  <h1>⚡ Mockwave</h1>
+  <h1>⚡ Mockwave Admin</h1>
   <div class="tab active" data-tab="rules">Rules</div>
   <div class="tab" data-tab="simulations">Simulations</div>
   <div class="tab" data-tab="metrics">Metrics</div>
@@ -374,27 +374,37 @@
   }
 
   // ── Unmatched ──────────────────────────────────────────────────────────────
+  let _unmatchedList = [];
+
   async function loadUnmatched() {
     try {
       const items = await fetch('/api/unmatched').then(r => r.json());
       const tbody = document.getElementById('unmatched-tbody');
       if (!items || items.length === 0) {
+        _unmatchedList = [];
         tbody.innerHTML = '<tr><td colspan="5" class="empty">No unmatched requests captured yet.</td></tr>';
         return;
       }
-      tbody.innerHTML = items.slice().reverse().map(r => `
+      _unmatchedList = items.slice().reverse();
+      tbody.innerHTML = _unmatchedList.map((r, i) => `
         <tr>
           <td style="color:var(--muted);font-size:0.75rem;white-space:nowrap">${new Date(r.at).toLocaleTimeString()}</td>
           <td class="mono">${r.protocol || 'http'}</td>
           <td><span class="method-badge">${r.method}</span></td>
           <td class="mono">${r.path}</td>
           <td style="text-align:right">
-            <button class="btn-sm btn-primary" onclick='openRuleModal({method:"${r.method}",path:"${r.path}",protocol:"${r.protocol}"})'>Create Rule</button>
+            <button class="btn-sm btn-primary" onclick="prefillFromUnmatched(${i})">Create Rule</button>
           </td>
         </tr>`).join('');
     } catch (e) {
       console.error('loadUnmatched:', e);
     }
+  }
+
+  function prefillFromUnmatched(i) {
+    const r = _unmatchedList[i];
+    if (!r) return;
+    openRuleModal({ method: r.method, path: r.path, protocol: r.protocol });
   }
 
   async function clearUnmatched() {
