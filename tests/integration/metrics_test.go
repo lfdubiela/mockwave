@@ -2,11 +2,13 @@ package integration_test
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -166,8 +168,13 @@ func TestMetrics_SSEStreamEvent(t *testing.T) {
 	sseSrv := httptest.NewServer(brokerMux)
 	t.Cleanup(sseSrv.Close)
 
-	// Start broker
-	go broker.Start(t.Context())
+	// Start broker; join before test exits to avoid goroutine leak / data race
+	brokerCtx, cancelBroker := context.WithCancel(t.Context())
+	t.Cleanup(cancelBroker)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() { defer wg.Done(); broker.Start(brokerCtx) }()
+	t.Cleanup(wg.Wait)
 
 	// Connect and read one SSE event
 	client := &http.Client{Timeout: 5 * time.Second}
@@ -177,14 +184,18 @@ func TestMetrics_SSEStreamEvent(t *testing.T) {
 
 	scanner := bufio.NewScanner(resp.Body)
 	var snap metrics.Snapshot
+	var got bool
 	for scanner.Scan() {
 		line := scanner.Text()
 		if strings.HasPrefix(line, "data: ") {
 			data := strings.TrimPrefix(line, "data: ")
 			require.NoError(t, json.Unmarshal([]byte(data), &snap))
+			got = true
 			break
 		}
 	}
+	require.NoError(t, scanner.Err())
+	require.True(t, got, "no SSE data line received within timeout")
 	assert.Equal(t, int64(1), snap.TotalRequests)
 	assert.Len(t, snap.Rules, 1)
 	_ = adminSrv
