@@ -115,6 +115,24 @@ func TestMongo_DeleteRule(t *testing.T) {
 	})
 }
 
+func TestMongo_ListSimulations(t *testing.T) {
+	mt := mtest.New(t, mtest.NewOptions().ClientType(mtest.Mock))
+	mt.Run("all sims", func(mt *mtest.T) {
+		sim := domain.Simulation{ID: "s1", Protocol: "http", Response: domain.HTTPResponse{Status: 200}}
+		mt.AddMockResponses(
+			mtest.CreateCursorResponse(1, "mockwave.simulations", mtest.FirstBatch,
+				bson.D{{Key: "_id", Value: "s1"}, {Key: "data", Value: sim}},
+			),
+			mtest.CreateCursorResponse(0, "mockwave.simulations", mtest.NextBatch),
+		)
+		s := mongodb.NewStoreFromClient(mt.Client, "mockwave")
+		sims, err := s.ListSimulations()
+		require.NoError(mt, err)
+		require.Len(mt, sims, 1)
+		assert.Equal(mt, "s1", sims[0].ID)
+	})
+}
+
 func TestMongo_DeleteSimulation(t *testing.T) {
 	mt := mtest.New(t, mtest.NewOptions().ClientType(mtest.Mock))
 	mt.Run("delete", func(mt *mtest.T) {

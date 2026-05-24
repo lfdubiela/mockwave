@@ -2,11 +2,13 @@ package restapi_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/mockwave/mockwave/internal/adapters/cfg/restapi"
 	"github.com/mockwave/mockwave/domain"
@@ -280,6 +282,30 @@ func TestAdminAPI_MetricsMethodNotAllowed(t *testing.T) {
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	assert.Equal(t, 405, w.Code)
+}
+
+func TestAdminAPI_MetricsStream_NilBroker(t *testing.T) {
+	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/metrics/stream", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+}
+
+func TestAdminAPI_MetricsStream_WithBroker(t *testing.T) {
+	col := metrics.NewCollector()
+	buf := unmatched.NewBuffer(10)
+	broker := metrics.NewBroker(col)
+	mux := restapi.NewMux(&memStore{}, nil, col, buf, broker)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	req := httptest.NewRequest(http.MethodGet, "/api/metrics/stream", nil)
+	req = req.WithContext(ctx)
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	assert.Equal(t, "text/event-stream", w.Header().Get("Content-Type"))
 }
 
 func TestAdminAPI_ServesUI(t *testing.T) {

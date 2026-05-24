@@ -147,6 +147,20 @@ func TestDynamo_DeleteRule(t *testing.T) {
 	assert.Equal(t, "rules", aws.ToString(client.delItems[0].TableName))
 }
 
+func TestDynamo_ListSimulations(t *testing.T) {
+	sim := domain.Simulation{ID: "s1", Protocol: "http"}
+	client := &mockDynamo{
+		scanOut: map[string]*dynamodb.ScanOutput{
+			"sims": {Items: []map[string]types.AttributeValue{simItem(sim)}},
+		},
+	}
+	s := dynamostore.NewStoreFromClient(client, dynamostore.Config{RulesTable: "rules", SimsTable: "sims"})
+	sims, err := s.ListSimulations()
+	require.NoError(t, err)
+	require.Len(t, sims, 1)
+	assert.Equal(t, "s1", sims[0].ID)
+}
+
 func TestDynamo_DeleteSimulation(t *testing.T) {
 	client := &mockDynamo{}
 	s := dynamostore.NewStoreFromClient(client, dynamostore.Config{RulesTable: "rules", SimsTable: "sims"})

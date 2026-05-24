@@ -143,6 +143,33 @@ func TestStore_SaveRule_UpdatesExisting(t *testing.T) {
 	assert.Equal(t, "/new", rules[0].Match.Path)
 }
 
+func TestStore_NewMemStore(t *testing.T) {
+	cfg := domain.Config{
+		Simulations: []domain.Simulation{
+			{ID: "s1", Protocol: "http"},
+		},
+	}
+	s := jsonfile.NewMemStore(cfg)
+	sims, err := s.ListSimulations()
+	require.NoError(t, err)
+	assert.Len(t, sims, 1)
+	assert.Equal(t, "s1", sims[0].ID)
+}
+
+func TestStore_ListSimulations(t *testing.T) {
+	cfg := domain.Config{
+		Simulations: []domain.Simulation{
+			{ID: "sim1", Protocol: "http"},
+			{ID: "sim2", Protocol: "graphql"},
+		},
+	}
+	s, err := jsonfile.NewStore(writeConfig(t, cfg))
+	require.NoError(t, err)
+	sims, err := s.ListSimulations()
+	require.NoError(t, err)
+	assert.Len(t, sims, 2)
+}
+
 func TestStore_Reload(t *testing.T) {
 	cfg := domain.Config{Rules: []domain.Rule{{ID: "r1", Match: domain.MatchCriteria{Path: "/foo"}, Buckets: []domain.WeightedBucket{bucket()}}}}
 	path := writeConfig(t, cfg)
