@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mockwave Admin</title>
+  <style>
+    :root {
+      --bg: #0f172a; --surface: #1e293b; --border: #334155;
+      --text: #e2e8f0; --accent: #38bdf8; --danger: #f87171;
+      --success: #4ade80; --muted: #94a3b8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+    nav { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 1.5rem; display: flex; gap: 0.25rem; align-items: center; }
+    nav h1 { font-size: 1rem; font-weight: 700; color: var(--accent); padding: 1rem 0; margin-right: 1rem; }
+    .tab { padding: 1rem 0.75rem; cursor: pointer; border-bottom: 2px solid transparent; color: var(--muted); font-size: 0.875rem; user-select: none; }
+    .tab.active { color: var(--text); border-bottom-color: var(--accent); }
+    .tab-content { display: none; padding: 1.5rem; }
+    .tab-content.active { display: block; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+    th, td { padding: 0.6rem 0.75rem; text-align: left; border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); font-weight: 500; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
+    button { cursor: pointer; border: none; border-radius: 0.375rem; padding: 0.4rem 0.75rem; font-size: 0.8rem; font-family: inherit; }
+    .btn-primary { background: var(--accent); color: #0f172a; font-weight: 600; }
+    .btn-danger { background: var(--danger); color: #fff; font-weight: 600; }
+    .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
+    .btn-sm { padding: 0.2rem 0.5rem; font-size: 0.75rem; }
+    .badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 9999px; font-size: 0.7rem; font-weight: 600; background: rgba(56,189,248,0.15); color: var(--accent); border: 1px solid rgba(56,189,248,0.3); }
+    .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin: 1rem 0 1.5rem; }
+    .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 0.5rem; padding: 1.25rem; }
+    .stat-label { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
+    .stat-value { font-size: 2rem; font-weight: 700; margin-top: 0.25rem; }
+    .bar-row { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.6rem; font-size: 0.8rem; }
+    .bar-label { width: 12rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+    .bar-bg { flex: 1; height: 0.375rem; background: var(--border); border-radius: 9999px; }
+    .bar-fill { height: 100%; background: var(--accent); border-radius: 9999px; transition: width 0.5s ease; }
+    .bar-meta { width: 8rem; text-align: right; color: var(--muted); font-size: 0.75rem; }
+    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 100; align-items: center; justify-content: center; }
+    .modal-overlay.open { display: flex; }
+    .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 0.5rem; padding: 1.5rem; width: 38rem; max-width: 95vw; max-height: 90vh; overflow-y: auto; }
+    .modal h2 { margin-bottom: 1.25rem; font-size: 1rem; }
+    .form-group { margin-bottom: 0.75rem; }
+    label { display: block; font-size: 0.75rem; color: var(--muted); margin-bottom: 0.3rem; }
+    input, select, textarea { width: 100%; background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 0.45rem 0.6rem; border-radius: 0.375rem; font-size: 0.85rem; font-family: inherit; }
+    input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
+    textarea { font-family: 'Courier New', monospace; resize: vertical; }
+    .form-row { display: flex; gap: 0.75rem; }
+    .form-row .form-group { flex: 1; }
+    .form-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.25rem; }
+    .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+    .section-header h2 { font-size: 1rem; }
+    .live-dot { display: inline-block; width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--success); margin-right: 0.4rem; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+    .empty { color: var(--muted); text-align: center; padding: 2.5rem; font-size: 0.875rem; }
+    .mono { font-family: 'Courier New', monospace; font-size: 0.8rem; }
+    .method-badge { display: inline-block; padding: 0.1rem 0.4rem; border-radius: 0.25rem; font-size: 0.7rem; font-weight: 700; font-family: monospace; background: rgba(148,163,184,0.1); color: var(--text); }
+    .section-divider { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; margin: 1rem 0 0.5rem; }
+  </style>
+</head>
+<body>
+
+<nav>
+  <h1>⚡ Mockwave</h1>
+  <div class="tab active" data-tab="rules">Rules</div>
+  <div class="tab" data-tab="simulations">Simulations</div>
+  <div class="tab" data-tab="metrics">Metrics</div>
+  <div class="tab" data-tab="unmatched">Unmatched</div>
+</nav>
+
+<!-- Rules -->
+<div class="tab-content active" id="tab-rules">
+  <div class="section-header">
+    <h2>Rules</h2>
+    <button class="btn-primary" onclick="openRuleModal()">+ Add Rule</button>
+  </div>
+  <table>
+    <thead><tr><th>ID</th><th>Name</th><th>Protocol</th><th>Method</th><th>Path</th><th></th></tr></thead>
+    <tbody id="rules-tbody"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
+  </table>
+</div>
+
+<!-- Simulations -->
+<div class="tab-content" id="tab-simulations">
+  <div class="section-header">
+    <h2>Simulations</h2>
+    <button class="btn-primary" onclick="openSimModal()">+ Add Simulation</button>
+  </div>
+  <table>
+    <thead><tr><th>ID</th><th>Protocol</th><th>Status</th><th></th></tr></thead>
+    <tbody id="sims-tbody"><tr><td colspan="4" class="empty">Loading…</td></tr></tbody>
+  </table>
+</div>
+
+<!-- Metrics -->
+<div class="tab-content" id="tab-metrics">
+  <h2><span class="live-dot"></span>Live Metrics</h2>
+  <div class="stats-grid">
+    <div class="stat-card"><div class="stat-label">Total Requests</div><div class="stat-value" id="m-total">—</div></div>
+    <div class="stat-card"><div class="stat-label">Matched</div><div class="stat-value" id="m-matched">—</div></div>
+    <div class="stat-card"><div class="stat-label">Unmatched</div><div class="stat-value" id="m-misses">—</div></div>
+  </div>
+  <div class="section-divider">Rule Hit Distribution</div>
+  <div id="metrics-bars"><p class="empty">No requests recorded yet.</p></div>
+</div>
+
+<!-- Unmatched -->
+<div class="tab-content" id="tab-unmatched">
+  <div class="section-header">
+    <h2>Unmatched Requests</h2>
+    <button class="btn-danger" onclick="clearUnmatched()">Clear All</button>
+  </div>
+  <p style="color:var(--muted);font-size:0.8rem;margin-bottom:1rem">
+    Requests that arrived with no matching rule. Click "Create Rule" to open a pre-filled rule form.
+  </p>
+  <table>
+    <thead><tr><th>Time</th><th>Protocol</th><th>Method</th><th>Path</th><th></th></tr></thead>
+    <tbody id="unmatched-tbody"><tr><td colspan="5" class="empty">No unmatched requests captured.</td></tr></tbody>
+  </table>
+</div>
+
+<!-- Rule modal -->
+<div class="modal-overlay" id="rule-modal">
+  <div class="modal">
+    <h2 id="rule-modal-title">Add Rule</h2>
+    <div class="form-row">
+      <div class="form-group"><label>ID *</label><input id="r-id" placeholder="rule-get-users"></div>
+      <div class="form-group"><label>Name</label><input id="r-name" placeholder="Get Users"></div>
+    </div>
+    <div class="section-divider">Match Criteria</div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Protocol</label>
+        <select id="r-protocol">
+          <option value="">Any</option>
+          <option value="http">http</option>
+          <option value="graphql">graphql</option>
+          <option value="soap">soap</option>
+          <option value="grpc">grpc</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Method</label>
+        <select id="r-method">
+          <option value="">Any</option>
+          <option value="GET">GET</option>
+          <option value="POST">POST</option>
+          <option value="PUT">PUT</option>
+          <option value="DELETE">DELETE</option>
+          <option value="PATCH">PATCH</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Path (glob ok)</label><input id="r-path" placeholder="/api/users/*"></div>
+    </div>
+    <div class="section-divider">Response</div>
+    <div class="form-row">
+      <div class="form-group"><label>Simulation ID *</label><input id="r-sim-id" placeholder="sim-200-ok"></div>
+      <div class="form-group"><label>Weight (1-100)</label><input id="r-weight" type="number" value="100" min="1" max="100"></div>
+    </div>
+    <div class="form-actions">
+      <button class="btn-ghost" onclick="closeRuleModal()">Cancel</button>
+      <button class="btn-primary" onclick="saveRule()">Save Rule</button>
+    </div>
+  </div>
+</div>
+
+<!-- Simulation modal -->
+<div class="modal-overlay" id="sim-modal">
+  <div class="modal">
+    <h2>Add Simulation</h2>
+    <p style="color:var(--muted);font-size:0.8rem;margin-bottom:0.75rem">Paste a complete Simulation object as JSON.</p>
+    <div class="form-group">
+      <label>Simulation JSON</label>
+      <textarea id="sim-json" rows="14">{
+  "id": "sim-200-ok",
+  "protocol": "http",
+  "response": {
+    "status": 200,
+    "headers": { "Content-Type": "application/json" },
+    "body": { "message": "OK" },
+    "delay_ms": 0
+  }
+}</textarea>
+    </div>
+    <div class="form-actions">
+      <button class="btn-ghost" onclick="closeSimModal()">Cancel</button>
+      <button class="btn-primary" onclick="saveSim()">Save Simulation</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ── Tab switching ──────────────────────────────────────────────────────────
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+      if (tab.dataset.tab === 'unmatched') loadUnmatched();
+    });
+  });
+
+  // ── Rules ──────────────────────────────────────────────────────────────────
+  async function loadRules() {
+    try {
+      const rules = await fetch('/api/rules').then(r => r.json());
+      const tbody = document.getElementById('rules-tbody');
+      if (!rules || rules.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="empty">No rules configured. Click "+ Add Rule" to create one.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = rules.map(r => `
+        <tr>
+          <td><span class="badge">${r.id}</span></td>
+          <td>${r.name || '<span style="color:var(--muted)">—</span>'}</td>
+          <td class="mono">${r.match?.protocol || '<em style="color:var(--muted)">any</em>'}</td>
+          <td><span class="method-badge">${r.match?.method || '*'}</span></td>
+          <td class="mono">${r.match?.path || '/'}</td>
+          <td style="text-align:right;white-space:nowrap;display:flex;gap:0.4rem;justify-content:flex-end">
+            <button class="btn-sm btn-primary" onclick='editRule(${JSON.stringify(r)})'>Edit</button>
+            <button class="btn-sm btn-danger" onclick="deleteRule('${r.id}')">Delete</button>
+          </td>
+        </tr>`).join('');
+    } catch (e) {
+      console.error('loadRules:', e);
+    }
+  }
+
+  let _editingRuleID = null;
+
+  function openRuleModal(prefill) {
+    _editingRuleID = null;
+    document.getElementById('rule-modal-title').textContent = 'Add Rule';
+    document.getElementById('r-id').disabled = false;
+    ['r-id','r-name','r-path','r-sim-id'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('r-weight').value = 100;
+    document.getElementById('r-protocol').value = '';
+    document.getElementById('r-method').value = '';
+    if (prefill) {
+      document.getElementById('r-path').value = prefill.path || '';
+      document.getElementById('r-method').value = prefill.method || '';
+      document.getElementById('r-protocol').value = prefill.protocol || '';
+    }
+    document.getElementById('rule-modal').classList.add('open');
+    document.getElementById('r-id').focus();
+  }
+
+  function editRule(r) {
+    _editingRuleID = r.id;
+    document.getElementById('rule-modal-title').textContent = 'Edit Rule';
+    document.getElementById('r-id').value = r.id;
+    document.getElementById('r-id').disabled = true;
+    document.getElementById('r-name').value = r.name || '';
+    document.getElementById('r-protocol').value = r.match?.protocol || '';
+    document.getElementById('r-method').value = r.match?.method || '';
+    document.getElementById('r-path').value = r.match?.path || '';
+    const b = r.buckets?.[0] || {};
+    document.getElementById('r-sim-id').value = b.simulation_id || '';
+    document.getElementById('r-weight').value = b.weight ?? 100;
+    document.getElementById('rule-modal').classList.add('open');
+  }
+
+  function closeRuleModal() {
+    document.getElementById('rule-modal').classList.remove('open');
+  }
+
+  async function saveRule() {
+    const id = _editingRuleID || document.getElementById('r-id').value.trim();
+    if (!id) { alert('Rule ID is required.'); return; }
+    const simID = document.getElementById('r-sim-id').value.trim();
+    if (!simID) { alert('Simulation ID is required.'); return; }
+    const rule = {
+      id,
+      name: document.getElementById('r-name').value.trim(),
+      match: {
+        protocol: document.getElementById('r-protocol').value,
+        method:   document.getElementById('r-method').value,
+        path:     document.getElementById('r-path').value.trim(),
+        headers: {}, query: {}
+      },
+      buckets: [{ weight: parseInt(document.getElementById('r-weight').value) || 100, action: 'simulate', simulation_id: simID }]
+    };
+    const method = _editingRuleID ? 'PUT' : 'POST';
+    const url    = _editingRuleID ? `/api/rules/${_editingRuleID}` : '/api/rules';
+    const res = await fetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(rule) });
+    if (!res.ok) { alert('Error: ' + (await res.json()).error); return; }
+    closeRuleModal();
+    loadRules();
+  }
+
+  async function deleteRule(id) {
+    if (!confirm(`Delete rule "${id}"? This cannot be undone.`)) return;
+    await fetch(`/api/rules/${id}`, { method: 'DELETE' });
+    loadRules();
+  }
+
+  // ── Simulations ────────────────────────────────────────────────────────────
+  async function loadSims() {
+    try {
+      const sims = await fetch('/api/simulations').then(r => r.json());
+      const tbody = document.getElementById('sims-tbody');
+      if (!sims || sims.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" class="empty">No simulations. Click "+ Add Simulation" to create one.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = sims.map(s => `
+        <tr>
+          <td><span class="badge">${s.id}</span></td>
+          <td class="mono">${s.protocol || 'http'}</td>
+          <td>${s.response?.status ?? '—'}</td>
+          <td style="text-align:right">
+            <button class="btn-sm btn-danger" onclick="deleteSim('${s.id}')">Delete</button>
+          </td>
+        </tr>`).join('');
+    } catch (e) {
+      console.error('loadSims:', e);
+    }
+  }
+
+  function openSimModal() { document.getElementById('sim-modal').classList.add('open'); }
+  function closeSimModal() { document.getElementById('sim-modal').classList.remove('open'); }
+
+  async function saveSim() {
+    let sim;
+    try { sim = JSON.parse(document.getElementById('sim-json').value); }
+    catch(e) { alert('Invalid JSON: ' + e.message); return; }
+    const res = await fetch('/api/simulations', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(sim) });
+    if (!res.ok) { alert('Error: ' + (await res.json()).error); return; }
+    closeSimModal();
+    loadSims();
+  }
+
+  async function deleteSim(id) {
+    if (!confirm(`Delete simulation "${id}"?`)) return;
+    await fetch(`/api/simulations/${id}`, { method: 'DELETE' });
+    loadSims();
+  }
+
+  // ── Metrics (SSE) ──────────────────────────────────────────────────────────
+  function connectMetrics() {
+    const es = new EventSource('/api/metrics/stream');
+    es.onmessage = e => {
+      try {
+        const snap = JSON.parse(e.data);
+        const matched = snap.total_requests - snap.misses;
+        document.getElementById('m-total').textContent   = snap.total_requests;
+        document.getElementById('m-matched').textContent = matched;
+        document.getElementById('m-misses').textContent  = snap.misses;
+        renderBars(snap.rules || []);
+      } catch(_) {}
+    };
+    es.onerror = () => {
+      es.close();
+      setTimeout(connectMetrics, 3000); // reconnect after 3s
+    };
+  }
+
+  function renderBars(rules) {
+    const el = document.getElementById('metrics-bars');
+    if (rules.length === 0) {
+      el.innerHTML = '<p class="empty">No requests recorded yet.</p>';
+      return;
+    }
+    const maxHits = Math.max(...rules.map(r => r.hits), 1);
+    el.innerHTML = rules
+      .sort((a, b) => b.hits - a.hits)
+      .map(r => `
+        <div class="bar-row">
+          <span class="bar-label" title="${r.rule_name || r.rule_id}">${r.rule_name || r.rule_id}</span>
+          <div class="bar-bg"><div class="bar-fill" style="width:${(r.hits / maxHits * 100).toFixed(1)}%"></div></div>
+          <span class="bar-meta">${r.hits} hits · p95 ${r.p95_ms.toFixed(0)}ms</span>
+        </div>`).join('');
+  }
+
+  // ── Unmatched ──────────────────────────────────────────────────────────────
+  async function loadUnmatched() {
+    try {
+      const items = await fetch('/api/unmatched').then(r => r.json());
+      const tbody = document.getElementById('unmatched-tbody');
+      if (!items || items.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="empty">No unmatched requests captured yet.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = items.slice().reverse().map(r => `
+        <tr>
+          <td style="color:var(--muted);font-size:0.75rem;white-space:nowrap">${new Date(r.at).toLocaleTimeString()}</td>
+          <td class="mono">${r.protocol || 'http'}</td>
+          <td><span class="method-badge">${r.method}</span></td>
+          <td class="mono">${r.path}</td>
+          <td style="text-align:right">
+            <button class="btn-sm btn-primary" onclick='openRuleModal({method:"${r.method}",path:"${r.path}",protocol:"${r.protocol}"})'>Create Rule</button>
+          </td>
+        </tr>`).join('');
+    } catch (e) {
+      console.error('loadUnmatched:', e);
+    }
+  }
+
+  async function clearUnmatched() {
+    if (!confirm('Clear all captured unmatched requests?')) return;
+    await fetch('/api/unmatched', { method: 'DELETE' });
+    loadUnmatched();
+  }
+
+  // ── Close modal on backdrop click ─────────────────────────────────────────
+  document.querySelectorAll('.modal-overlay').forEach(overlay => {
+    overlay.addEventListener('click', e => {
+      if (e.target === overlay) overlay.classList.remove('open');
+    });
+  });
+
+  // ── Close modal on Escape ─────────────────────────────────────────────────
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') document.querySelectorAll('.modal-overlay.open').forEach(m => m.classList.remove('open'));
+  });
+
+  // ── Init ───────────────────────────────────────────────────────────────────
+  loadRules();
+  loadSims();
+  connectMetrics();
+</script>
+</body>
+</html>
