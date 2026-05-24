@@ -266,32 +266,41 @@
   }
 
   async function saveRule() {
-    const id = _editingRuleID || document.getElementById('r-id').value.trim();
-    if (!id) { alert('Rule ID is required.'); return; }
-    const simID = document.getElementById('r-sim-id').value.trim();
-    if (!simID) { alert('Simulation ID is required.'); return; }
-    const rule = {
-      id,
-      name: document.getElementById('r-name').value.trim(),
-      match: {
-        protocol: document.getElementById('r-protocol').value,
-        method:   document.getElementById('r-method').value,
-        path:     document.getElementById('r-path').value.trim(),
-        headers: {}, query: {}
-      },
-      buckets: [{ weight: parseInt(document.getElementById('r-weight').value) || 100, action: 'simulate', simulation_id: simID }]
-    };
-    const method = _editingRuleID ? 'PUT' : 'POST';
-    const url    = _editingRuleID ? `/api/rules/${_editingRuleID}` : '/api/rules';
-    const res = await fetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(rule) });
-    if (!res.ok) { alert('Error: ' + (await res.json()).error); return; }
-    closeRuleModal();
-    loadRules();
+    try {
+      const id = _editingRuleID || document.getElementById('r-id').value.trim();
+      if (!id) { alert('Rule ID is required.'); return; }
+      const simID = document.getElementById('r-sim-id').value.trim();
+      if (!simID) { alert('Simulation ID is required.'); return; }
+      const rule = {
+        id,
+        name: document.getElementById('r-name').value.trim(),
+        match: {
+          protocol: document.getElementById('r-protocol').value,
+          method:   document.getElementById('r-method').value,
+          path:     document.getElementById('r-path').value.trim(),
+          headers: {}, query: {}
+        },
+        buckets: [{ weight: parseInt(document.getElementById('r-weight').value) || 100, action: 'simulate', simulation_id: simID }]
+      };
+      const method = _editingRuleID ? 'PUT' : 'POST';
+      const url    = _editingRuleID ? `/api/rules/${_editingRuleID}` : '/api/rules';
+      const res = await fetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(rule) });
+      if (!res.ok) {
+        const msg = await res.json().catch(() => ({ error: 'Unknown server error' }));
+        alert('Error: ' + msg.error);
+        return;
+      }
+      closeRuleModal();
+      loadRules();
+    } catch (e) {
+      alert('Error saving rule: ' + e.message);
+    }
   }
 
   async function deleteRule(id) {
     if (!confirm(`Delete rule "${id}"? This cannot be undone.`)) return;
-    await fetch(`/api/rules/${id}`, { method: 'DELETE' });
+    const res = await fetch('/api/rules/' + id, { method: 'DELETE' });
+    if (!res.ok) { alert('Failed to delete rule'); return; }
     loadRules();
   }
 
@@ -322,18 +331,27 @@
   function closeSimModal() { document.getElementById('sim-modal').classList.remove('open'); }
 
   async function saveSim() {
-    let sim;
-    try { sim = JSON.parse(document.getElementById('sim-json').value); }
-    catch(e) { alert('Invalid JSON: ' + e.message); return; }
-    const res = await fetch('/api/simulations', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(sim) });
-    if (!res.ok) { alert('Error: ' + (await res.json()).error); return; }
-    closeSimModal();
-    loadSims();
+    try {
+      let sim;
+      try { sim = JSON.parse(document.getElementById('sim-json').value); }
+      catch(e) { alert('Invalid JSON: ' + e.message); return; }
+      const res = await fetch('/api/simulations', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(sim) });
+      if (!res.ok) {
+        const msg = await res.json().catch(() => ({ error: 'Unknown server error' }));
+        alert('Error: ' + msg.error);
+        return;
+      }
+      closeSimModal();
+      loadSims();
+    } catch (e) {
+      alert('Error saving simulation: ' + e.message);
+    }
   }
 
   async function deleteSim(id) {
     if (!confirm(`Delete simulation "${id}"?`)) return;
-    await fetch(`/api/simulations/${id}`, { method: 'DELETE' });
+    const res = await fetch('/api/simulations/' + id, { method: 'DELETE' });
+    if (!res.ok) { alert('Failed to delete simulation'); return; }
     loadSims();
   }
 
@@ -369,7 +387,7 @@
         <div class="bar-row">
           <span class="bar-label" title="${r.rule_name || r.rule_id}">${r.rule_name || r.rule_id}</span>
           <div class="bar-bg"><div class="bar-fill" style="width:${(r.hits / maxHits * 100).toFixed(1)}%"></div></div>
-          <span class="bar-meta">${r.hits} hits · p95 ${r.p95_ms.toFixed(0)}ms</span>
+          <span class="bar-meta">${r.hits} hits · p95 ${r.p95_ms != null ? r.p95_ms.toFixed(0) : '—'}ms</span>
         </div>`).join('');
   }
 
