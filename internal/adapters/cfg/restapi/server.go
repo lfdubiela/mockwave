@@ -2,28 +2,45 @@ package restapi
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/mockwave/mockwave/domain"
+	"github.com/mockwave/mockwave/internal/metrics"
+	"github.com/mockwave/mockwave/internal/unmatched"
 	"github.com/mockwave/mockwave/store"
 )
 
 type OnReload func()
 
-func NewMux(store store.DataStore, onReload OnReload) *http.ServeMux {
+// NewMux builds the admin HTTP mux.
+// collector, buffer, and broker may be nil — those endpoints return empty responses.
+func NewMux(store store.DataStore, onReload OnReload, collector *metrics.Collector, buffer *unmatched.Buffer, broker *metrics.Broker) *http.ServeMux {
 	mux := http.NewServeMux()
-	api := &adminAPI{store: store, onReload: onReload}
+	api := &adminAPI{
+		store:     store,
+		onReload:  onReload,
+		collector: collector,
+		buffer:    buffer,
+		broker:    broker,
+	}
 	mux.HandleFunc("/api/health", api.health)
 	mux.HandleFunc("/api/rules", api.rules)
 	mux.HandleFunc("/api/rules/", api.ruleByID)
 	mux.HandleFunc("/api/simulations", api.simulations)
 	mux.HandleFunc("/api/simulations/", api.simulationByID)
+	mux.HandleFunc("/api/metrics", api.metricsSnapshot)
+	mux.HandleFunc("/api/metrics/stream", api.metricsStream)
+	mux.HandleFunc("/api/unmatched", api.unmatchedHandler)
 	return mux
 }
 
 type adminAPI struct {
-	store    store.DataStore
-	onReload OnReload
+	store     store.DataStore
+	onReload  OnReload
+	collector *metrics.Collector  // may be nil
+	buffer    *unmatched.Buffer   // may be nil
+	broker    *metrics.Broker     // may be nil
 }
 
 func (a *adminAPI) reload() {
@@ -134,6 +151,71 @@ func (a *adminAPI) simulationByID(w http.ResponseWriter, r *http.Request) {
 		}
 		a.reload()
 		w.WriteHeader(204)
+	default:
+		writeError(w, 405, "method not allowed")
+	}
+}
+
+func (a *adminAPI) metricsSnapshot(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, 405, "method not allowed")
+		return
+	}
+	if a.collector == nil {
+		writeJSON(w, 200, metrics.Snapshot{})
+		return
+	}
+	writeJSON(w, 200, a.collector.Snapshot())
+}
+
+func (a *adminAPI) metricsStream(w http.ResponseWriter, r *http.Request) {
+	if a.broker == nil {
+		http.Error(w, "metrics streaming not configured", http.StatusServiceUnavailable)
+		return
+	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "SSE not supported by this server", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	ch, unsub := a.broker.Subscribe()
+	defer unsub()
+
+	for {
+		select {
+		case data, ok := <-ch:
+			if !ok {
+				return
+			}
+			fmt.Fprintf(w, "data: %s\n\n", data)
+			flusher.Flush()
+		case <-r.Context().Done():
+			return
+		}
+	}
+}
+
+func (a *adminAPI) unmatchedHandler(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		if a.buffer == nil {
+			writeJSON(w, 200, []unmatched.Request{})
+			return
+		}
+		items := a.buffer.List()
+		if items == nil {
+			items = []unmatched.Request{}
+		}
+		writeJSON(w, 200, items)
+	case http.MethodDelete:
+		if a.buffer != nil {
+			a.buffer.Clear()
+		}
+		w.WriteHeader(http.StatusNoContent)
 	default:
 		writeError(w, 405, "method not allowed")
 	}
