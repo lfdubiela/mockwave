@@ -191,6 +191,11 @@
 </div>
 
 <script>
+  // ── HTML escaping ──────────────────────────────────────────────────────────
+  function escapeHtml(s) {
+    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
   // ── Tab switching ──────────────────────────────────────────────────────────
   document.querySelectorAll('.tab').forEach(tab => {
     tab.addEventListener('click', () => {
@@ -200,6 +205,9 @@
       document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
       if (tab.dataset.tab === 'rules') loadRules();
       if (tab.dataset.tab === 'simulations') loadSims();
+      if (tab.dataset.tab === 'dashboard') {
+        document.getElementById('unmatched-badge').style.display = 'none';
+      }
     });
   });
 
@@ -435,7 +443,8 @@
       countEl.textContent = `(${items.length})`;
 
       // Show badge when new unmatched arrive and user is not on dashboard
-      if (items.length > _prevUnmatchedCount) {
+      const dashActive = document.querySelector('.tab[data-tab="dashboard"]')?.classList.contains('active');
+      if (items.length > _prevUnmatchedCount && !dashActive) {
         badge.style.display = 'inline';
         badge.textContent = items.length;
       }
@@ -444,9 +453,9 @@
       tbody.innerHTML = _unmatchedList.map((r, i) => `
         <tr>
           <td style="color:var(--muted);font-size:0.75rem;white-space:nowrap">${new Date(r.at).toLocaleTimeString()}</td>
-          <td class="mono">${r.protocol || 'http'}</td>
-          <td><span class="method-badge">${r.method}</span></td>
-          <td class="mono">${r.path}</td>
+          <td class="mono">${escapeHtml(r.protocol || 'http')}</td>
+          <td><span class="method-badge">${escapeHtml(r.method)}</span></td>
+          <td class="mono">${escapeHtml(r.path)}</td>
           <td style="text-align:right">
             <button class="btn-sm btn-primary" onclick="prefillFromUnmatched(${i})">Create Rule</button>
           </td>
