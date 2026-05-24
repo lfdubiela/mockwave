@@ -32,6 +32,7 @@ func NewMux(store store.DataStore, onReload OnReload, collector *metrics.Collect
 	mux.HandleFunc("/api/metrics", api.metricsSnapshot)
 	mux.HandleFunc("/api/metrics/stream", api.metricsStream)
 	mux.HandleFunc("/api/unmatched", api.unmatchedHandler)
+	serveUI(mux)
 	return mux
 }
 

@@ -281,3 +281,12 @@ func TestAdminAPI_MetricsMethodNotAllowed(t *testing.T) {
 	mux.ServeHTTP(w, req)
 	assert.Equal(t, 405, w.Code)
 }
+
+func TestAdminAPI_ServesUI(t *testing.T) {
+	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	assert.Equal(t, 200, w.Code)
+	assert.Contains(t, w.Body.String(), "Mockwave Admin")
+}
