@@ -314,5 +314,11 @@ func TestAdminAPI_ServesUI(t *testing.T) {
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	assert.Equal(t, 200, w.Code)
-	assert.Contains(t, w.Body.String(), "Mockwave Admin")
+	body := w.Body.String()
+	assert.Contains(t, body, "Mockwave Admin")
+	// Phase 6 elements
+	assert.Contains(t, body, "data-tab=\"dashboard\"")
+	assert.Contains(t, body, "Unmatched Requests")
+	assert.Contains(t, body, "buckets-container")
+	assert.Contains(t, body, "crypto.randomUUID")
 }
