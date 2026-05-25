@@ -1,0 +1,173 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  # ── Job 1: Create the GitHub Release ──────────────────────────────────────
+  create-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --repo "${{ github.repository }}" \
+            --title "Mockwave ${{ github.ref_name }}" \
+            --generate-notes
+
+  # ── Job 2: Build binaries (matrix) ────────────────────────────────────────
+  build:
+    needs: create-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    strategy:
+      matrix:
+        include:
+          - goos: darwin
+            goarch: amd64
+            name: mockwave-darwin-amd64
+          - goos: darwin
+            goarch: arm64
+            name: mockwave-darwin-arm64
+          - goos: linux
+            goarch: amd64
+            name: mockwave-linux-amd64
+          - goos: linux
+            goarch: arm64
+            name: mockwave-linux-arm64
+          - goos: windows
+            goarch: amd64
+            name: mockwave-windows-amd64.exe
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build binary
+        env:
+          CGO_ENABLED: "0"
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          go build \
+            -ldflags="-s -w -X main.version=${{ github.ref_name }}" \
+            -o "${{ matrix.name }}" \
+            ./cmd/mockwave/
+
+      - name: Compute SHA256
+        run: |
+          sha256sum "${{ matrix.name }}" | awk '{print $1}' > "${{ matrix.name }}.sha256"
+          echo "SHA256: $(cat ${{ matrix.name }}.sha256)"
+
+      - name: Upload binary and SHA256 to Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ github.ref_name }}" \
+            "${{ matrix.name }}" \
+            "${{ matrix.name }}.sha256" \
+            --repo "${{ github.repository }}"
+
+  # ── Job 3: Update Homebrew tap ─────────────────────────────────────────────
+  update-tap:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download SHA256 sidecar files
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download "${{ github.ref_name }}" \
+            --repo "${{ github.repository }}" \
+            --pattern "*.sha256"
+          ls -la *.sha256
+
+      - name: Read SHA256 values
+        id: sha
+        run: |
+          echo "darwin_amd64=$(cat mockwave-darwin-amd64.sha256)" >> $GITHUB_OUTPUT
+          echo "darwin_arm64=$(cat mockwave-darwin-arm64.sha256)" >> $GITHUB_OUTPUT
+          echo "linux_amd64=$(cat mockwave-linux-amd64.sha256)"   >> $GITHUB_OUTPUT
+          echo "linux_arm64=$(cat mockwave-linux-arm64.sha256)"   >> $GITHUB_OUTPUT
+
+      - name: Checkout homebrew-mockwave tap
+        uses: actions/checkout@v4
+        with:
+          repository: lfdubiela/homebrew-mockwave
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-mockwave
+
+      - name: Render updated formula
+        run: |
+          VERSION="${{ github.ref_name }}"
+          SEMVER="${VERSION#v}"
+
+          cat > homebrew-mockwave/Formula/mockwave.rb << FORMULA
+          class Mockwave < Formula
+            desc "Open-source multi-protocol mock server (HTTP, GraphQL, SOAP, gRPC)"
+            homepage "https://github.com/lfdubiela/mockwave"
+            version "${SEMVER}"
+            license "MIT"
+
+            on_macos do
+              if Hardware::CPU.arm?
+                url "https://github.com/lfdubiela/mockwave/releases/download/${VERSION}/mockwave-darwin-arm64"
+                sha256 "${{ steps.sha.outputs.darwin_arm64 }}"
+              else
+                url "https://github.com/lfdubiela/mockwave/releases/download/${VERSION}/mockwave-darwin-amd64"
+                sha256 "${{ steps.sha.outputs.darwin_amd64 }}"
+              end
+            end
+
+            on_linux do
+              if Hardware::CPU.arm?
+                url "https://github.com/lfdubiela/mockwave/releases/download/${VERSION}/mockwave-linux-arm64"
+                sha256 "${{ steps.sha.outputs.linux_arm64 }}"
+              else
+                url "https://github.com/lfdubiela/mockwave/releases/download/${VERSION}/mockwave-linux-amd64"
+                sha256 "${{ steps.sha.outputs.linux_amd64 }}"
+              end
+            end
+
+            def install
+              bin.install Dir["mockwave*"].reject { |f| f.end_with?(".sha256") }.first => "mockwave"
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/mockwave version")
+            end
+          end
+          FORMULA
+
+      - name: Commit and open PR
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          VERSION="${{ github.ref_name }}"
+          BRANCH="update-${VERSION}"
+
+          cd homebrew-mockwave
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git checkout -b "${BRANCH}"
+          git add Formula/mockwave.rb
+          git commit -m "chore: update formula to ${VERSION}"
+          git push origin "${BRANCH}"
+
+          gh pr create \
+            --repo lfdubiela/homebrew-mockwave \
+            --title "Update formula to ${VERSION}" \
+            --body "Automated update triggered by Mockwave ${VERSION} release." \
+            --base main \
+            --head "${BRANCH}"
