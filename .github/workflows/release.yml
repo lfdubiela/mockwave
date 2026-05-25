@@ -102,11 +102,20 @@ jobs:
           echo "linux_amd64=$(cat mockwave-linux-amd64.sha256)"   >> $GITHUB_OUTPUT
           echo "linux_arm64=$(cat mockwave-linux-arm64.sha256)"   >> $GITHUB_OUTPUT
 
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: lfdubiela
+          repositories: homebrew-mockwave
+
       - name: Checkout homebrew-mockwave tap
         uses: actions/checkout@v4
         with:
           repository: lfdubiela/homebrew-mockwave
-          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
           path: homebrew-mockwave
 
       - name: Render updated formula
@@ -153,7 +162,7 @@ jobs:
 
       - name: Commit and open PR
         env:
-          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           VERSION="${{ github.ref_name }}"
           BRANCH="update-${VERSION}"
