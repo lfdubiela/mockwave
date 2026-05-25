@@ -1,4 +1,4 @@
-.PHONY: test coverage build lint
+.PHONY: test coverage build lint release-local
 
 test:
 	go test ./... -race
@@ -13,3 +13,15 @@ build:
 
 lint:
 	golangci-lint run ./...
+
+# Build all release targets locally into dist/ (mirrors what CI does)
+release-local:
+	mkdir -p dist
+	GOOS=darwin  GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=$(shell git describe --tags --always)" -o dist/mockwave-darwin-amd64  ./cmd/mockwave/
+	GOOS=darwin  GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=$(shell git describe --tags --always)" -o dist/mockwave-darwin-arm64  ./cmd/mockwave/
+	GOOS=linux   GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=$(shell git describe --tags --always)" -o dist/mockwave-linux-amd64   ./cmd/mockwave/
+	GOOS=linux   GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=$(shell git describe --tags --always)" -o dist/mockwave-linux-arm64   ./cmd/mockwave/
+	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=$(shell git describe --tags --always)" -o dist/mockwave-windows-amd64.exe ./cmd/mockwave/
+	shasum -a 256 dist/* > dist/checksums.txt
+	@echo "✓ All binaries built in dist/"
+	@cat dist/checksums.txt
