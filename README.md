@@ -21,13 +21,17 @@
 
 ## Quick Start
 
-### Binary
+### Homebrew (macOS / Linux)
 
 ```bash
-# Download the latest release binary (replace OS/ARCH as needed)
-curl -Lo mockwave https://github.com/lfdubiela/mockwave/releases/download/v0.1.0/mockwave-linux-amd64
-chmod +x mockwave
+brew tap lfdubiela/mockwave
+brew install mockwave
 
+# Verify installation
+mockwave version
+```
+
+```bash
 # Create a minimal config
 cat > config.json <<'EOF'
 {
@@ -49,8 +53,11 @@ cat > config.json <<'EOF'
 }
 EOF
 
-# Start the server
-./mockwave start -f config.json
+# Start on default ports (mock :8080, admin :9090)
+mockwave start -f config.json
+
+# Custom ports
+mockwave start -f config.json --port 3000 --admin-port 3001
 ```
 
 ```bash
@@ -60,6 +67,22 @@ curl http://localhost:8080/hello
 
 # Open the admin UI
 open http://localhost:9090
+```
+
+```bash
+# Upgrade
+brew upgrade mockwave
+```
+
+### Binary
+
+```bash
+# Download the latest release binary (replace OS/ARCH as needed)
+curl -Lo mockwave https://github.com/lfdubiela/mockwave/releases/download/v0.2.0/mockwave-linux-amd64
+chmod +x mockwave
+
+# Start the server
+./mockwave start -f config.json
 ```
 
 ### Docker
