@@ -75,12 +75,15 @@ jobs:
           gh release upload "${{ github.ref_name }}" \
             "${{ matrix.name }}" \
             "${{ matrix.name }}.sha256" \
-            --repo "${{ github.repository }}"
+            --repo "${{ github.repository }}" \
+            --clobber
 
   # ── Job 3: Update Homebrew tap ─────────────────────────────────────────────
   update-tap:
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: read   # gh release download only
     steps:
       - name: Download SHA256 sidecar files
         env:
