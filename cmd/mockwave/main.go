@@ -222,10 +222,13 @@ func validateCmd() *cobra.Command {
 	}
 }
 
+// version is set at build time via -ldflags "-X main.version=vX.Y.Z"
+var version = "dev"
+
 func versionCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
 		Short: "Print version",
-		Run:   func(cmd *cobra.Command, args []string) { fmt.Println("mockwave v0.1.0") },
+		Run:   func(cmd *cobra.Command, args []string) { fmt.Println("mockwave " + version) },
 	}
 }
