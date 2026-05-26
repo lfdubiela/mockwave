@@ -1,0 +1,389 @@
+openapi: "3.0.3"
+info:
+  title: Mockwave Admin API
+  version: "0.2.0"
+  description: >
+    HTTP API for managing rules, simulations, metrics, and unmatched requests
+    in a Mockwave instance. All endpoints are served on the admin port (default 9090).
+
+servers:
+  - url: http://localhost:9090
+    description: Local instance
+
+paths:
+  /api/health:
+    get:
+      summary: Health check
+      operationId: health
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  /api/rules:
+    get:
+      summary: List all rules
+      operationId: listRules
+      responses:
+        "200":
+          description: Array of rules
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Rule"
+    post:
+      summary: Create a rule
+      operationId: createRule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Rule"
+      responses:
+        "201":
+          description: Rule created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Rule"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /api/rules/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: Get a rule by ID
+      operationId: getRule
+      responses:
+        "200":
+          description: Rule found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Rule"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      summary: Update (replace) a rule
+      operationId: updateRule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Rule"
+      responses:
+        "200":
+          description: Rule updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Rule"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+    delete:
+      summary: Delete a rule
+      operationId: deleteRule
+      responses:
+        "204":
+          description: Rule deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/simulations:
+    get:
+      summary: List all simulations
+      operationId: listSimulations
+      responses:
+        "200":
+          description: Array of simulations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Simulation"
+    post:
+      summary: Create a simulation
+      operationId: createSimulation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Simulation"
+      responses:
+        "201":
+          description: Simulation created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Simulation"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/simulations/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: Get a simulation by ID
+      operationId: getSimulation
+      responses:
+        "200":
+          description: Simulation found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Simulation"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      summary: Update (replace) a simulation
+      operationId: updateSimulation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Simulation"
+      responses:
+        "200":
+          description: Simulation updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Simulation"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    delete:
+      summary: Delete a simulation
+      operationId: deleteSimulation
+      responses:
+        "204":
+          description: Simulation deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/metrics:
+    get:
+      summary: Current metrics snapshot
+      operationId: getMetrics
+      responses:
+        "200":
+          description: Metrics snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MetricsSnapshot"
+
+  /api/metrics/stream:
+    get:
+      summary: SSE stream of metrics (one event per second)
+      operationId: streamMetrics
+      responses:
+        "200":
+          description: SSE stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+  /api/unmatched:
+    get:
+      summary: List captured unmatched requests
+      operationId: listUnmatched
+      responses:
+        "200":
+          description: Array of unmatched requests
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+    delete:
+      summary: Clear unmatched request buffer
+      operationId: clearUnmatched
+      responses:
+        "204":
+          description: Buffer cleared
+
+  /api/reload:
+    post:
+      summary: Trigger hot-reload from store
+      operationId: reload
+      responses:
+        "204":
+          description: Reload triggered
+
+components:
+  schemas:
+    MatchCriteria:
+      type: object
+      properties:
+        protocol:
+          type: string
+          enum: [http, graphql, soap, grpc]
+        method:
+          type: string
+          example: GET
+        path:
+          type: string
+          example: /users/*
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+        query:
+          type: object
+          additionalProperties:
+            type: string
+        body:
+          type: object
+          additionalProperties:
+            type: string
+
+    WeightedBucket:
+      type: object
+      required: [weight, action]
+      properties:
+        weight:
+          type: integer
+          minimum: 1
+        action:
+          type: string
+          enum: [simulate, forward]
+        simulation_id:
+          type: string
+
+    Rule:
+      type: object
+      required: [id, match, buckets]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        match:
+          $ref: "#/components/schemas/MatchCriteria"
+        buckets:
+          type: array
+          items:
+            $ref: "#/components/schemas/WeightedBucket"
+        forward_url:
+          type: string
+
+    HTTPResponse:
+      type: object
+      properties:
+        status:
+          type: integer
+          example: 200
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+        body:
+          description: Any JSON value
+        delay_ms:
+          type: integer
+
+    Simulation:
+      type: object
+      required: [id, protocol]
+      properties:
+        id:
+          type: string
+        protocol:
+          type: string
+          enum: [http, graphql, soap, grpc]
+        response:
+          $ref: "#/components/schemas/HTTPResponse"
+        script:
+          type: string
+          description: Optional JavaScript (goja) run on every matched request
+        soap_envelope:
+          type: string
+        grpc_message:
+          type: string
+        grpc_status:
+          type: integer
+
+    RuleMetric:
+      type: object
+      properties:
+        rule_id:
+          type: string
+        rule_name:
+          type: string
+        hits:
+          type: integer
+        p95_ms:
+          type: number
+
+    MetricsSnapshot:
+      type: object
+      properties:
+        at:
+          type: string
+          format: date-time
+        total_requests:
+          type: integer
+        misses:
+          type: integer
+        rules:
+          type: array
+          items:
+            $ref: "#/components/schemas/RuleMetric"
+
+  responses:
+    BadRequest:
+      description: Invalid JSON or request body
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+    UnprocessableEntity:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string

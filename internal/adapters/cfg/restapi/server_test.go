@@ -403,3 +403,15 @@ func TestAdminAPI_PostReload(t *testing.T) {
 	assert.Equal(t, 204, w.Code)
 	assert.True(t, reloaded)
 }
+
+func TestAdminAPI_OpenAPI(t *testing.T) {
+	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/openapi.json", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	assert.Equal(t, 200, w.Code)
+	assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
+	body := w.Body.String()
+	assert.Contains(t, body, "openapi")
+	assert.Contains(t, body, "/api/rules")
+}

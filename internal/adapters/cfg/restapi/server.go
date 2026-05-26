@@ -9,6 +9,7 @@ import (
 	"github.com/mockwave/mockwave/internal/metrics"
 	"github.com/mockwave/mockwave/internal/unmatched"
 	"github.com/mockwave/mockwave/store"
+	"gopkg.in/yaml.v3"
 )
 
 type OnReload func()
@@ -33,6 +34,7 @@ func NewMux(store store.DataStore, onReload OnReload, collector *metrics.Collect
 	mux.HandleFunc("/api/metrics", api.metricsSnapshot)
 	mux.HandleFunc("/api/metrics/stream", api.metricsStream)
 	mux.HandleFunc("/api/unmatched", api.unmatchedHandler)
+	mux.HandleFunc("/api/openapi.json", api.openapiHandler)
 	serveUI(mux)
 	return mux
 }
@@ -267,6 +269,19 @@ func (a *adminAPI) unmatchedHandler(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeError(w, 405, "method not allowed")
 	}
+}
+
+func (a *adminAPI) openapiHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, 405, "method not allowed")
+		return
+	}
+	var v any
+	if err := yaml.Unmarshal(openapiYAML, &v); err != nil {
+		writeError(w, 500, "openapi parse error: "+err.Error())
+		return
+	}
+	writeJSON(w, 200, v)
 }
 
 func idFromPath(path, prefix string) string {
