@@ -75,6 +75,29 @@ open http://localhost:9090
 brew upgrade mockwave
 ```
 
+### MCP (Claude Code integration)
+
+With Mockwave running, add to `~/.claude/mcp.json` (create if it doesn't exist):
+
+```json
+{
+  "mcpServers": {
+    "mockwave-local": {
+      "command": "mockwave",
+      "args": ["mcp", "--admin-url", "http://localhost:9090"]
+    }
+  }
+}
+```
+
+Then ask Claude Code to do the work:
+
+```
+"Generate mocks from https://petstore3.swagger.io/api/v3/openapi.json"
+"Create a mock for POST /checkout that returns 201 with an order ID"
+"What requests are hitting mockwave but not matching any rule?"
+```
+
 ### Binary
 
 ```bash
