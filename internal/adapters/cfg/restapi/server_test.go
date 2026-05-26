@@ -430,9 +430,12 @@ func TestAdminAPI_MetricsHistory_NilCollector(t *testing.T) {
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	assert.Equal(t, 200, w.Code)
-	var body map[string]interface{}
+	var body struct {
+		Buckets []interface{} `json:"buckets"`
+	}
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&body))
-	assert.Contains(t, body, "buckets")
+	assert.NotNil(t, body.Buckets)  // must be [] not null
+	assert.Empty(t, body.Buckets)
 }
 
 func TestAdminAPI_MetricsHistory_WithCollector(t *testing.T) {
@@ -458,4 +461,12 @@ func TestAdminAPI_MetricsHistory_MethodNotAllowed(t *testing.T) {
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	assert.Equal(t, 405, w.Code)
+}
+
+func TestAdminAPI_ScriptEval_Stub(t *testing.T) {
+	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil, nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/script/eval", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	assert.Equal(t, 503, w.Code)
 }
