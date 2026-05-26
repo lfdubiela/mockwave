@@ -324,12 +324,15 @@ func TestAdminAPI_ServesUI(t *testing.T) {
 	mux.ServeHTTP(w, req)
 	assert.Equal(t, 200, w.Code)
 	body := w.Body.String()
-	assert.Contains(t, body, "Mockwave Admin")
+	assert.Contains(t, body, "⚡ Mockwave")
 	// Phase 6 elements
 	assert.Contains(t, body, "data-tab=\"dashboard\"")
 	assert.Contains(t, body, "Unmatched Requests")
 	assert.Contains(t, body, "buckets-container")
 	assert.Contains(t, body, "crypto.randomUUID")
+	assert.Contains(t, body, "stats-rail")
+	assert.Contains(t, body, "rail-total")
+	assert.Contains(t, body, "main-layout")
 }
 
 func TestAdminAPI_GetRuleByID(t *testing.T) {
