@@ -9,13 +9,10 @@ import (
 	"github.com/mockwave/mockwave/domain"
 )
 
-// jsonResult marshals v as indented JSON and wraps it in a text tool result.
+// jsonResult marshals v and wraps it in a tool result with StructuredContent
+// populated per MCP 2025-03-26 spec.
 func jsonResult(v any) (*mcpsdk.CallToolResult, error) {
-	b, err := json.MarshalIndent(v, "", "  ")
-	if err != nil {
-		return nil, err
-	}
-	return mcpsdk.NewToolResultText(string(b)), nil
+	return mcpsdk.NewToolResultJSON(v)
 }
 
 func stringParam(req mcpsdk.CallToolRequest, name string) (string, error) {
@@ -51,7 +48,7 @@ func handleListRules(c *Client) func(context.Context, mcpsdk.CallToolRequest) (*
 	return func(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 		rules, err := c.ListRules()
 		if err != nil {
-			return nil, err
+			return mcpsdk.NewToolResultError(err.Error()), nil
 		}
 		return jsonResult(rules)
 	}
@@ -61,11 +58,11 @@ func handleGetRule(c *Client) func(context.Context, mcpsdk.CallToolRequest) (*mc
 	return func(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 		id, err := stringParam(req, "id")
 		if err != nil {
-			return nil, err
+			return mcpsdk.NewToolResultError(err.Error()), nil
 		}
 		rule, err := c.GetRule(id)
 		if err != nil {
-			return nil, err
+			return mcpsdk.NewToolResultError(err.Error()), nil
 		}
 		return jsonResult(rule)
 	}
@@ -75,11 +72,11 @@ func handleCreateRule(c *Client) func(context.Context, mcpsdk.CallToolRequest) (
 	return func(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 		var rule domain.Rule
 		if err := jsonParam(req, "rule", &rule); err != nil {
-			return nil, err
+			return mcpsdk.NewToolResultError(err.Error()), nil
 		}
 		out, err := c.CreateRule(rule)
 		if err != nil {
-			return nil, err
+			return mcpsdk.NewToolResultError(err.Error()), nil
 		}
 		return jsonResult(out)
 	}
@@ -89,15 +86,15 @@ func handleUpdateRule(c *Client) func(context.Context, mcpsdk.CallToolRequest) (
 	return func(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 		id, err := stringParam(req, "id")
 		if err != nil {
-			return nil, err
+			return mcpsdk.NewToolResultError(err.Error()), nil
 		}
 		var rule domain.Rule
 		if err := jsonParam(req, "rule", &rule); err != nil {
-			return nil, err
+			return mcpsdk.NewToolResultError(err.Error()), nil
 		}
 		out, err := c.UpdateRule(id, rule)
 		if err != nil {
-			return nil, err
+			return mcpsdk.NewToolResultError(err.Error()), nil
 		}
 		return jsonResult(out)
 	}
@@ -107,10 +104,10 @@ func handleDeleteRule(c *Client) func(context.Context, mcpsdk.CallToolRequest) (
 	return func(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 		id, err := stringParam(req, "id")
 		if err != nil {
-			return nil, err
+			return mcpsdk.NewToolResultError(err.Error()), nil
 		}
 		if err := c.DeleteRule(id); err != nil {
-			return nil, err
+			return mcpsdk.NewToolResultError(err.Error()), nil
 		}
 		return mcpsdk.NewToolResultText("rule " + id + " deleted"), nil
 	}
@@ -122,7 +119,7 @@ func handleListSimulations(c *Client) func(context.Context, mcpsdk.CallToolReque
 	return func(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 		sims, err := c.ListSimulations()
 		if err != nil {
-			return nil, err
+			return mcpsdk.NewToolResultError(err.Error()), nil
 		}
 		return jsonResult(sims)
 	}
@@ -132,11 +129,11 @@ func handleGetSimulation(c *Client) func(context.Context, mcpsdk.CallToolRequest
 	return func(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 		id, err := stringParam(req, "id")
 		if err != nil {
-			return nil, err
+			return mcpsdk.NewToolResultError(err.Error()), nil
 		}
 		sim, err := c.GetSimulation(id)
 		if err != nil {
-			return nil, err
+			return mcpsdk.NewToolResultError(err.Error()), nil
 		}
 		return jsonResult(sim)
 	}
@@ -146,11 +143,11 @@ func handleCreateSimulation(c *Client) func(context.Context, mcpsdk.CallToolRequ
 	return func(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 		var sim domain.Simulation
 		if err := jsonParam(req, "simulation", &sim); err != nil {
-			return nil, err
+			return mcpsdk.NewToolResultError(err.Error()), nil
 		}
 		out, err := c.CreateSimulation(sim)
 		if err != nil {
-			return nil, err
+			return mcpsdk.NewToolResultError(err.Error()), nil
 		}
 		return jsonResult(out)
 	}
@@ -160,15 +157,15 @@ func handleUpdateSimulation(c *Client) func(context.Context, mcpsdk.CallToolRequ
 	return func(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 		id, err := stringParam(req, "id")
 		if err != nil {
-			return nil, err
+			return mcpsdk.NewToolResultError(err.Error()), nil
 		}
 		var sim domain.Simulation
 		if err := jsonParam(req, "simulation", &sim); err != nil {
-			return nil, err
+			return mcpsdk.NewToolResultError(err.Error()), nil
 		}
 		out, err := c.UpdateSimulation(id, sim)
 		if err != nil {
-			return nil, err
+			return mcpsdk.NewToolResultError(err.Error()), nil
 		}
 		return jsonResult(out)
 	}
@@ -178,10 +175,10 @@ func handleDeleteSimulation(c *Client) func(context.Context, mcpsdk.CallToolRequ
 	return func(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 		id, err := stringParam(req, "id")
 		if err != nil {
-			return nil, err
+			return mcpsdk.NewToolResultError(err.Error()), nil
 		}
 		if err := c.DeleteSimulation(id); err != nil {
-			return nil, err
+			return mcpsdk.NewToolResultError(err.Error()), nil
 		}
 		return mcpsdk.NewToolResultText("simulation " + id + " deleted"), nil
 	}
@@ -193,7 +190,7 @@ func handleGetMetrics(c *Client) func(context.Context, mcpsdk.CallToolRequest) (
 	return func(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 		raw, err := c.GetMetrics()
 		if err != nil {
-			return nil, err
+			return mcpsdk.NewToolResultError(err.Error()), nil
 		}
 		return mcpsdk.NewToolResultText(string(raw)), nil
 	}
@@ -203,7 +200,7 @@ func handleListUnmatched(c *Client) func(context.Context, mcpsdk.CallToolRequest
 	return func(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 		raw, err := c.ListUnmatched()
 		if err != nil {
-			return nil, err
+			return mcpsdk.NewToolResultError(err.Error()), nil
 		}
 		return mcpsdk.NewToolResultText(string(raw)), nil
 	}
@@ -212,7 +209,7 @@ func handleListUnmatched(c *Client) func(context.Context, mcpsdk.CallToolRequest
 func handleClearUnmatched(c *Client) func(context.Context, mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	return func(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 		if err := c.ClearUnmatched(); err != nil {
-			return nil, err
+			return mcpsdk.NewToolResultError(err.Error()), nil
 		}
 		return mcpsdk.NewToolResultText("unmatched buffer cleared"), nil
 	}
@@ -221,7 +218,7 @@ func handleClearUnmatched(c *Client) func(context.Context, mcpsdk.CallToolReques
 func handleReload(c *Client) func(context.Context, mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	return func(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 		if err := c.Reload(); err != nil {
-			return nil, err
+			return mcpsdk.NewToolResultError(err.Error()), nil
 		}
 		return mcpsdk.NewToolResultText("reload triggered"), nil
 	}
@@ -230,7 +227,7 @@ func handleReload(c *Client) func(context.Context, mcpsdk.CallToolRequest) (*mcp
 func handleHealth(c *Client) func(context.Context, mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	return func(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 		if err := c.Health(); err != nil {
-			return nil, fmt.Errorf("admin API unreachable: %w", err)
+			return mcpsdk.NewToolResultError("admin API unreachable: " + err.Error()), nil
 		}
 		return mcpsdk.NewToolResultText("ok"), nil
 	}
