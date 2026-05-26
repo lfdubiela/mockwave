@@ -300,10 +300,6 @@ func (a *adminAPI) metricsHistory(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]interface{}{"buckets": buckets})
 }
 
-func (a *adminAPI) scriptEval(w http.ResponseWriter, r *http.Request) {
-	writeError(w, 503, "not implemented yet")
-}
-
 func idFromPath(path, prefix string) string {
 	if len(path) > len(prefix) {
 		return path[len(prefix):]
