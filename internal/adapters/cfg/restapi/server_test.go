@@ -415,3 +415,11 @@ func TestAdminAPI_OpenAPI(t *testing.T) {
 	assert.Contains(t, body, "openapi")
 	assert.Contains(t, body, "/api/rules")
 }
+
+func TestAdminAPI_OpenAPI_MethodNotAllowed(t *testing.T) {
+	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/openapi.json", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	assert.Equal(t, 405, w.Code)
+}

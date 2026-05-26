@@ -9,7 +9,6 @@ import (
 	"github.com/mockwave/mockwave/internal/metrics"
 	"github.com/mockwave/mockwave/internal/unmatched"
 	"github.com/mockwave/mockwave/store"
-	"gopkg.in/yaml.v3"
 )
 
 type OnReload func()
@@ -276,12 +275,9 @@ func (a *adminAPI) openapiHandler(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 405, "method not allowed")
 		return
 	}
-	var v any
-	if err := yaml.Unmarshal(openapiYAML, &v); err != nil {
-		writeError(w, 500, "openapi parse error: "+err.Error())
-		return
-	}
-	writeJSON(w, 200, v)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, _ = w.Write(openapiJSON)
 }
 
 func idFromPath(path, prefix string) string {
