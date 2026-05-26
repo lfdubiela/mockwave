@@ -11,3 +11,4 @@ coverage.html
 
 # Go workspace
 vendor/
+cov.out
