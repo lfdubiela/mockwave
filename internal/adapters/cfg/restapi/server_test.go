@@ -336,6 +336,9 @@ func TestAdminAPI_ServesUI(t *testing.T) {
 	assert.Contains(t, body, "req-chart")
 	assert.Contains(t, body, "chart-skeleton")
 	assert.Contains(t, body, "loadChart")
+	assert.Contains(t, body, "runScript")
+	assert.Contains(t, body, "updatePathChips")
+	assert.Contains(t, body, "editor-wrap")
 }
 
 func TestAdminAPI_GetRuleByID(t *testing.T) {

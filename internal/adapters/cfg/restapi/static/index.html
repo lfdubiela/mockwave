@@ -201,7 +201,15 @@
   </div>
   <table>
     <thead><tr><th>ID</th><th>Name</th><th>Protocol</th><th>Method</th><th>Path</th><th>Buckets</th><th></th></tr></thead>
-    <tbody id="rules-tbody"><tr><td colspan="7" class="empty">Loading…</td></tr></tbody>
+    <tbody id="rules-tbody">
+      <tr>
+        <td colspan="7">
+          <div class="sk" style="height:1.5rem;margin:0.4rem 0;border-radius:0.25rem"></div>
+          <div class="sk" style="height:1.5rem;margin:0.4rem 0;border-radius:0.25rem;width:80%"></div>
+          <div class="sk" style="height:1.5rem;margin:0.4rem 0;border-radius:0.25rem;width:65%"></div>
+        </td>
+      </tr>
+    </tbody>
   </table>
 </div>
 
@@ -278,7 +286,8 @@
       </div>
       <div class="form-group" style="flex:2">
         <label>Path (glob: /users/*, /api/**)</label>
-        <input id="r-path" placeholder="/api/users/*">
+        <input id="r-path" placeholder="/api/users/*" oninput="updatePathChips(this.value)">
+        <div class="chip-row" id="path-chips"></div>
       </div>
     </div>
 
@@ -342,9 +351,16 @@
   let _buckets = [];
 
   function defaultBucket() {
-    return { weight: 100, action: 'simulate', simName: '', simStatus: 200,
-             simBody: '{\n  "message": "OK"\n}', simContentType: 'application/json',
-             simDelayMs: 0, simScript: '', existingSimID: null };
+    return {
+      weight: 100, action: 'simulate',
+      simName: '', simStatus: 200,
+      simBody: '{\n  "message": "OK"\n}',
+      simContentType: 'application/json',
+      simDelayMs: 0,
+      simScript: '',
+      bodyType: 'json',
+      existingSimID: null
+    };
   }
 
   function addBucket() {
@@ -416,14 +432,90 @@
           </div>
         </div>
         <div class="form-group">
-          <label>Response Body (JSON)</label>
-          <textarea rows="3" oninput="_buckets[${i}].simBody=this.value">${escapeHtml(b.simBody)}</textarea>
-        </div>
-        <div class="form-group">
-          <label>Script (JS, optional) — return { body: {…} } to override body</label>
-          <textarea rows="2" placeholder="// return { body: { id: request.path[1] } };" oninput="_buckets[${i}].simScript=this.value">${escapeHtml(b.simScript)}</textarea>
+          <label>Body Type</label>
+          <div class="body-type-toggle">
+            <button type="button" class="${b.bodyType !== 'script' ? 'active' : ''}"
+              onclick="_buckets[${i}].bodyType='json';renderBuckets()">JSON</button>
+            <button type="button" class="${b.bodyType === 'script' ? 'active' : ''}"
+              onclick="_buckets[${i}].bodyType='script';renderBuckets()">JS Script</button>
+          </div>
+          ${b.bodyType === 'script' ? renderScriptEditor(i, b.simScript) : `
+            <textarea rows="5" oninput="_buckets[${i}].simBody=this.value">${escapeHtml(b.simBody || '')}</textarea>
+          `}
         </div>` : ''}
       </div>`).join('');
+  }
+
+  // ── Script editor ────────────────────────────────────────────────────────────
+  function renderScriptEditor(bucketIdx, script) {
+    const defaultScript = '// Write your Goja script here.\n// Available: request.method, request.path, request.headers, request.body\n// Must return a response object.\nreturn { message: "OK" };';
+    const src = script || defaultScript;
+    const escaped = escapeHtml(src);
+    const lineCount = src.split('\n').length;
+    const lineNums = Array.from({length: Math.max(lineCount, 4)}, (_, i) => i + 1).join('<br>');
+    return `
+      <div class="editor-wrap" id="editor-wrap-${bucketIdx}">
+        <div class="editor-toolbar">
+          <button type="button" class="btn-ghost btn-sm" onclick="formatScript(${bucketIdx})">⟲ Format</button>
+          <button type="button" class="btn-ghost btn-sm" onclick="runScript(${bucketIdx})">▶ Run</button>
+          <span class="editor-toolbar-right">Goja ES5+</span>
+        </div>
+        <div class="editor-body">
+          <div class="editor-lines" id="editor-lines-${bucketIdx}">${lineNums}</div>
+          <textarea class="editor-textarea" id="editor-ta-${bucketIdx}"
+            oninput="_buckets[${bucketIdx}].simScript=this.value;syncLines(${bucketIdx})"
+            rows="${Math.max(lineCount, 4)}">${escaped}</textarea>
+        </div>
+        <div class="editor-output" id="editor-out-${bucketIdx}"></div>
+      </div>`;
+  }
+
+  function syncLines(idx) {
+    const ta = document.getElementById('editor-ta-' + idx);
+    const lines = document.getElementById('editor-lines-' + idx);
+    if (!ta || !lines) return;
+    const n = ta.value.split('\n').length;
+    lines.innerHTML = Array.from({length: n}, (_, i) => i + 1).join('<br>');
+    ta.rows = Math.max(n, 4);
+  }
+
+  function formatScript(idx) {
+    const ta = document.getElementById('editor-ta-' + idx);
+    if (!ta) return;
+    ta.value = ta.value.split('\n').map(l => l.trimEnd()).join('\n');
+    _buckets[idx].simScript = ta.value;
+    syncLines(idx);
+  }
+
+  async function runScript(idx) {
+    const script = _buckets[idx].simScript || '';
+    const outEl = document.getElementById('editor-out-' + idx);
+    if (!outEl) return;
+    outEl.className = 'editor-output open';
+    outEl.textContent = 'Running…';
+    try {
+      const res = await fetch('/api/script/eval', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ script }),
+      });
+      const data = await res.json();
+      if (res.status === 503) {
+        outEl.className = 'editor-output open err';
+        outEl.textContent = 'Eval not supported by this server version.';
+        return;
+      }
+      if (data.error) {
+        outEl.className = 'editor-output open err';
+        outEl.textContent = '✗ ' + data.error;
+      } else {
+        outEl.className = 'editor-output open ok';
+        outEl.textContent = '✓ ' + data.duration_ms + 'ms  ' + JSON.stringify(data.result);
+      }
+    } catch (e) {
+      outEl.className = 'editor-output open err';
+      outEl.textContent = '✗ Network error: ' + e.message;
+    }
   }
 
   // ── Auto-slug Rule ID ────────────────────────────────────────────────────────
@@ -457,6 +549,52 @@
     setTimeout(pollUnmatched, 5000);
   }
 
+  // ── Method badge helper ────────────────────────────────────────────────────
+  function methodBadge(m) {
+    const cls = ['GET','POST','PUT','DELETE','PATCH'].includes(m) ? 'method-' + m : 'method-ANY';
+    return `<span class="method-badge ${cls}">${escapeHtml(m || 'ANY')}</span>`;
+  }
+
+  // ── Path suggestion chips ────────────────────────────────────────────────────
+  const PATH_TEMPLATES = [
+    { label: 'GET list',    match: /\/[a-z][a-z0-9_-]+$/i,   method:'GET',    status:200, body:'[\n  { "id": 1 }\n]' },
+    { label: 'POST create', match: /\/[a-z][a-z0-9_-]+$/i,   method:'POST',   status:201, body:'{ "id": 1 }' },
+    { label: 'GET by ID',   match: /\/{?id}?$|\/:[a-z]+$/i,  method:'GET',    status:200, body:'{ "id": 1 }' },
+    { label: 'PUT update',  match: /\/{?id}?$|\/:[a-z]+$/i,  method:'PUT',    status:200, body:'{ "id": 1 }' },
+    { label: 'DELETE',      match: /\/{?id}?$|\/:[a-z]+$/i,  method:'DELETE', status:204, body:'{}' },
+    { label: '404 Not Found', match: /.+/,                   method:null,     status:404, body:'{ "error": "not found" }' },
+    { label: '500 Error',   match: /.+/,                     method:null,     status:500, body:'{ "error": "internal server error" }' },
+  ];
+
+  function updatePathChips(path) {
+    const row = document.getElementById('path-chips');
+    if (!row) return;
+    if (!path || path.length < 2) { row.innerHTML = ''; return; }
+    const matches = PATH_TEMPLATES.filter(t => t.match.test(path));
+    if (matches.length === 0) { row.innerHTML = ''; return; }
+    row.innerHTML = matches.slice(0, 5).map((t, i) =>
+      `<span class="chip${i === 0 ? ' chip-primary' : ''}" onclick="applyChip(${i})">${escapeHtml(t.label)}</span>`
+    ).join('');
+    window._chipMatches = matches;
+  }
+
+  function applyChip(i) {
+    const t = (window._chipMatches || [])[i];
+    if (!t) return;
+    if (t.method) {
+      const methodSel = document.getElementById('r-method');
+      if (methodSel) methodSel.value = t.method;
+    }
+    // Update first bucket body/status if buckets exist.
+    if (typeof _buckets !== 'undefined' && _buckets.length > 0) {
+      _buckets[0].simStatus = t.status;
+      _buckets[0].simBody = t.body;
+      if (typeof renderBuckets === 'function') renderBuckets();
+    }
+    const row = document.getElementById('path-chips');
+    if (row) row.innerHTML = '';
+  }
+
   // ── Rules ──────────────────────────────────────────────────────────────────
   let _rulesList = [];
 
@@ -475,7 +613,7 @@
           <td><span class="badge">${r.id}</span></td>
           <td>${r.name || '<span style="color:var(--muted)">—</span>'}</td>
           <td class="mono">${r.match?.protocol || '<em style="color:var(--muted)">any</em>'}</td>
-          <td><span class="method-badge method-${r.match?.method || 'ANY'}">${r.match?.method || '*'}</span></td>
+          <td>${methodBadge(r.match?.method || 'ANY')}</td>
           <td class="mono">${r.match?.path || '/'}</td>
           <td style="color:var(--muted);font-size:0.8rem">${(r.buckets||[]).length} bucket${(r.buckets||[]).length !== 1 ? 's' : ''}</td>
           <td style="text-align:right;white-space:nowrap;display:flex;gap:0.4rem;justify-content:flex-end">
