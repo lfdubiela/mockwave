@@ -499,34 +499,106 @@ return {
 `request.path` is the raw path string. Use standard JS string methods to extract segments:
 
 ```js
-// POST /orders/12345  →  id = "12345"
+// GET /users/42  →  id = "42"
 const id = request.path.split('/').pop();
-return { body: { id: id, status: "processing" } };
+return { body: { id: id } };
 ```
 
 ```js
-// regex match
-const match = request.path.match(/\/(\d+)$/);
-const id = match ? match[1] : null;
-return { body: { id: id } };
+// GET /org/acme/users/42  →  segments = ["org","acme","users","42"]
+const parts = request.path.split('/').filter(Boolean);
+const org  = parts[1]; // "acme"
+const id   = parts[3]; // "42"
+return { body: { org: org, userId: id } };
+```
+
+```js
+// named segment via regex: /users/:id/orders/:orderId
+const match = request.path.match(/\/users\/([^/]+)\/orders\/([^/]+)/);
+const userId  = match ? match[1] : null;
+const orderId = match ? match[2] : null;
+return { body: { userId: userId, orderId: orderId } };
+```
+
+```js
+// numeric ID anywhere in path
+const match = request.path.match(/\/(\d+)/);
+const id = match ? parseInt(match[1], 10) : null;
+return {
+  status: id ? 200 : 404,
+  body: id ? { id: id } : { error: "not found" }
+};
+```
+
+```js
+// reflect full path + method back (useful for debugging)
+return {
+  body: {
+    method: request.method,
+    path:   request.path,
+    parts:  request.path.split('/').filter(Boolean)
+  }
+};
 ```
 
 ### Using request headers
 
 ```js
-const token = request.headers["authorization"];
-const userId = request.headers["x-user-id"];
+// bearer token presence check
+const auth = request.headers["authorization"] || "";
+const token = auth.replace("Bearer ", "");
 return {
-  body: { user: userId, authenticated: !!token }
+  status: token ? 200 : 401,
+  body: token ? { token: token } : { error: "unauthorized" }
 };
+```
+
+```js
+// tenant routing via custom header
+const tenant = request.headers["x-tenant-id"] || "default";
+const id = request.path.split('/').pop();
+return { body: { tenant: tenant, id: id, source: "mock" } };
+```
+
+```js
+// echo all headers back (debugging)
+return { body: { headers: request.headers } };
 ```
 
 ### Using request body
 
 ```js
-// body is already parsed as an object when Content-Type is application/json
+// body is already parsed when Content-Type is application/json
 const name = request.body && request.body.name;
 return { body: { message: "Hello, " + (name || "stranger") } };
+```
+
+```js
+// validate required fields, return 422 if missing
+const b = request.body || {};
+if (!b.email || !b.name) {
+  return { status: 422, body: { error: "email and name are required" } };
+}
+return { status: 201, body: { id: Math.floor(Math.random() * 10000), email: b.email } };
+```
+
+### Combining path + headers + body
+
+```js
+// POST /accounts/:accountId/transfers
+const accountId = request.path.split('/').filter(Boolean)[1];
+const requestId = request.headers["x-request-id"] || "none";
+const amount    = request.body && request.body.amount;
+return {
+  status: 202,
+  headers: { "x-request-id": requestId },
+  body: {
+    transferId: "txn-" + Date.now(),
+    from:       accountId,
+    amount:     amount,
+    status:     "pending"
+  }
+};
 ```
 
 Available in the script context:
