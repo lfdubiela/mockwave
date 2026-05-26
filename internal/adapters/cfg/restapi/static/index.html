@@ -222,7 +222,14 @@
   <p style="color:var(--muted);font-size:0.8rem;margin-bottom:1rem">Simulations are created automatically when you save a rule. Use this to add raw JSON simulations directly.</p>
   <table>
     <thead><tr><th>ID</th><th>Protocol</th><th>Status</th><th></th></tr></thead>
-    <tbody id="sims-tbody"><tr><td colspan="4" class="empty">Loading…</td></tr></tbody>
+    <tbody id="sims-tbody">
+      <tr>
+        <td colspan="4">
+          <div class="sk" style="height:1.5rem;margin:0.4rem 0;border-radius:0.25rem"></div>
+          <div class="sk" style="height:1.5rem;margin:0.4rem 0;border-radius:0.25rem;width:70%"></div>
+        </td>
+      </tr>
+    </tbody>
   </table>
 </div>
 
@@ -304,7 +311,7 @@
 
     <div class="form-actions">
       <button class="btn-ghost" type="button" onclick="closeRuleModal()">Cancel</button>
-      <button class="btn-primary" type="button" onclick="saveRule()">Save Rule</button>
+      <button class="btn-primary" id="btn-save-rule" data-idle-label="Save Rule" type="button" onclick="saveRule()">Save Rule</button>
     </div>
   </div>
 </div>
@@ -329,7 +336,7 @@
     </div>
     <div class="form-actions">
       <button class="btn-ghost" onclick="closeSimModal()">Cancel</button>
-      <button class="btn-primary" onclick="saveSim()">Save Simulation</button>
+      <button class="btn-primary" id="btn-save-sim" data-idle-label="Save Simulation" onclick="saveSim()">Save Simulation</button>
     </div>
   </div>
 </div>
@@ -595,8 +602,34 @@
     if (row) row.innerHTML = '';
   }
 
+  // ── Inline button loading states ────────────────────────────────────────────
+  function setButtonState(btn, state, label, errorMsg) {
+    btn.disabled = (state === 'loading');
+    if (state === 'loading') {
+      btn.innerHTML = '<span style="display:inline-block;width:10px;height:10px;border:2px solid currentColor;border-top-color:transparent;border-radius:50%;animation:spin 0.7s linear infinite;vertical-align:middle;margin-right:4px"></span>' + label;
+      btn.className = btn.className.replace(/\bbtn-success\b/g, '').trim() + ' btn-primary';
+    } else if (state === 'success') {
+      btn.textContent = '✓ ' + label;
+      btn.className = btn.className.replace(/\bbtn-primary\b/g, '').trim() + ' btn-success';
+      setTimeout(() => setButtonState(btn, 'idle', btn.dataset.idleLabel || label), 1500);
+    } else if (state === 'error') {
+      btn.textContent = '✗ ' + (errorMsg || 'Error');
+      btn.style.background = 'rgba(248,113,113,0.15)';
+      btn.style.color = 'var(--error)';
+      btn.style.borderColor = 'rgba(248,113,113,0.3)';
+      btn.style.border = '1px solid rgba(248,113,113,0.3)';
+    } else {
+      btn.textContent = btn.dataset.idleLabel || label;
+      btn.style.background = '';
+      btn.style.color = '';
+      btn.style.border = '';
+      btn.className = btn.className.replace(/\bbtn-success\b/g, '').trim() + ' btn-primary';
+    }
+  }
+
   // ── Rules ──────────────────────────────────────────────────────────────────
   let _rulesList = [];
+  let _rulesLoaded = false;
 
   async function loadRules() {
     try {
@@ -605,11 +638,12 @@
       if (!rules || rules.length === 0) {
         _rulesList = [];
         tbody.innerHTML = '<tr><td colspan="7" class="empty">No rules configured. Click "+ Add Rule" to create one.</td></tr>';
+        _rulesLoaded = true;
         return;
       }
       _rulesList = rules;
       tbody.innerHTML = rules.map((r, i) => `
-        <tr>
+        <tr class="${_rulesLoaded ? 'row-new' : ''}">
           <td><span class="badge">${r.id}</span></td>
           <td>${r.name || '<span style="color:var(--muted)">—</span>'}</td>
           <td class="mono">${r.match?.protocol || '<em style="color:var(--muted)">any</em>'}</td>
@@ -618,9 +652,10 @@
           <td style="color:var(--muted);font-size:0.8rem">${(r.buckets||[]).length} bucket${(r.buckets||[]).length !== 1 ? 's' : ''}</td>
           <td style="text-align:right;white-space:nowrap;display:flex;gap:0.4rem;justify-content:flex-end">
             <button class="btn-sm btn-primary" onclick="editRuleByIdx(${i})">Edit</button>
-            <button class="btn-sm btn-danger" onclick="deleteRule('${r.id}')">Delete</button>
+            <button class="btn-sm btn-danger" onclick="deleteRule('${escapeAttr(r.id)}', this)">Delete</button>
           </td>
         </tr>`).join('');
+      _rulesLoaded = true;
     } catch (e) {
       console.error('loadRules:', e);
     }
@@ -682,14 +717,28 @@
   }
 
   async function saveRule() {
+    const btn = document.getElementById('btn-save-rule');
+    if (btn) setButtonState(btn, 'loading', 'Saving…');
     try {
       const id = document.getElementById('r-id').value.trim();
-      if (!id) { alert('Rule ID is required.'); return; }
-      if (_buckets.length === 0) { alert('At least one bucket is required.'); return; }
+      if (!id) {
+        if (btn) setButtonState(btn, 'idle', 'Save Rule');
+        alert('Rule ID is required.');
+        return;
+      }
+      if (_buckets.length === 0) {
+        if (btn) setButtonState(btn, 'idle', 'Save Rule');
+        alert('At least one bucket is required.');
+        return;
+      }
 
       const hasForward = _buckets.some(b => b.action === 'forward');
       const forwardURL = document.getElementById('r-forward-url').value.trim();
-      if (hasForward && !forwardURL) { alert('Forward URL is required when a bucket has action = forward.'); return; }
+      if (hasForward && !forwardURL) {
+        if (btn) setButtonState(btn, 'idle', 'Save Rule');
+        alert('Forward URL is required when a bucket has action = forward.');
+        return;
+      }
 
       const protocol = document.getElementById('r-protocol').value || 'http';
       const resolvedBuckets = [];
@@ -726,6 +775,7 @@
         });
         if (!simRes.ok) {
           const msg = await simRes.json().catch(() => ({ error: 'Unknown error' }));
+          if (btn) setButtonState(btn, 'error', 'Save Rule', msg.error);
           alert('Error creating simulation: ' + msg.error);
           return;
         }
@@ -750,42 +800,56 @@
       const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(rule) });
       if (!res.ok) {
         const msg = await res.json().catch(() => ({ error: 'Unknown server error' }));
+        if (btn) setButtonState(btn, 'error', 'Save Rule', msg.error);
         alert('Error: ' + msg.error);
         return;
       }
+      if (btn) setButtonState(btn, 'success', 'Saved');
       closeRuleModal();
       loadRules();
       loadSims();
     } catch (e) {
+      if (btn) setButtonState(btn, 'error', 'Save Rule', e.message);
       alert('Error saving rule: ' + e.message);
     }
   }
 
-  async function deleteRule(id) {
+  async function deleteRule(id, btnEl) {
     if (!confirm(`Delete rule "${id}"? This cannot be undone.`)) return;
-    const res = await fetch('/api/rules/' + id, { method: 'DELETE' });
-    if (!res.ok) { alert('Failed to delete rule'); return; }
-    loadRules();
+    const orig = btnEl ? btnEl.textContent : '';
+    if (btnEl) { btnEl.disabled = true; btnEl.textContent = '…'; }
+    try {
+      const res = await fetch('/api/rules/' + encodeURIComponent(id), { method: 'DELETE' });
+      if (!res.ok) throw new Error(await res.text());
+      await loadRules();
+    } catch (e) {
+      if (btnEl) { btnEl.disabled = false; btnEl.textContent = orig; }
+      alert('Delete failed: ' + e.message);
+    }
   }
 
   // ── Simulations ────────────────────────────────────────────────────────────
+  let _simsLoaded = false;
+
   async function loadSims() {
     try {
       const sims = await fetch('/api/simulations').then(r => r.json());
       const tbody = document.getElementById('sims-tbody');
       if (!sims || sims.length === 0) {
         tbody.innerHTML = '<tr><td colspan="4" class="empty">No simulations. Click "+ Add Simulation" to create one.</td></tr>';
+        _simsLoaded = true;
         return;
       }
       tbody.innerHTML = sims.map(s => `
-        <tr>
-          <td><span class="badge">${s.id}</span></td>
-          <td class="mono">${s.protocol || 'http'}</td>
+        <tr class="${_simsLoaded ? 'row-new' : ''}">
+          <td><span class="badge">${escapeHtml(s.id)}</span></td>
+          <td class="mono">${escapeHtml(s.protocol || 'http')}</td>
           <td>${s.response?.status ?? '—'}</td>
           <td style="text-align:right">
-            <button class="btn-sm btn-danger" onclick="deleteSim('${s.id}')">Delete</button>
+            <button class="btn-sm btn-danger" onclick="deleteSim('${escapeAttr(s.id)}', this)">Delete</button>
           </td>
         </tr>`).join('');
+      _simsLoaded = true;
     } catch (e) {
       console.error('loadSims:', e);
     }
@@ -795,28 +859,44 @@
   function closeSimModal() { document.getElementById('sim-modal').classList.remove('open'); }
 
   async function saveSim() {
+    const btn = document.getElementById('btn-save-sim');
+    if (btn) setButtonState(btn, 'loading', 'Saving…');
     try {
       let sim;
       try { sim = JSON.parse(document.getElementById('sim-json').value); }
-      catch(e) { alert('Invalid JSON: ' + e.message); return; }
+      catch(e) {
+        if (btn) setButtonState(btn, 'idle', 'Save Simulation');
+        alert('Invalid JSON: ' + e.message);
+        return;
+      }
       const res = await fetch('/api/simulations', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(sim) });
       if (!res.ok) {
         const msg = await res.json().catch(() => ({ error: 'Unknown server error' }));
+        if (btn) setButtonState(btn, 'error', 'Save Simulation', msg.error);
         alert('Error: ' + msg.error);
         return;
       }
+      if (btn) setButtonState(btn, 'success', 'Saved');
       closeSimModal();
       loadSims();
     } catch (e) {
+      if (btn) setButtonState(btn, 'error', 'Save Simulation', e.message);
       alert('Error saving simulation: ' + e.message);
     }
   }
 
-  async function deleteSim(id) {
+  async function deleteSim(id, btnEl) {
     if (!confirm(`Delete simulation "${id}"?`)) return;
-    const res = await fetch('/api/simulations/' + id, { method: 'DELETE' });
-    if (!res.ok) { alert('Failed to delete simulation'); return; }
-    loadSims();
+    const orig = btnEl ? btnEl.textContent : '';
+    if (btnEl) { btnEl.disabled = true; btnEl.textContent = '…'; }
+    try {
+      const res = await fetch('/api/simulations/' + encodeURIComponent(id), { method: 'DELETE' });
+      if (!res.ok) throw new Error(await res.text());
+      await loadSims();
+    } catch (e) {
+      if (btnEl) { btnEl.disabled = false; btnEl.textContent = orig; }
+      alert('Delete failed: ' + e.message);
+    }
   }
 
   // ── Area Chart ──────────────────────────────────────────────────────────────

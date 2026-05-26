@@ -339,6 +339,8 @@ func TestAdminAPI_ServesUI(t *testing.T) {
 	assert.Contains(t, body, "runScript")
 	assert.Contains(t, body, "updatePathChips")
 	assert.Contains(t, body, "editor-wrap")
+	assert.Contains(t, body, "setButtonState")
+	assert.Contains(t, body, "btn-save-rule")
 }
 
 func TestAdminAPI_GetRuleByID(t *testing.T) {
