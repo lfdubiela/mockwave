@@ -472,14 +472,14 @@ Claude: "Done. GET http://localhost:8080/orders now returns {\"orders\":[]}"
 
 ## JavaScript Scripting
 
-Set `"script"` on any simulation to run JavaScript (via [goja](https://github.com/dop251/goja)) on every matched request. The script must return an object with a `body` key (and optionally `status`, `headers`, `delay_ms`) to override the response.
+Set `"script"` on any simulation to run JavaScript (via [goja](https://github.com/dop251/goja)) on every matched request. The script must return an object with at least a `body` key (and optionally `status`, `headers`, `delay_ms`) to override the response.
 
 ```json
 {
   "id": "dynamic-user",
   "protocol": "http",
   "response": { "status": 200 },
-  "script": "return { body: { id: request.path[request.path.length-1], ts: Date.now() } };"
+  "script": "const id = request.path.split('/').pop(); return { body: { id: id, ts: Date.now() } };"
 }
 ```
 
@@ -489,20 +489,56 @@ The return object can override any part of the response:
 return {
   status: 201,
   headers: { "X-Custom": "value" },
-  body: { id: request.path[request.path.length-1], ts: Date.now() },
+  body: { id: request.path.split('/').pop(), ts: Date.now() },
   delay_ms: 100
 };
+```
+
+### Extracting path parameters
+
+`request.path` is the raw path string. Use standard JS string methods to extract segments:
+
+```js
+// POST /orders/12345  →  id = "12345"
+const id = request.path.split('/').pop();
+return { body: { id: id, status: "processing" } };
+```
+
+```js
+// regex match
+const match = request.path.match(/\/(\d+)$/);
+const id = match ? match[1] : null;
+return { body: { id: id } };
+```
+
+### Using request headers
+
+```js
+const token = request.headers["authorization"];
+const userId = request.headers["x-user-id"];
+return {
+  body: { user: userId, authenticated: !!token }
+};
+```
+
+### Using request body
+
+```js
+// body is already parsed as an object when Content-Type is application/json
+const name = request.body && request.body.name;
+return { body: { message: "Hello, " + (name || "stranger") } };
 ```
 
 Available in the script context:
 
 | Variable | Type | Description |
 |----------|------|-------------|
-| `request.method` | string | HTTP method |
-| `request.path` | array | Path segments (e.g. `["users","42"]`) |
+| `request.method` | string | HTTP method (`"GET"`, `"POST"`, …) |
+| `request.path` | string | Full path string (e.g. `"/orders/12345"`) |
 | `request.headers` | object | Request headers (lowercase keys) |
-| `request.body` | string | Raw request body |
-| `request.query` | object | Query string parameters |
+| `request.body` | object\|null | Parsed JSON body, or `null` |
+| `response.status` | number | Current response status (modifiable) |
+| `response.body` | object | Current response body (modifiable) |
 
 ---
 
