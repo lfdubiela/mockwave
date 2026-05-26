@@ -58,8 +58,9 @@ func parseSpec(data []byte) (*openapi3.T, error) {
 	if err := yaml.Unmarshal(data, &raw); err != nil {
 		return nil, fmt.Errorf("invalid spec: %w", err)
 	}
-	// YAML may produce map[interface{}]interface{} — convert recursively to
-	// map[string]interface{} so encoding/json can marshal it.
+	// gopkg.in/yaml.v3 unmarshals non-string keys (e.g., HTTP status codes) as
+	// map[interface{}]interface{}, which json.Marshal cannot handle. Convert
+	// recursively to map[string]interface{}.
 	convertedRaw := convertYAMLMap(raw)
 	converted, _ := convertedRaw.(map[string]interface{})
 	jsonData, err := json.Marshal(converted)
@@ -95,8 +96,8 @@ func parseSpec(data []byte) (*openapi3.T, error) {
 }
 
 // convertYAMLMap recursively converts map[interface{}]interface{} (produced by
-// go-yaml v2 when unmarshalling into interface{}) into map[string]interface{}
-// so encoding/json can marshal it.
+// yaml.v3 when unmarshalling non-string keys like HTTP status codes) into
+// map[string]interface{} so encoding/json can marshal it.
 func convertYAMLMap(v interface{}) interface{} {
 	switch val := v.(type) {
 	case map[interface{}]interface{}:
@@ -126,6 +127,9 @@ var paramRe = regexp.MustCompile(`\{[^}]+\}`)
 // makeID converts an HTTP method + path into a slug ID.
 // Path parameters are normalised to the literal "id".
 // Example: GET /users/{userId}/orders → get-users-id-orders
+//
+// Note: different path parameters in the same position (e.g. {userId} vs {teamId})
+// will produce the same ID.
 func makeID(method, path string) string {
 	normalized := paramRe.ReplaceAllString(path, "id")
 	parts := strings.FieldsFunc(normalized, func(r rune) bool { return r == '/' })
@@ -146,6 +150,10 @@ func toGlob(path string) string {
 //
 // Returns generated pairs, descriptions of skipped paths (no 2xx response), and any error.
 func GeneratePairs(spec *openapi3.T, pathPrefix, tagsCSV string) ([]GeneratedPair, []string, error) {
+	if spec.Paths == nil {
+		return nil, nil, nil
+	}
+
 	tagSet := make(map[string]bool)
 	if tagsCSV != "" {
 		for _, t := range strings.Split(tagsCSV, ",") {
