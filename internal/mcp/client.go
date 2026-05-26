@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/mockwave/mockwave/domain"
 )
@@ -18,7 +19,7 @@ type Client struct {
 
 // NewClient creates a Client targeting adminURL (e.g. "http://localhost:9090").
 func NewClient(adminURL string) *Client {
-	return &Client{baseURL: adminURL, http: &http.Client{}}
+	return &Client{baseURL: adminURL, http: &http.Client{Timeout: 30 * time.Second}}
 }
 
 // --- Rules ---
@@ -109,11 +110,15 @@ func (c *Client) get(path string, out any) error {
 }
 
 func (c *Client) post(path string, body, out any) error {
-	b, err := json.Marshal(body)
-	if err != nil {
-		return err
+	var r io.Reader
+	if body != nil {
+		b, err := json.Marshal(body)
+		if err != nil {
+			return err
+		}
+		r = bytes.NewReader(b)
 	}
-	resp, err := c.http.Post(c.baseURL+path, "application/json", bytes.NewReader(b))
+	resp, err := c.http.Post(c.baseURL+path, "application/json", r)
 	if err != nil {
 		return err
 	}
