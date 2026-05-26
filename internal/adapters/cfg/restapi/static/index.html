@@ -499,12 +499,12 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ script }),
       });
-      const data = await res.json();
       if (res.status === 503) {
         outEl.className = 'editor-output open err';
         outEl.textContent = 'Eval not supported by this server version.';
         return;
       }
+      const data = await res.json();
       if (data.error) {
         outEl.className = 'editor-output open err';
         outEl.textContent = '✗ ' + data.error;
