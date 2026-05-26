@@ -33,7 +33,6 @@ Register in ~/.claude/mcp.json:
 
 	cmd.Flags().StringVar(&adminURL, "admin-url", "http://localhost:9090",
 		"Mockwave admin API base URL (local or remote)")
-	_ = cmd.MarkFlagRequired("admin-url")
 
 	return cmd
 }

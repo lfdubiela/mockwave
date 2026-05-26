@@ -21,24 +21,6 @@ func makeReq(name string, args map[string]any) mcpsdk.CallToolRequest {
 	return req
 }
 
-// callTool retrieves the named tool from the server and invokes its handler.
-func callTool(t *testing.T, srv interface {
-	GetTool(string) interface{ GetHandler() interface{} }
-}, toolName string, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
-	t.Helper()
-	s := mockwavemcp.NewServer("http://placeholder", "0.0.0")
-	tool := s.GetTool(toolName)
-	require.NotNil(t, tool, "tool %s not found", toolName)
-	return tool.Handler(context.Background(), req)
-}
-
-// Helper: build a server pointing at the fake admin server.
-func newTestServer(adminURL string) interface {
-	GetTool(string) interface{ GetHandler() interface{} }
-} {
-	return nil // unused; just for type clarity
-}
-
 // invoke calls the named tool handler on a server pointed at adminURL.
 func invoke(t *testing.T, adminURL, toolName string, args map[string]any) *mcpsdk.CallToolResult {
 	t.Helper()
