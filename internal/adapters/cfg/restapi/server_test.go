@@ -31,7 +31,7 @@ func (m *memStore) GetSimulation(id string) (*domain.Simulation, error) {
 			return &ss, nil
 		}
 	}
-	return nil, fmt.Errorf("not found")
+	return nil, nil
 }
 func (m *memStore) SaveRule(r domain.Rule) error             { m.rules = append(m.rules, r); return nil }
 func (m *memStore) SaveSimulation(s domain.Simulation) error {
