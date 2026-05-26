@@ -84,8 +84,8 @@
   .mono { font-family: 'Courier New', monospace; font-size: 0.8rem; }
 
   /* Modals — slide up from bottom */
-  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0); z-index: 100; align-items: flex-end; justify-content: center; transition: background-color 200ms; }
-  .modal-overlay.open { display: flex; background: rgba(0,0,0,0.5); }
+  .modal-overlay { visibility: hidden; pointer-events: none; display: flex; align-items: flex-end; justify-content: center; position: fixed; inset: 0; background: rgba(0,0,0,0); z-index: 100; transition: background-color 200ms, visibility 200ms; }
+  .modal-overlay.open { visibility: visible; pointer-events: auto; background: rgba(0,0,0,0.5); }
   .modal { background: var(--surface); border: 1px solid var(--border); border-top-left-radius: 0.75rem; border-top-right-radius: 0.75rem; padding: 1.5rem; width: 52rem; max-width: 100vw; max-height: 92vh; overflow-y: auto; transform: translateY(100%); transition: transform 200ms ease-out; }
   .modal-overlay.open .modal { transform: translateY(0); }
   .modal h2 { margin-bottom: 1.25rem; font-size: 1rem; }
@@ -420,10 +420,7 @@
             <span style="color:var(--muted);font-size:0.75rem">Request will be proxied to the Forward URL below.</span>
           </div>`}
         </div>
-        ${b.action === 'simulate' && b.existingSimID ? `
-          <div style="color:var(--muted);font-size:0.75rem;margin-bottom:0.5rem">Existing simulation: <code>${escapeHtml(b.existingSimID)}</code> (edit not supported — delete rule and recreate to change simulation)</div>
-        ` : ''}
-        ${b.action === 'simulate' && !b.existingSimID ? `
+        ${b.action === 'simulate' ? `
         <div class="form-row">
           <div class="form-group" style="flex:0 0 5.5rem">
             <label>Status</label>
@@ -691,7 +688,7 @@
     document.getElementById('r-name').focus();
   }
 
-  function editRule(r) {
+  async function editRule(r) {
     _editingRuleID = r.id;
     document.getElementById('rule-modal-title').textContent = 'Edit Rule';
     document.getElementById('r-id').value = r.id;
@@ -702,16 +699,31 @@
     document.getElementById('r-path').value = r.match?.path || '';
     document.getElementById('r-forward-url').value = r.forward_url || '';
 
-    // Reconstruct _buckets from existing rule buckets
-    _buckets = (r.buckets || [{ weight: 100, action: 'simulate', simulation_id: '' }]).map(b => ({
-      ...defaultBucket(),
-      weight: b.weight || 100,
-      action: b.action || 'simulate',
-      existingSimID: b.action === 'simulate' ? (b.simulation_id || null) : null,
+    // Reconstruct _buckets — fetch simulation data for each simulate bucket
+    const rawBuckets = r.buckets || [{ weight: 100, action: 'simulate', simulation_id: '' }];
+    _buckets = await Promise.all(rawBuckets.map(async b => {
+      const bucket = { ...defaultBucket(), weight: b.weight || 100, action: b.action || 'simulate' };
+      if (b.action === 'simulate' && b.simulation_id) {
+        bucket.existingSimID = b.simulation_id;
+        try {
+          const res = await fetch('/api/simulations/' + encodeURIComponent(b.simulation_id));
+          if (res.ok) {
+            const sim = await res.json();
+            bucket.simName        = sim.name || '';
+            bucket.simStatus      = sim.response?.status || 200;
+            bucket.simContentType = sim.response?.headers?.['Content-Type'] || 'application/json';
+            bucket.simDelayMs     = sim.response?.delay_ms || 0;
+            const body = sim.response?.body;
+            bucket.simBody = typeof body === 'string' ? body : JSON.stringify(body, null, 2);
+            if (sim.script) { bucket.simScript = sim.script; bucket.bodyType = 'script'; }
+          }
+        } catch (_) { /* leave defaults */ }
+      }
+      return bucket;
     }));
+
     renderBuckets();
     updateForwardURLVisibility();
-
     document.getElementById('rule-modal').classList.add('open');
   }
 
@@ -751,8 +763,31 @@
           resolvedBuckets.push({ weight: b.weight, action: 'forward' });
           continue;
         }
-        // Existing sim (editing) — reuse ID, no re-creation
+        // Existing sim (editing) — PUT to update in place
         if (b.existingSimID) {
+          let body = null;
+          try { body = JSON.parse(b.simBody); } catch (_) { body = b.simBody || ''; }
+          const sim = {
+            id: b.existingSimID,
+            protocol,
+            response: {
+              status: b.simStatus || 200,
+              headers: { 'Content-Type': b.simContentType || 'application/json' },
+              body,
+              delay_ms: b.simDelayMs || 0
+            }
+          };
+          if (b.simScript && b.simScript.trim()) sim.script = b.simScript.trim();
+          const simRes = await fetch('/api/simulations/' + encodeURIComponent(b.existingSimID), {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(sim)
+          });
+          if (!simRes.ok) {
+            const msg = await simRes.json().catch(() => ({ error: 'Unknown error' }));
+            if (btn) setButtonState(btn, 'error', 'Save Rule', msg.error);
+            return;
+          }
           resolvedBuckets.push({ weight: b.weight, action: 'simulate', simulation_id: b.existingSimID });
           continue;
         }
