@@ -89,4 +89,29 @@ func TestEval_EmptyScript(t *testing.T) {
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	assert.Equal(t, 200, w.Code)
+
+	var resp struct {
+		Result interface{} `json:"result"`
+		Error  *string     `json:"error"`
+	}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	assert.Nil(t, resp.Error)
+	// result may be empty map or nil depending on engine behavior — just verify no error
+}
+
+func TestEval_Timeout(t *testing.T) {
+	mux := evalMux()
+	body, _ := json.Marshal(map[string]string{
+		"script": `while(true){}`,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/script/eval", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	assert.Equal(t, 200, w.Code)
+	var resp struct {
+		Error *string `json:"error"`
+	}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	assert.NotNil(t, resp.Error)
+	assert.Contains(t, *resp.Error, "timed out")
 }

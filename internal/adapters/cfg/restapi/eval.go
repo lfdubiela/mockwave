@@ -40,15 +40,38 @@ func (a *adminAPI) scriptEval(w http.ResponseWriter, r *http.Request) {
 	}
 
 	start := time.Now()
-	result, err := a.engine.Run(req.Script, syntheticReq, map[string]interface{}{})
-	elapsed := time.Since(start).Milliseconds()
 
+	type evalResult struct {
+		result map[string]interface{}
+		err    error
+	}
+
+	resultCh := make(chan evalResult, 1)
+	go func() {
+		r, e := a.engine.Run(req.Script, syntheticReq, map[string]interface{}{})
+		resultCh <- evalResult{r, e}
+	}()
+
+	var engineResult map[string]interface{}
+	var engineErr error
+	select {
+	case res := <-resultCh:
+		engineResult = res.result
+		engineErr = res.err
+	case <-time.After(500 * time.Millisecond):
+		msg := "script execution timed out (500ms limit)"
+		resp := evalResponse{Error: &msg, DurationMs: 500}
+		writeJSON(w, 200, resp)
+		return
+	}
+
+	elapsed := time.Since(start).Milliseconds()
 	resp := evalResponse{DurationMs: elapsed}
-	if err != nil {
-		msg := err.Error()
+	if engineErr != nil {
+		msg := engineErr.Error()
 		resp.Error = &msg
 	} else {
-		resp.Result = result
+		resp.Result = engineResult
 	}
 	writeJSON(w, 200, resp)
 }

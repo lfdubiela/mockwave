@@ -39,7 +39,7 @@ func startMetricsServer(t *testing.T, cfg domain.Config) (*httptest.Server, *htt
 	mockSrv := httptest.NewServer(srv.MockHandler([]string{"http"}, wrapped))
 	t.Cleanup(mockSrv.Close)
 
-	adminMux := restapi.NewMux(store, func() {}, col, buf, broker)
+	adminMux := restapi.NewMux(store, func() {}, col, buf, broker, nil)
 	adminSrv := httptest.NewServer(adminMux)
 	t.Cleanup(adminSrv.Close)
 
