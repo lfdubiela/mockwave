@@ -32,6 +32,7 @@ type Collector struct {
 	misses    int64
 	latencies map[string][]float64 // ruleID -> latency samples in ms
 	names     map[string]string    // ruleID -> rule name
+	hist      histRing
 }
 
 // NewCollector creates an empty Collector.
@@ -45,18 +46,20 @@ func NewCollector() *Collector {
 // RecordHit records a matched request.
 func (c *Collector) RecordHit(ruleID, ruleName string, latencyMs float64) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	c.total++
 	c.latencies[ruleID] = append(c.latencies[ruleID], latencyMs)
 	c.names[ruleID] = ruleName
+	c.mu.Unlock()
+	c.recordHistory(time.Now())
 }
 
 // RecordMiss records a request that matched no rule.
 func (c *Collector) RecordMiss() {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	c.total++
 	c.misses++
+	c.mu.Unlock()
+	c.recordHistory(time.Now())
 }
 
 // Snapshot returns a consistent point-in-time view, sorted by hits descending.
@@ -87,6 +90,16 @@ func (c *Collector) Snapshot() Snapshot {
 		Rules:         rules,
 		At:            at,
 	}
+}
+
+func (c *Collector) recordHistory(at time.Time) {
+	c.hist.record(at)
+}
+
+// History returns a chronological snapshot of per-minute request counts
+// for up to the last 30 minutes.
+func (c *Collector) History() []MinuteBucket {
+	return c.hist.snapshot()
 }
 
 // percentile returns the p-th percentile of a sorted slice (e.g. p=95 -> P95).
