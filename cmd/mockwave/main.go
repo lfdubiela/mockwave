@@ -17,6 +17,7 @@ import (
 	"github.com/mockwave/mockwave/internal/adapters/out/jsonfile"
 	mongodb "github.com/mockwave/mockwave/internal/adapters/out/mongodb"
 	"github.com/mockwave/mockwave/internal/metrics"
+	"github.com/mockwave/mockwave/internal/scripting"
 	"github.com/mockwave/mockwave/internal/server"
 	"github.com/mockwave/mockwave/internal/unmatched"
 	"github.com/mockwave/mockwave/store"
@@ -71,11 +72,12 @@ func startCmd() *cobra.Command {
 			wrapped := metrics.NewMiddleware(proxy, col, buf)
 
 			// Admin API (includes UI at / once Task 9 is done)
+			evalEngine := scripting.NewEngine()
 			adminMux := restapi.NewMux(s, func() {
 				if err := srv.Rebuild(); err != nil {
 					log.Printf("hot-reload failed: %v", err)
 				}
-			}, col, buf, broker)
+			}, col, buf, broker, evalEngine)
 			go func() {
 				log.Printf("admin API listening on :%d", adminPort)
 				if err := http.ListenAndServe(fmt.Sprintf(":%d", adminPort), adminMux); err != nil {

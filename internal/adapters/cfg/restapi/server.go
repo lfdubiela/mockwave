@@ -7,6 +7,7 @@ import (
 
 	"github.com/mockwave/mockwave/domain"
 	"github.com/mockwave/mockwave/internal/metrics"
+	"github.com/mockwave/mockwave/internal/scripting"
 	"github.com/mockwave/mockwave/internal/unmatched"
 	"github.com/mockwave/mockwave/store"
 )
@@ -14,8 +15,8 @@ import (
 type OnReload func()
 
 // NewMux builds the admin HTTP mux.
-// collector, buffer, and broker may be nil — those endpoints return empty responses.
-func NewMux(store store.DataStore, onReload OnReload, collector *metrics.Collector, buffer *unmatched.Buffer, broker *metrics.Broker) *http.ServeMux {
+// collector, buffer, broker, and engine may be nil — those endpoints return empty responses.
+func NewMux(store store.DataStore, onReload OnReload, collector *metrics.Collector, buffer *unmatched.Buffer, broker *metrics.Broker, engine *scripting.Engine) *http.ServeMux {
 	mux := http.NewServeMux()
 	api := &adminAPI{
 		store:     store,
@@ -23,6 +24,7 @@ func NewMux(store store.DataStore, onReload OnReload, collector *metrics.Collect
 		collector: collector,
 		buffer:    buffer,
 		broker:    broker,
+		engine:    engine,
 	}
 	mux.HandleFunc("/api/health", api.health)
 	mux.HandleFunc("/api/rules", api.rules)
@@ -34,6 +36,8 @@ func NewMux(store store.DataStore, onReload OnReload, collector *metrics.Collect
 	mux.HandleFunc("/api/metrics/stream", api.metricsStream)
 	mux.HandleFunc("/api/unmatched", api.unmatchedHandler)
 	mux.HandleFunc("/api/openapi.json", api.openapiHandler)
+	mux.HandleFunc("/api/metrics/history", api.metricsHistory)
+	mux.HandleFunc("/api/script/eval", api.scriptEval)
 	serveUI(mux)
 	return mux
 }
@@ -44,6 +48,7 @@ type adminAPI struct {
 	collector *metrics.Collector  // may be nil
 	buffer    *unmatched.Buffer   // may be nil
 	broker    *metrics.Broker     // may be nil
+	engine    *scripting.Engine   // may be nil — eval endpoint returns 503
 }
 
 func (a *adminAPI) reload() {
@@ -278,6 +283,25 @@ func (a *adminAPI) openapiHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
 	_, _ = w.Write(openapiJSON)
+}
+
+func (a *adminAPI) metricsHistory(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, 405, "method not allowed")
+		return
+	}
+	var buckets []metrics.MinuteBucket
+	if a.collector != nil {
+		buckets = a.collector.History()
+	}
+	if buckets == nil {
+		buckets = []metrics.MinuteBucket{}
+	}
+	writeJSON(w, 200, map[string]interface{}{"buckets": buckets})
+}
+
+func (a *adminAPI) scriptEval(w http.ResponseWriter, r *http.Request) {
+	writeError(w, 503, "not implemented yet")
 }
 
 func idFromPath(path, prefix string) string {

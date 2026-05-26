@@ -58,7 +58,7 @@ func (m *memStore) DeleteSimulation(id string) error              { return nil }
 
 func TestAdminAPI_GetRules(t *testing.T) {
 	store := &memStore{rules: []domain.Rule{{ID: "r1", Match: domain.MatchCriteria{Path: "/foo"}}}}
-	mux := restapi.NewMux(store, nil, nil, nil, nil)
+	mux := restapi.NewMux(store, nil, nil, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/rules", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
@@ -71,7 +71,7 @@ func TestAdminAPI_GetRules(t *testing.T) {
 
 func TestAdminAPI_PostRule(t *testing.T) {
 	store := &memStore{}
-	mux := restapi.NewMux(store, nil, nil, nil, nil)
+	mux := restapi.NewMux(store, nil, nil, nil, nil, nil)
 	r := domain.Rule{
 		ID: "r-new", Match: domain.MatchCriteria{Path: "/bar"},
 		Buckets: []domain.WeightedBucket{{Weight: 1, Action: domain.ActionSimulate, SimulationID: "s1"}},
@@ -84,7 +84,7 @@ func TestAdminAPI_PostRule(t *testing.T) {
 }
 
 func TestAdminAPI_Health(t *testing.T) {
-	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil)
+	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/health", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
@@ -96,7 +96,7 @@ func TestAdminAPI_DeleteRule(t *testing.T) {
 		{ID: "r1", Match: domain.MatchCriteria{Path: "/foo"}, Buckets: []domain.WeightedBucket{{Weight: 1, Action: domain.ActionSimulate, SimulationID: "s1"}}},
 	}}
 	reloaded := false
-	mux := restapi.NewMux(store, func() { reloaded = true }, nil, nil, nil)
+	mux := restapi.NewMux(store, func() { reloaded = true }, nil, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodDelete, "/api/rules/r1", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
@@ -105,7 +105,7 @@ func TestAdminAPI_DeleteRule(t *testing.T) {
 }
 
 func TestAdminAPI_DeleteRule_NotFound(t *testing.T) {
-	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil)
+	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodDelete, "/api/rules/nope", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
@@ -114,7 +114,7 @@ func TestAdminAPI_DeleteRule_NotFound(t *testing.T) {
 
 func TestAdminAPI_PutRule(t *testing.T) {
 	store := &memStore{}
-	mux := restapi.NewMux(store, nil, nil, nil, nil)
+	mux := restapi.NewMux(store, nil, nil, nil, nil, nil)
 	r := domain.Rule{
 		Match:   domain.MatchCriteria{Path: "/bar"},
 		Buckets: []domain.WeightedBucket{{Weight: 1, Action: domain.ActionSimulate, SimulationID: "s1"}},
@@ -128,7 +128,7 @@ func TestAdminAPI_PutRule(t *testing.T) {
 
 func TestAdminAPI_PostSimulation(t *testing.T) {
 	store := &memStore{}
-	mux := restapi.NewMux(store, nil, nil, nil, nil)
+	mux := restapi.NewMux(store, nil, nil, nil, nil, nil)
 	sim := domain.Simulation{ID: "s1", Protocol: "http", Response: domain.HTTPResponse{Status: 200}}
 	body, _ := json.Marshal(sim)
 	req := httptest.NewRequest(http.MethodPost, "/api/simulations", bytes.NewReader(body))
@@ -138,7 +138,7 @@ func TestAdminAPI_PostSimulation(t *testing.T) {
 }
 
 func TestAdminAPI_DeleteSimulation(t *testing.T) {
-	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil)
+	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodDelete, "/api/simulations/s1", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
@@ -146,7 +146,7 @@ func TestAdminAPI_DeleteSimulation(t *testing.T) {
 }
 
 func TestAdminAPI_MethodNotAllowed(t *testing.T) {
-	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil)
+	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodDelete, "/api/rules", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
@@ -154,7 +154,7 @@ func TestAdminAPI_MethodNotAllowed(t *testing.T) {
 }
 
 func TestAdminAPI_PostRule_InvalidJSON(t *testing.T) {
-	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil)
+	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodPost, "/api/rules", bytes.NewReader([]byte("not json")))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
@@ -162,7 +162,7 @@ func TestAdminAPI_PostRule_InvalidJSON(t *testing.T) {
 }
 
 func TestAdminAPI_PostRule_InvalidRule(t *testing.T) {
-	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil)
+	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil, nil)
 	// Missing required fields
 	r := domain.Rule{ID: "x"}
 	body, _ := json.Marshal(r)
@@ -176,7 +176,7 @@ func TestAdminAPI_GetSimulations(t *testing.T) {
 	store := &memStore{sims: []domain.Simulation{
 		{ID: "s1", Protocol: "http", Response: domain.HTTPResponse{Status: 200}},
 	}}
-	mux := restapi.NewMux(store, nil, nil, nil, nil)
+	mux := restapi.NewMux(store, nil, nil, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/simulations", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
@@ -188,7 +188,7 @@ func TestAdminAPI_GetSimulations(t *testing.T) {
 }
 
 func TestAdminAPI_SimulationByIDMethodNotAllowed(t *testing.T) {
-	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil)
+	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodPatch, "/api/simulations/s1", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
@@ -196,7 +196,7 @@ func TestAdminAPI_SimulationByIDMethodNotAllowed(t *testing.T) {
 }
 
 func TestAdminAPI_RuleByIDMethodNotAllowed(t *testing.T) {
-	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil)
+	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodPatch, "/api/rules/r1", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
@@ -204,7 +204,7 @@ func TestAdminAPI_RuleByIDMethodNotAllowed(t *testing.T) {
 }
 
 func TestAdminAPI_PutRule_InvalidJSON(t *testing.T) {
-	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil)
+	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodPut, "/api/rules/r1", bytes.NewReader([]byte("not json")))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
@@ -212,7 +212,7 @@ func TestAdminAPI_PutRule_InvalidJSON(t *testing.T) {
 }
 
 func TestAdminAPI_PutRule_InvalidRule(t *testing.T) {
-	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil)
+	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil, nil)
 	r := domain.Rule{} // missing required fields
 	body, _ := json.Marshal(r)
 	req := httptest.NewRequest(http.MethodPut, "/api/rules/r1", bytes.NewReader(body))
@@ -222,7 +222,7 @@ func TestAdminAPI_PutRule_InvalidRule(t *testing.T) {
 }
 
 func TestAdminAPI_PostSimulation_InvalidJSON(t *testing.T) {
-	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil)
+	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodPost, "/api/simulations", bytes.NewReader([]byte("not json")))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
@@ -231,7 +231,7 @@ func TestAdminAPI_PostSimulation_InvalidJSON(t *testing.T) {
 
 func TestAdminAPI_DeleteSimulation_NotFound(t *testing.T) {
 	store := &errorDeleteSimStore{}
-	mux := restapi.NewMux(store, nil, nil, nil, nil)
+	mux := restapi.NewMux(store, nil, nil, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodDelete, "/api/simulations/s1", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
@@ -245,7 +245,7 @@ func (e *errorDeleteSimStore) DeleteSimulation(id string) error {
 }
 
 func TestAdminAPI_MetricsSnapshot_NilCollector(t *testing.T) {
-	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil)
+	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/metrics", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
@@ -255,7 +255,7 @@ func TestAdminAPI_MetricsSnapshot_NilCollector(t *testing.T) {
 func TestAdminAPI_MetricsSnapshot_WithCollector(t *testing.T) {
 	col := metrics.NewCollector()
 	col.RecordHit("r1", "Rule One", 5.0)
-	mux := restapi.NewMux(&memStore{}, nil, col, nil, nil)
+	mux := restapi.NewMux(&memStore{}, nil, col, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/metrics", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
@@ -267,7 +267,7 @@ func TestAdminAPI_MetricsSnapshot_WithCollector(t *testing.T) {
 
 func TestAdminAPI_Unmatched_GetEmpty(t *testing.T) {
 	buf := unmatched.NewBuffer(10)
-	mux := restapi.NewMux(&memStore{}, nil, nil, buf, nil)
+	mux := restapi.NewMux(&memStore{}, nil, nil, buf, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/unmatched", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
@@ -277,7 +277,7 @@ func TestAdminAPI_Unmatched_GetEmpty(t *testing.T) {
 func TestAdminAPI_Unmatched_Delete(t *testing.T) {
 	buf := unmatched.NewBuffer(10)
 	buf.Add(unmatched.Request{Method: "GET", Path: "/x"})
-	mux := restapi.NewMux(&memStore{}, nil, nil, buf, nil)
+	mux := restapi.NewMux(&memStore{}, nil, nil, buf, nil, nil)
 	req := httptest.NewRequest(http.MethodDelete, "/api/unmatched", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
@@ -286,7 +286,7 @@ func TestAdminAPI_Unmatched_Delete(t *testing.T) {
 }
 
 func TestAdminAPI_MetricsMethodNotAllowed(t *testing.T) {
-	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil)
+	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodPost, "/api/metrics", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
@@ -294,7 +294,7 @@ func TestAdminAPI_MetricsMethodNotAllowed(t *testing.T) {
 }
 
 func TestAdminAPI_MetricsStream_NilBroker(t *testing.T) {
-	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil)
+	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/metrics/stream", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
@@ -305,7 +305,7 @@ func TestAdminAPI_MetricsStream_WithBroker(t *testing.T) {
 	col := metrics.NewCollector()
 	buf := unmatched.NewBuffer(10)
 	broker := metrics.NewBroker(col)
-	mux := restapi.NewMux(&memStore{}, nil, col, buf, broker)
+	mux := restapi.NewMux(&memStore{}, nil, col, buf, broker, nil)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
@@ -318,7 +318,7 @@ func TestAdminAPI_MetricsStream_WithBroker(t *testing.T) {
 }
 
 func TestAdminAPI_ServesUI(t *testing.T) {
-	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil)
+	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
@@ -337,7 +337,7 @@ func TestAdminAPI_GetRuleByID(t *testing.T) {
 		{ID: "r1", Name: "R1", Match: domain.MatchCriteria{Path: "/foo"},
 			Buckets: []domain.WeightedBucket{{Weight: 1, Action: domain.ActionSimulate, SimulationID: "s1"}}},
 	}}
-	mux := restapi.NewMux(store, nil, nil, nil, nil)
+	mux := restapi.NewMux(store, nil, nil, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/rules/r1", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
@@ -348,7 +348,7 @@ func TestAdminAPI_GetRuleByID(t *testing.T) {
 }
 
 func TestAdminAPI_GetRuleByID_NotFound(t *testing.T) {
-	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil)
+	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/rules/nope", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
@@ -359,7 +359,7 @@ func TestAdminAPI_GetSimulationByID(t *testing.T) {
 	store := &memStore{sims: []domain.Simulation{
 		{ID: "s1", Protocol: "http", Response: domain.HTTPResponse{Status: 200}},
 	}}
-	mux := restapi.NewMux(store, nil, nil, nil, nil)
+	mux := restapi.NewMux(store, nil, nil, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/simulations/s1", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
@@ -370,7 +370,7 @@ func TestAdminAPI_GetSimulationByID(t *testing.T) {
 }
 
 func TestAdminAPI_GetSimulationByID_NotFound(t *testing.T) {
-	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil)
+	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/simulations/nope", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
@@ -381,7 +381,7 @@ func TestAdminAPI_PutSimulation(t *testing.T) {
 	store := &memStore{sims: []domain.Simulation{
 		{ID: "s1", Protocol: "http", Response: domain.HTTPResponse{Status: 200}},
 	}}
-	mux := restapi.NewMux(store, nil, nil, nil, nil)
+	mux := restapi.NewMux(store, nil, nil, nil, nil, nil)
 	updated := domain.Simulation{Protocol: "http", Response: domain.HTTPResponse{Status: 201}}
 	body, _ := json.Marshal(updated)
 	req := httptest.NewRequest(http.MethodPut, "/api/simulations/s1", bytes.NewReader(body))
@@ -396,7 +396,7 @@ func TestAdminAPI_PutSimulation(t *testing.T) {
 
 func TestAdminAPI_PostReload(t *testing.T) {
 	reloaded := false
-	mux := restapi.NewMux(&memStore{}, func() { reloaded = true }, nil, nil, nil)
+	mux := restapi.NewMux(&memStore{}, func() { reloaded = true }, nil, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodPost, "/api/reload", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
@@ -405,7 +405,7 @@ func TestAdminAPI_PostReload(t *testing.T) {
 }
 
 func TestAdminAPI_OpenAPI(t *testing.T) {
-	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil)
+	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/openapi.json", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
@@ -417,8 +417,44 @@ func TestAdminAPI_OpenAPI(t *testing.T) {
 }
 
 func TestAdminAPI_OpenAPI_MethodNotAllowed(t *testing.T) {
-	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil)
+	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodPost, "/api/openapi.json", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	assert.Equal(t, 405, w.Code)
+}
+
+func TestAdminAPI_MetricsHistory_NilCollector(t *testing.T) {
+	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/metrics/history", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	assert.Equal(t, 200, w.Code)
+	var body map[string]interface{}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&body))
+	assert.Contains(t, body, "buckets")
+}
+
+func TestAdminAPI_MetricsHistory_WithCollector(t *testing.T) {
+	col := metrics.NewCollector()
+	col.RecordHit("r1", "Rule 1", 5.0)
+	col.RecordHit("r1", "Rule 1", 3.0)
+	mux := restapi.NewMux(&memStore{}, nil, col, nil, nil, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/metrics/history", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	assert.Equal(t, 200, w.Code)
+	var body struct {
+		Buckets []metrics.MinuteBucket `json:"buckets"`
+	}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&body))
+	require.Len(t, body.Buckets, 1)
+	assert.Equal(t, int64(2), body.Buckets[0].Count)
+}
+
+func TestAdminAPI_MetricsHistory_MethodNotAllowed(t *testing.T) {
+	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil, nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/metrics/history", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	assert.Equal(t, 405, w.Code)
