@@ -34,7 +34,16 @@ func (m *memStore) GetSimulation(id string) (*domain.Simulation, error) {
 	return nil, fmt.Errorf("not found")
 }
 func (m *memStore) SaveRule(r domain.Rule) error             { m.rules = append(m.rules, r); return nil }
-func (m *memStore) SaveSimulation(s domain.Simulation) error { m.sims = append(m.sims, s); return nil }
+func (m *memStore) SaveSimulation(s domain.Simulation) error {
+	for i, existing := range m.sims {
+		if existing.ID == s.ID {
+			m.sims[i] = s
+			return nil
+		}
+	}
+	m.sims = append(m.sims, s)
+	return nil
+}
 func (m *memStore) DeleteRule(id string) error {
 	for i, r := range m.rules {
 		if r.ID == id {
@@ -180,7 +189,7 @@ func TestAdminAPI_GetSimulations(t *testing.T) {
 
 func TestAdminAPI_SimulationByIDMethodNotAllowed(t *testing.T) {
 	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil)
-	req := httptest.NewRequest(http.MethodGet, "/api/simulations/s1", nil)
+	req := httptest.NewRequest(http.MethodPatch, "/api/simulations/s1", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	assert.Equal(t, 405, w.Code)
@@ -188,7 +197,7 @@ func TestAdminAPI_SimulationByIDMethodNotAllowed(t *testing.T) {
 
 func TestAdminAPI_RuleByIDMethodNotAllowed(t *testing.T) {
 	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil)
-	req := httptest.NewRequest(http.MethodGet, "/api/rules/r1", nil)
+	req := httptest.NewRequest(http.MethodPatch, "/api/rules/r1", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	assert.Equal(t, 405, w.Code)
@@ -321,4 +330,76 @@ func TestAdminAPI_ServesUI(t *testing.T) {
 	assert.Contains(t, body, "Unmatched Requests")
 	assert.Contains(t, body, "buckets-container")
 	assert.Contains(t, body, "crypto.randomUUID")
+}
+
+func TestAdminAPI_GetRuleByID(t *testing.T) {
+	store := &memStore{rules: []domain.Rule{
+		{ID: "r1", Name: "R1", Match: domain.MatchCriteria{Path: "/foo"},
+			Buckets: []domain.WeightedBucket{{Weight: 1, Action: domain.ActionSimulate, SimulationID: "s1"}}},
+	}}
+	mux := restapi.NewMux(store, nil, nil, nil, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/rules/r1", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	assert.Equal(t, 200, w.Code)
+	var rule domain.Rule
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&rule))
+	assert.Equal(t, "r1", rule.ID)
+}
+
+func TestAdminAPI_GetRuleByID_NotFound(t *testing.T) {
+	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/rules/nope", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	assert.Equal(t, 404, w.Code)
+}
+
+func TestAdminAPI_GetSimulationByID(t *testing.T) {
+	store := &memStore{sims: []domain.Simulation{
+		{ID: "s1", Protocol: "http", Response: domain.HTTPResponse{Status: 200}},
+	}}
+	mux := restapi.NewMux(store, nil, nil, nil, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/simulations/s1", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	assert.Equal(t, 200, w.Code)
+	var sim domain.Simulation
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&sim))
+	assert.Equal(t, "s1", sim.ID)
+}
+
+func TestAdminAPI_GetSimulationByID_NotFound(t *testing.T) {
+	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/simulations/nope", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	assert.Equal(t, 404, w.Code)
+}
+
+func TestAdminAPI_PutSimulation(t *testing.T) {
+	store := &memStore{sims: []domain.Simulation{
+		{ID: "s1", Protocol: "http", Response: domain.HTTPResponse{Status: 200}},
+	}}
+	mux := restapi.NewMux(store, nil, nil, nil, nil)
+	updated := domain.Simulation{Protocol: "http", Response: domain.HTTPResponse{Status: 201}}
+	body, _ := json.Marshal(updated)
+	req := httptest.NewRequest(http.MethodPut, "/api/simulations/s1", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	assert.Equal(t, 200, w.Code)
+	var sim domain.Simulation
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&sim))
+	assert.Equal(t, "s1", sim.ID)
+	assert.Equal(t, 201, sim.Response.Status)
+}
+
+func TestAdminAPI_PostReload(t *testing.T) {
+	reloaded := false
+	mux := restapi.NewMux(&memStore{}, func() { reloaded = true }, nil, nil, nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/reload", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	assert.Equal(t, 204, w.Code)
+	assert.True(t, reloaded)
 }

@@ -29,6 +29,7 @@ func NewMux(store store.DataStore, onReload OnReload, collector *metrics.Collect
 	mux.HandleFunc("/api/rules/", api.ruleByID)
 	mux.HandleFunc("/api/simulations", api.simulations)
 	mux.HandleFunc("/api/simulations/", api.simulationByID)
+	mux.HandleFunc("/api/reload", api.reloadHandler)
 	mux.HandleFunc("/api/metrics", api.metricsSnapshot)
 	mux.HandleFunc("/api/metrics/stream", api.metricsStream)
 	mux.HandleFunc("/api/unmatched", api.unmatchedHandler)
@@ -87,6 +88,19 @@ func (a *adminAPI) rules(w http.ResponseWriter, r *http.Request) {
 func (a *adminAPI) ruleByID(w http.ResponseWriter, r *http.Request) {
 	id := idFromPath(r.URL.Path, "/api/rules/")
 	switch r.Method {
+	case http.MethodGet:
+		rules, err := a.store.GetRules()
+		if err != nil {
+			writeError(w, 500, err.Error())
+			return
+		}
+		for _, rule := range rules {
+			if rule.ID == id {
+				writeJSON(w, 200, rule)
+				return
+			}
+		}
+		writeError(w, 404, "rule not found: "+id)
 	case http.MethodDelete:
 		if err := a.store.DeleteRule(id); err != nil {
 			writeError(w, 404, err.Error())
@@ -145,6 +159,30 @@ func (a *adminAPI) simulations(w http.ResponseWriter, r *http.Request) {
 func (a *adminAPI) simulationByID(w http.ResponseWriter, r *http.Request) {
 	id := idFromPath(r.URL.Path, "/api/simulations/")
 	switch r.Method {
+	case http.MethodGet:
+		sim, err := a.store.GetSimulation(id)
+		if err != nil {
+			writeError(w, 404, err.Error())
+			return
+		}
+		if sim == nil {
+			writeError(w, 404, "simulation not found: "+id)
+			return
+		}
+		writeJSON(w, 200, sim)
+	case http.MethodPut:
+		var sim domain.Simulation
+		if err := json.NewDecoder(r.Body).Decode(&sim); err != nil {
+			writeError(w, 400, err.Error())
+			return
+		}
+		sim.ID = id
+		if err := a.store.SaveSimulation(sim); err != nil {
+			writeError(w, 500, err.Error())
+			return
+		}
+		a.reload()
+		writeJSON(w, 200, sim)
 	case http.MethodDelete:
 		if err := a.store.DeleteSimulation(id); err != nil {
 			writeError(w, 404, err.Error())
@@ -155,6 +193,15 @@ func (a *adminAPI) simulationByID(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeError(w, 405, "method not allowed")
 	}
+}
+
+func (a *adminAPI) reloadHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, 405, "method not allowed")
+		return
+	}
+	a.reload()
+	w.WriteHeader(204)
 }
 
 func (a *adminAPI) metricsSnapshot(w http.ResponseWriter, r *http.Request) {
