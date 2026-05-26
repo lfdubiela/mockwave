@@ -122,7 +122,7 @@ func NewServer(adminURL, version string) *server.MCPServer {
 	// OpenAPI import
 	s.AddTool(
 		mcpsdk.NewTool("generate_from_openapi",
-			mcpsdk.WithDescription("Generate Mockwave rules and simulations from an OpenAPI 2.0 or 3.0 spec (URL or file path). Skips endpoints with no 2xx response. Use overwrite:true to replace existing rules/simulations."),
+			mcpsdk.WithDescription("Generate Mockwave rules and simulations from an OpenAPI 2.0 or 3.0 spec (URL or file path). Skips endpoints with no 2xx response. Use overwrite:true to replace existing rules/simulations. Note: the operation is not atomic — on error, re-run with overwrite:true to complete."),
 			mcpsdk.WithString("source", mcpsdk.Required(), mcpsdk.Description("URL (https://...) or local file path (/path/to/spec.yaml) of the OpenAPI spec")),
 			mcpsdk.WithString("path_prefix", mcpsdk.Description("Only generate for paths starting with this prefix (e.g. /api/v1)")),
 			mcpsdk.WithString("tags", mcpsdk.Description("Comma-separated OpenAPI tags to include (e.g. Orders,Users)")),

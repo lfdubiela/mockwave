@@ -585,3 +585,60 @@ paths:
 	assert.True(t, updatedSims["get-items-sim"], "expected get-items-sim to be updated")
 	assert.True(t, updatedRules["get-items"], "expected get-items rule to be updated")
 }
+
+func TestHandler_GenerateFromOpenAPI_Overwrite_NewResource(t *testing.T) {
+	specYAML := `
+openapi: "3.0.0"
+info:
+  title: T
+  version: "1"
+paths:
+  /items:
+    get:
+      responses:
+        "200":
+          description: ok
+`
+	specSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, specYAML)
+	}))
+	defer specSrv.Close()
+
+	createdSims := map[string]bool{}
+	createdRules := map[string]bool{}
+
+	admin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		// GET returns 404 → resource doesn't exist → should POST (create)
+		case r.Method == http.MethodGet:
+			http.Error(w, "not found", 404)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/simulations":
+			var sim map[string]interface{}
+			_ = json.NewDecoder(r.Body).Decode(&sim)
+			id, _ := sim["id"].(string)
+			createdSims[id] = true
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(sim)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/rules":
+			var rule map[string]interface{}
+			_ = json.NewDecoder(r.Body).Decode(&rule)
+			id, _ := rule["id"].(string)
+			createdRules[id] = true
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(rule)
+		default:
+			http.Error(w, "unexpected: "+r.Method+" "+r.URL.Path, 500)
+		}
+	}))
+	defer admin.Close()
+
+	res := invoke(t, admin.URL, "generate_from_openapi", map[string]any{
+		"source":    specSrv.URL + "/spec.yaml",
+		"overwrite": true,
+	})
+	require.False(t, res.IsError, "unexpected error: %v", res.Content)
+
+	assert.True(t, createdSims["get-items-sim"], "expected get-items-sim to be created (not updated)")
+	assert.True(t, createdRules["get-items"], "expected get-items rule to be created (not updated)")
+}
