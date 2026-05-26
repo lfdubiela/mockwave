@@ -1,0 +1,54 @@
+swagger: "2.0"
+info:
+  title: Petstore
+  version: "1.0"
+host: petstore.example.com
+basePath: /
+paths:
+  /pets:
+    get:
+      tags: [Pets]
+      produces:
+        - application/json
+      responses:
+        200:
+          description: list
+          schema:
+            type: array
+            items:
+              $ref: '#/definitions/Pet'
+    post:
+      tags: [Pets]
+      produces:
+        - application/json
+      responses:
+        201:
+          description: created
+          schema:
+            $ref: '#/definitions/Pet'
+  /pets/{id}:
+    get:
+      tags: [Pets]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          type: integer
+      produces:
+        - application/json
+      responses:
+        200:
+          description: a pet
+          schema:
+            $ref: '#/definitions/Pet'
+        404:
+          description: not found
+definitions:
+  Pet:
+    type: object
+    required: [id, name]
+    properties:
+      id:
+        type: integer
+      name:
+        type: string
