@@ -32,7 +32,39 @@ Register in ~/.claude/mcp.json (mockwave must be on $PATH, e.g. via brew install
         "args": ["mcp", "--admin-url", "https://mockwave.sandbox.example.com"]
       }
     }
-  }`,
+  }
+
+Available MCP tools:
+
+  Rules
+    list_rules          List all rules
+    get_rule            Get a rule by ID
+    create_rule         Create a new rule
+    update_rule         Replace an existing rule
+    delete_rule         Delete a rule
+
+  Simulations
+    list_simulations    List all simulations
+    get_simulation      Get a simulation by ID
+    create_simulation   Create a new simulation
+    update_simulation   Replace an existing simulation
+    delete_simulation   Delete a simulation
+    generate_from_openapi  Generate rules + simulations from an OpenAPI 2.0/3.0 spec
+
+  Observability
+    get_metrics         Traffic metrics snapshot (requests, hits, p95 latency)
+    list_unmatched      Requests that matched no rule
+    clear_unmatched     Clear the unmatched buffer
+    reload              Hot-reload rules/simulations from the store
+    health              Check admin API reachability`,
+		Example: `  # Local instance (default port)
+  mockwave mcp --admin-url http://localhost:9090
+
+  # Remote sandbox
+  mockwave mcp --admin-url https://mockwave.sandbox.example.com
+
+  # Custom local port
+  mockwave mcp --admin-url http://localhost:3001`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s := mockwavemcp.NewServer(adminURL, version)
 			return server.ServeStdio(s)
