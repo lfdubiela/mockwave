@@ -458,14 +458,60 @@ Multiple instances are supported — Claude Code namespaces the tools automatica
 | `reload` | Trigger hot-reload from store |
 | `health` | Check admin API reachability |
 
-### Example
+### Examples
 
+**Create a rule from a natural language description:**
 ```
 You: "Create a mock for GET /orders that returns 200 with an empty orders array"
 
 Claude calls create_simulation → POST /api/simulations
 Claude calls create_rule       → POST /api/rules
-Claude: "Done. GET http://localhost:8080/orders now returns {\"orders\":[]}"
+Claude: "Done. GET http://localhost:8080/orders now returns {"orders":[]}"
+```
+
+**Generate mocks from an existing OpenAPI spec:**
+```
+You: "Generate mocks from https://petstore3.swagger.io/api/v3/openapi.json"
+
+Claude calls generate_from_openapi with the URL
+Claude: "Created 18 rules and 18 simulations covering all Petstore endpoints.
+         GET /pet/{petId} → 200 {"id":1,"name":"doggie","status":"available"}
+         POST /pet        → 201 {"id":1,"name":"doggie"}
+         DELETE /pet/{petId} → 200
+         ..."
+```
+
+**Inspect what's being hit and fix gaps:**
+```
+You: "What requests are hitting mockwave but not matching any rule?"
+
+Claude calls list_unmatched
+Claude: "3 unmatched requests found:
+         POST /api/v2/checkout  ← no rule
+         GET  /api/v2/cart/99   ← no rule
+         Want me to create mocks for these?"
+```
+
+**Dynamic script mock via MCP:**
+```
+You: "Create a mock for GET /users/:id that echoes the ID back in the response"
+
+Claude calls create_simulation with script:
+  const id = request.path.split('/').pop();
+  return { body: { id: id, name: "User " + id } };
+Claude calls create_rule → POST /api/rules
+Claude: "Done. GET /users/42 now returns {"id":"42","name":"User 42"}"
+```
+
+### Tip — add to CLAUDE.md
+
+Drop this in your project's `CLAUDE.md` to make Claude aware of Mockwave automatically:
+
+```markdown
+## Mocking
+Mockwave is running at http://localhost:8080 (admin: http://localhost:9090).
+Use the `mockwave-local` MCP tools to create or update mocks instead of hardcoding responses.
+When a test hits an unmocked endpoint, call `list_unmatched` and create the missing rule.
 ```
 
 ---
