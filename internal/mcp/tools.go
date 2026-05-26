@@ -192,7 +192,11 @@ func handleGetMetrics(c *Client) func(context.Context, mcpsdk.CallToolRequest) (
 		if err != nil {
 			return mcpsdk.NewToolResultError(err.Error()), nil
 		}
-		return mcpsdk.NewToolResultText(string(raw)), nil
+		var v any
+		if err := json.Unmarshal(raw, &v); err != nil {
+			return mcpsdk.NewToolResultError("failed to parse response: " + err.Error()), nil
+		}
+		return jsonResult(v)
 	}
 }
 
@@ -202,7 +206,11 @@ func handleListUnmatched(c *Client) func(context.Context, mcpsdk.CallToolRequest
 		if err != nil {
 			return mcpsdk.NewToolResultError(err.Error()), nil
 		}
-		return mcpsdk.NewToolResultText(string(raw)), nil
+		var v any
+		if err := json.Unmarshal(raw, &v); err != nil {
+			return mcpsdk.NewToolResultError("failed to parse response: " + err.Error()), nil
+		}
+		return jsonResult(v)
 	}
 }
 

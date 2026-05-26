@@ -15,13 +15,21 @@ func mcpCmd() *cobra.Command {
 		Long: `Starts a stdio MCP server that allows AI assistants (e.g. Claude Code) to
 manage rules and simulations on a Mockwave instance.
 
-Register in ~/.claude/mcp.json:
+WARNING: The Mockwave admin API has no authentication. When using --admin-url
+with a remote instance, ensure the admin port is not publicly accessible or
+is protected by a reverse proxy/firewall.
+
+Register in ~/.claude/mcp.json (mockwave must be on $PATH, e.g. via brew install):
 
   {
     "mcpServers": {
       "mockwave-local": {
         "command": "mockwave",
         "args": ["mcp", "--admin-url", "http://localhost:9090"]
+      },
+      "mockwave-sandbox": {
+        "command": "mockwave",
+        "args": ["mcp", "--admin-url", "https://mockwave.sandbox.example.com"]
       }
     }
   }`,
