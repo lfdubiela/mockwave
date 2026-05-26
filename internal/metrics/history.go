@@ -20,7 +20,7 @@ type histRing struct {
 }
 
 func (h *histRing) record(at time.Time) {
-	minute := at.Truncate(time.Minute)
+	minute := at.UTC().Truncate(time.Minute)
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	cur := &h.slots[h.current]

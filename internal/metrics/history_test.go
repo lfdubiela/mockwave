@@ -10,7 +10,7 @@ import (
 
 func TestHistoryBuffer_RecordAndSnapshot(t *testing.T) {
 	c := NewCollector()
-	now := time.Now().Truncate(time.Minute)
+	now := time.Now().UTC().Truncate(time.Minute)
 
 	c.recordHistory(now)
 	c.recordHistory(now)
@@ -24,7 +24,7 @@ func TestHistoryBuffer_RecordAndSnapshot(t *testing.T) {
 
 func TestHistoryBuffer_MultipleMinutes(t *testing.T) {
 	c := NewCollector()
-	t0 := time.Now().Truncate(time.Minute)
+	t0 := time.Now().UTC().Truncate(time.Minute)
 	t1 := t0.Add(time.Minute)
 	t2 := t0.Add(2 * time.Minute)
 
@@ -46,14 +46,16 @@ func TestHistoryBuffer_MultipleMinutes(t *testing.T) {
 
 func TestHistoryBuffer_MaxThirtySlots(t *testing.T) {
 	c := NewCollector()
-	base := time.Now().Truncate(time.Minute)
+	base := time.Now().UTC().Truncate(time.Minute)
 	for i := 0; i < 35; i++ {
 		c.recordHistory(base.Add(time.Duration(i) * time.Minute))
 	}
 	buckets := c.History()
-	assert.LessOrEqual(t, len(buckets), 30)
+	assert.Len(t, buckets, 30)
 	// The oldest remaining should be minute 5 (0-indexed).
 	assert.Equal(t, base.Add(5*time.Minute), buckets[0].Ts)
+	// Also verify newest bucket is the last one inserted
+	assert.Equal(t, base.Add(34*time.Minute), buckets[len(buckets)-1].Ts)
 }
 
 func TestHistoryBuffer_EmptySnapshot(t *testing.T) {
