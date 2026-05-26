@@ -12,7 +12,7 @@ import (
 
 type stubRunner struct{}
 
-func (s *stubRunner) Run(script string, req map[string]interface{}, resp map[string]interface{}) (map[string]interface{}, error) {
+func (s *stubRunner) Run(_ context.Context, script string, req map[string]interface{}, resp map[string]interface{}) (map[string]interface{}, error) {
 	if body, ok := resp["body"].(map[string]interface{}); ok {
 		body["ran"] = true
 		resp["body"] = body
@@ -62,7 +62,7 @@ func TestScriptStage_EmptyScriptSkipped(t *testing.T) {
 
 type statusModifyRunner struct{}
 
-func (s *statusModifyRunner) Run(script string, req map[string]interface{}, resp map[string]interface{}) (map[string]interface{}, error) {
+func (s *statusModifyRunner) Run(_ context.Context, script string, req map[string]interface{}, resp map[string]interface{}) (map[string]interface{}, error) {
 	// Return status as int64, delay_ms as int, to exercise all toInt branches
 	resp["status"] = int64(201)
 	resp["delay_ms"] = 50
@@ -81,7 +81,7 @@ func TestScriptStage_ModifiesStatusAndDelay(t *testing.T) {
 
 type errorRunner struct{}
 
-func (s *errorRunner) Run(script string, req map[string]interface{}, resp map[string]interface{}) (map[string]interface{}, error) {
+func (s *errorRunner) Run(_ context.Context, script string, req map[string]interface{}, resp map[string]interface{}) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("script error")
 }
 

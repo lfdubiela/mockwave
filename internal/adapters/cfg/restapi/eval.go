@@ -1,6 +1,7 @@
 package restapi
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"time"
@@ -39,33 +40,19 @@ func (a *adminAPI) scriptEval(w http.ResponseWriter, r *http.Request) {
 		"body":    nil,
 	}
 
+	ctx, cancel := context.WithTimeout(r.Context(), 500*time.Millisecond)
+	defer cancel()
+
 	start := time.Now()
+	engineResult, engineErr := a.engine.Run(ctx, req.Script, syntheticReq, map[string]interface{}{})
+	elapsed := time.Since(start).Milliseconds()
 
-	type evalResult struct {
-		result map[string]interface{}
-		err    error
-	}
-
-	resultCh := make(chan evalResult, 1)
-	go func() {
-		r, e := a.engine.Run(req.Script, syntheticReq, map[string]interface{}{})
-		resultCh <- evalResult{r, e}
-	}()
-
-	var engineResult map[string]interface{}
-	var engineErr error
-	select {
-	case res := <-resultCh:
-		engineResult = res.result
-		engineErr = res.err
-	case <-time.After(500 * time.Millisecond):
+	if ctx.Err() != nil {
 		msg := "script execution timed out (500ms limit)"
-		resp := evalResponse{Error: &msg, DurationMs: 500}
-		writeJSON(w, 200, resp)
+		writeJSON(w, 200, evalResponse{Error: &msg, DurationMs: elapsed})
 		return
 	}
 
-	elapsed := time.Since(start).Milliseconds()
 	resp := evalResponse{DurationMs: elapsed}
 	if engineErr != nil {
 		msg := engineErr.Error()

@@ -8,7 +8,7 @@ import (
 // ScriptRunner executes a JavaScript string against request/response maps.
 // Internal interface — not exposed in the public store package.
 type ScriptRunner interface {
-	Run(script string, req map[string]interface{}, resp map[string]interface{}) (map[string]interface{}, error)
+	Run(ctx context.Context, script string, req map[string]interface{}, resp map[string]interface{}) (map[string]interface{}, error)
 }
 
 type ScriptProvider func(pctx *PipelineContext) string
@@ -24,7 +24,7 @@ func NewScriptStage(runner ScriptRunner, getScript ScriptProvider) *ScriptStage 
 
 func (s *ScriptStage) Name() string { return "script" }
 
-func (s *ScriptStage) Execute(_ context.Context, pctx *PipelineContext) error {
+func (s *ScriptStage) Execute(ctx context.Context, pctx *PipelineContext) error {
 	if pctx.ShouldForward || pctx.Response == nil {
 		return nil
 	}
@@ -45,7 +45,7 @@ func (s *ScriptStage) Execute(_ context.Context, pctx *PipelineContext) error {
 		"body":     pctx.Response.Body,
 		"delay_ms": pctx.Response.DelayMs,
 	}
-	result, err := s.runner.Run(script, req, resp)
+	result, err := s.runner.Run(ctx, script, req, resp)
 	if err != nil {
 		return fmt.Errorf("script stage: %w", err)
 	}
