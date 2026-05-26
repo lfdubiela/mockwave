@@ -105,6 +105,7 @@ Commands:
   start     Start the mock server
   validate  Validate a config file without starting the server
   version   Print version
+  mcp       Start MCP server for AI assistant integration (Claude Code, etc.)
 
 Flags (start):
   -f, --config string            Path to JSON config file (required for --store=json)
@@ -352,7 +353,10 @@ All endpoints are on the admin port (default `:9090`).
 | `DELETE` | `/api/rules/:id` | Delete a rule |
 | `GET` | `/api/simulations` | List all simulations |
 | `POST` | `/api/simulations` | Create a simulation |
+| `GET` | `/api/simulations/:id` | Get a simulation |
+| `PUT` | `/api/simulations/:id` | Update a simulation |
 | `DELETE` | `/api/simulations/:id` | Delete a simulation |
+| `GET` | `/api/openapi.json` | OpenAPI 3.0 spec (JSON) |
 | `GET` | `/api/metrics` | Current metrics snapshot (JSON) |
 | `GET` | `/api/metrics/stream` | SSE stream — one event per second |
 | `GET` | `/api/unmatched` | List captured unmatched requests |
@@ -376,6 +380,90 @@ All endpoints are on the admin port (default `:9090`).
     }
   ]
 }
+```
+
+---
+
+## AI Integration (MCP)
+
+`mockwave mcp` exposes a [Model Context Protocol](https://modelcontextprotocol.io) server that lets Claude Code (and other MCP-compatible AI assistants) create, inspect, and delete rules and simulations on any Mockwave instance — local or remote.
+
+### How it works
+
+```
+Claude Code
+    │  stdio (stdin/stdout)
+    ▼
+mockwave mcp (local process, spawned by Claude Code)
+    │  HTTP
+    ▼
+Mockwave Admin API (:9090) — localhost OR remote (EKS, sandbox, etc.)
+```
+
+`mockwave mcp` runs locally and bridges MCP tool calls to HTTP requests against `--admin-url`. The admin URL can point anywhere — a local dev instance or a shared sandbox running in the cloud.
+
+### Setup
+
+Ensure `mockwave` is on your `$PATH` (e.g. via `brew install mockwave`), then add to `~/.claude/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "mockwave-local": {
+      "command": "mockwave",
+      "args": ["mcp", "--admin-url", "http://localhost:9090"]
+    }
+  }
+}
+```
+
+Multiple instances are supported — Claude Code namespaces the tools automatically:
+
+```json
+{
+  "mcpServers": {
+    "mockwave-local": {
+      "command": "mockwave",
+      "args": ["mcp", "--admin-url", "http://localhost:9090"]
+    },
+    "mockwave-sandbox": {
+      "command": "mockwave",
+      "args": ["mcp", "--admin-url", "https://mockwave.sandbox.example.com"]
+    }
+  }
+}
+```
+
+> **Security:** The Mockwave admin API has no authentication. When pointing `--admin-url` at a remote instance, ensure the admin port is protected by a firewall or reverse proxy.
+
+### Available tools
+
+| Tool | Description |
+|------|-------------|
+| `list_rules` | List all rules |
+| `get_rule` | Get a rule by ID |
+| `create_rule` | Create a new rule |
+| `update_rule` | Replace a rule |
+| `delete_rule` | Delete a rule |
+| `list_simulations` | List all simulations |
+| `get_simulation` | Get a simulation by ID |
+| `create_simulation` | Create a new simulation |
+| `update_simulation` | Replace a simulation |
+| `delete_simulation` | Delete a simulation |
+| `get_metrics` | Current metrics snapshot |
+| `list_unmatched` | List requests that matched no rule |
+| `clear_unmatched` | Clear the unmatched buffer |
+| `reload` | Trigger hot-reload from store |
+| `health` | Check admin API reachability |
+
+### Example
+
+```
+You: "Create a mock for GET /orders that returns 200 with an empty orders array"
+
+Claude calls create_simulation → POST /api/simulations
+Claude calls create_rule       → POST /api/rules
+Claude: "Done. GET http://localhost:8080/orders now returns {\"orders\":[]}"
 ```
 
 ---
