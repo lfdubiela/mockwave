@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.21+-00ADD8.svg)](https://golang.org)
 
-**Mockwave** is an open-source, multi-protocol mock server. Define rules and simulations in JSON (or manage them via the browser UI), and Mockwave responds to HTTP, GraphQL, SOAP, and gRPC requests — with real-time metrics and a live admin dashboard.
+**Mockwave** is an open-source, multi-protocol mock server. Define rules and simulations in JSON, manage them through the browser UI, or let an AI assistant do it — Mockwave responds to HTTP, GraphQL, SOAP, and gRPC requests with weighted traffic splitting, dynamic JavaScript responses, real-time metrics, and a built-in MCP server for Claude Code integration.
 
 ---
 
@@ -15,6 +15,7 @@
 - **Real-time admin UI** — browser dashboard at `localhost:9090` for rule/simulation CRUD, live metrics, and unmatched request capture
 - **Multiple store backends** — JSON file, DynamoDB, MongoDB, Azure Cosmos DB (MongoDB API)
 - **Hot reload** — update rules without restarting via the admin API
+- **AI integration (MCP)** — `mockwave mcp` exposes a Model Context Protocol server so Claude Code can create rules, manage simulations, and auto-generate mocks from any OpenAPI 2.0/3.0 spec
 - **Embeddable library** — `store.DataStore` interface is public; bring your own backend
 
 ---
@@ -450,6 +451,7 @@ Multiple instances are supported — Claude Code namespaces the tools automatica
 | `create_simulation` | Create a new simulation |
 | `update_simulation` | Replace a simulation |
 | `delete_simulation` | Delete a simulation |
+| `generate_from_openapi` | Auto-generate rules + simulations from an OpenAPI 2.0/3.0 spec (URL or file) |
 | `get_metrics` | Current metrics snapshot |
 | `list_unmatched` | List requests that matched no rule |
 | `clear_unmatched` | Clear the unmatched buffer |
