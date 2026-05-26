@@ -42,6 +42,54 @@ func jsonParam(req mcpsdk.CallToolRequest, name string, dst any) error {
 	return json.Unmarshal(b, dst)
 }
 
+// boolParam returns the named bool argument, or false if absent/wrong type.
+func boolParam(req mcpsdk.CallToolRequest, name string) bool {
+	v, ok := req.GetArguments()[name]
+	if !ok {
+		return false
+	}
+	b, ok := v.(bool)
+	return ok && b
+}
+
+// optStringParam returns the named string argument, or "" if absent/wrong type.
+func optStringParam(req mcpsdk.CallToolRequest, name string) string {
+	v, ok := req.GetArguments()[name]
+	if !ok {
+		return ""
+	}
+	s, _ := v.(string)
+	return s
+}
+
+// upsertSimulation creates or (when overwrite=true) replaces a simulation.
+func upsertSimulation(c *Client, sim domain.Simulation, overwrite bool) error {
+	if !overwrite {
+		_, err := c.CreateSimulation(sim)
+		return err
+	}
+	if _, err := c.GetSimulation(sim.ID); err == nil {
+		_, err = c.UpdateSimulation(sim.ID, sim)
+		return err
+	}
+	_, err := c.CreateSimulation(sim)
+	return err
+}
+
+// upsertRule creates or (when overwrite=true) replaces a rule.
+func upsertRule(c *Client, rule domain.Rule, overwrite bool) error {
+	if !overwrite {
+		_, err := c.CreateRule(rule)
+		return err
+	}
+	if _, err := c.GetRule(rule.ID); err == nil {
+		_, err = c.UpdateRule(rule.ID, rule)
+		return err
+	}
+	_, err := c.CreateRule(rule)
+	return err
+}
+
 // --- Rule tools ---
 
 func handleListRules(c *Client) func(context.Context, mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
@@ -238,5 +286,82 @@ func handleHealth(c *Client) func(context.Context, mcpsdk.CallToolRequest) (*mcp
 			return mcpsdk.NewToolResultError("admin API unreachable: " + err.Error()), nil
 		}
 		return mcpsdk.NewToolResultText("ok"), nil
+	}
+}
+
+// --- OpenAPI import ---
+
+func handleGenerateFromOpenAPI(c *Client) func(context.Context, mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	return func(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+		source, err := stringParam(req, "source")
+		if err != nil {
+			return mcpsdk.NewToolResultError(err.Error()), nil
+		}
+		overwrite := boolParam(req, "overwrite")
+		pathPrefix := optStringParam(req, "path_prefix")
+		tags := optStringParam(req, "tags")
+
+		spec, err := FetchAndParse(source)
+		if err != nil {
+			return mcpsdk.NewToolResultError(err.Error()), nil
+		}
+
+		pairs, skipped, err := GeneratePairs(spec, pathPrefix, tags)
+		if err != nil {
+			return mcpsdk.NewToolResultError(err.Error()), nil
+		}
+
+		// Conflict check (only when overwrite=false).
+		if !overwrite {
+			var conflicts []string
+			for _, p := range pairs {
+				if _, err := c.GetRule(p.Rule.ID); err == nil {
+					conflicts = append(conflicts, "rule: "+p.Rule.ID)
+				}
+				if _, err := c.GetSimulation(p.Simulation.ID); err == nil {
+					conflicts = append(conflicts, "simulation: "+p.Simulation.ID)
+				}
+			}
+			if len(conflicts) > 0 {
+				msg := fmt.Sprintf("%d conflict(s) found — re-run with overwrite:true to replace:", len(conflicts))
+				for _, conflict := range conflicts {
+					msg += "\n  - " + conflict
+				}
+				return mcpsdk.NewToolResultError(msg), nil
+			}
+		}
+
+		// Create / replace simulations first (rules reference them).
+		simsCreated := 0
+		for _, p := range pairs {
+			if err := upsertSimulation(c, p.Simulation, overwrite); err != nil {
+				return mcpsdk.NewToolResultError(
+					fmt.Sprintf("created %d/%d simulations before error: %s", simsCreated, len(pairs), err),
+				), nil
+			}
+			simsCreated++
+		}
+
+		// Create / replace rules.
+		rulesCreated := 0
+		for _, p := range pairs {
+			if err := upsertRule(c, p.Rule, overwrite); err != nil {
+				return mcpsdk.NewToolResultError(
+					fmt.Sprintf("created %d/%d rules before error: %s", rulesCreated, len(pairs), err),
+				), nil
+			}
+			rulesCreated++
+		}
+
+		verb := "created"
+		if overwrite {
+			verb = "created/updated"
+		}
+		summary := fmt.Sprintf("Generated from %s:\n  %d rules %s\n  %d simulations %s",
+			source, rulesCreated, verb, simsCreated, verb)
+		if len(skipped) > 0 {
+			summary += fmt.Sprintf("\n  %d path(s) skipped (no 2xx response defined)", len(skipped))
+		}
+		return mcpsdk.NewToolResultText(summary), nil
 	}
 }

@@ -12,15 +12,16 @@ func TestNewServer_RegistersAllTools(t *testing.T) {
 	s := mockwavemcp.NewServer("http://localhost:9090", "0.2.0")
 	require.NotNil(t, s)
 
-	// The server must expose all 15 tools
+	// The server must expose all 16 tools
 	expectedTools := []string{
 		"list_rules", "get_rule", "create_rule", "update_rule", "delete_rule",
 		"list_simulations", "get_simulation", "create_simulation", "update_simulation", "delete_simulation",
 		"get_metrics", "list_unmatched", "clear_unmatched", "reload", "health",
+		"generate_from_openapi",
 	}
 
 	tools := s.ListTools()
-	assert.Len(t, tools, 15, "expected 15 tools to be registered")
+	assert.Len(t, tools, 16, "expected 16 tools to be registered")
 
 	toolNames := make([]string, 0, len(tools))
 	for name := range tools {

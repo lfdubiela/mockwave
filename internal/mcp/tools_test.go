@@ -2,6 +2,10 @@ package mcp_test
 
 import (
 	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -419,4 +423,165 @@ func TestHandler_Health_Error(t *testing.T) {
 	res, err := tool.Handler(context.Background(), makeReq("health", nil))
 	require.NoError(t, err)
 	assert.True(t, res.IsError)
+}
+
+// --- generate_from_openapi ---
+
+func TestHandler_GenerateFromOpenAPI_Success(t *testing.T) {
+	specYAML := `
+openapi: "3.0.0"
+info:
+  title: T
+  version: "1"
+paths:
+  /items:
+    get:
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+`
+	specSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/yaml")
+		_, _ = io.WriteString(w, specYAML)
+	}))
+	defer specSrv.Close()
+
+	createdSims := map[string]bool{}
+	createdRules := map[string]bool{}
+
+	admin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		// Conflict check — 404 means "not found"
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/rules/"):
+			http.Error(w, "not found", 404)
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/simulations/"):
+			http.Error(w, "not found", 404)
+		// Create simulation
+		case r.Method == http.MethodPost && r.URL.Path == "/api/simulations":
+			var sim map[string]interface{}
+			_ = json.NewDecoder(r.Body).Decode(&sim)
+			id, _ := sim["id"].(string)
+			createdSims[id] = true
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(sim)
+		// Create rule
+		case r.Method == http.MethodPost && r.URL.Path == "/api/rules":
+			var rule map[string]interface{}
+			_ = json.NewDecoder(r.Body).Decode(&rule)
+			id, _ := rule["id"].(string)
+			createdRules[id] = true
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(rule)
+		default:
+			http.Error(w, "unexpected: "+r.Method+" "+r.URL.Path, 500)
+		}
+	}))
+	defer admin.Close()
+
+	res := invoke(t, admin.URL, "generate_from_openapi", map[string]any{
+		"source": specSrv.URL + "/spec.yaml",
+	})
+	require.False(t, res.IsError, "unexpected tool error: %v", res.Content)
+
+	assert.True(t, createdSims["get-items-sim"], "expected get-items-sim to be created")
+	assert.True(t, createdRules["get-items"], "expected get-items rule to be created")
+
+	text := res.Content[0].(mcpsdk.TextContent).Text
+	assert.Contains(t, text, "1 rules created")
+	assert.Contains(t, text, "1 simulations created")
+}
+
+func TestHandler_GenerateFromOpenAPI_Conflict(t *testing.T) {
+	specYAML := `
+openapi: "3.0.0"
+info:
+  title: T
+  version: "1"
+paths:
+  /items:
+    get:
+      responses:
+        "200":
+          description: ok
+`
+	specSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, specYAML)
+	}))
+	defer specSrv.Close()
+
+	admin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Simulate that rule and sim already exist (200 on GET).
+		if r.Method == http.MethodGet {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]string{"id": "get-items"})
+			return
+		}
+		http.Error(w, "should not be called", 500)
+	}))
+	defer admin.Close()
+
+	res := invoke(t, admin.URL, "generate_from_openapi", map[string]any{
+		"source": specSrv.URL + "/spec.yaml",
+	})
+	assert.True(t, res.IsError, "expected isError=true for conflicts")
+
+	text := res.Content[0].(mcpsdk.TextContent).Text
+	assert.Contains(t, text, "conflict")
+	assert.Contains(t, text, "get-items")
+}
+
+func TestHandler_GenerateFromOpenAPI_Overwrite(t *testing.T) {
+	specYAML := `
+openapi: "3.0.0"
+info:
+  title: T
+  version: "1"
+paths:
+  /items:
+    get:
+      responses:
+        "200":
+          description: ok
+`
+	specSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, specYAML)
+	}))
+	defer specSrv.Close()
+
+	updatedSims := map[string]bool{}
+	updatedRules := map[string]bool{}
+
+	admin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		// GET returns 200 → already exists → will PUT
+		case r.Method == http.MethodGet:
+			_ = json.NewEncoder(w).Encode(map[string]string{"id": "get-items"})
+		case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/api/simulations/"):
+			updatedSims[strings.TrimPrefix(r.URL.Path, "/api/simulations/")] = true
+			_ = json.NewEncoder(w).Encode(map[string]string{"id": "get-items-sim"})
+		case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/api/rules/"):
+			updatedRules[strings.TrimPrefix(r.URL.Path, "/api/rules/")] = true
+			_ = json.NewEncoder(w).Encode(map[string]string{"id": "get-items"})
+		default:
+			http.Error(w, "unexpected: "+r.Method+" "+r.URL.Path, 500)
+		}
+	}))
+	defer admin.Close()
+
+	res := invoke(t, admin.URL, "generate_from_openapi", map[string]any{
+		"source":    specSrv.URL + "/spec.yaml",
+		"overwrite": true,
+	})
+	require.False(t, res.IsError, "unexpected error: %v", res.Content)
+
+	assert.True(t, updatedSims["get-items-sim"], "expected get-items-sim to be updated")
+	assert.True(t, updatedRules["get-items"], "expected get-items rule to be updated")
 }
