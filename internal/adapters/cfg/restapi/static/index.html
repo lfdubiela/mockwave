@@ -54,13 +54,19 @@
   .btn-sm { padding: 0.2rem 0.5rem; font-size: 0.75rem; }
 
   /* Method badges */
-  .method-badge { display: inline-block; padding: 0.1rem 0.45rem; border-radius: 0.25rem; font-size: 0.7rem; font-weight: 700; font-family: monospace; }
+  .method-badge { display: inline-block; padding: 0.1rem 0.45rem; border-radius: 0.25rem; font-size: 0.7rem; font-weight: 700; font-family: monospace; background: rgba(107,114,128,0.15); color: #6b7280; }
   .method-GET    { background: rgba(96,165,250,0.15); color: #60a5fa; }
   .method-POST   { background: rgba(74,222,128,0.15); color: #4ade80; }
   .method-PUT    { background: rgba(245,158,11,0.15); color: #f59e0b; }
   .method-DELETE { background: rgba(248,113,113,0.15); color: #f87171; }
   .method-PATCH  { background: rgba(167,139,250,0.15); color: #a78bfa; }
   .method-ANY    { background: rgba(107,114,128,0.15); color: #6b7280; }
+
+  /* Dashboard stat cards */
+  .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+  .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 0.5rem; padding: 1rem; }
+  .stat-label { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.35rem; }
+  .stat-value { font-size: 1.75rem; font-weight: 700; color: var(--text); }
 
   /* Misc */
   .badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 9999px; font-size: 0.7rem; font-weight: 600; background: var(--accent-dim); color: var(--accent); border: 1px solid rgba(245,158,11,0.3); }
@@ -451,7 +457,7 @@
           <td><span class="badge">${r.id}</span></td>
           <td>${r.name || '<span style="color:var(--muted)">—</span>'}</td>
           <td class="mono">${r.match?.protocol || '<em style="color:var(--muted)">any</em>'}</td>
-          <td><span class="method-badge">${r.match?.method || '*'}</span></td>
+          <td><span class="method-badge method-${r.match?.method || 'ANY'}">${r.match?.method || '*'}</span></td>
           <td class="mono">${r.match?.path || '/'}</td>
           <td style="color:var(--muted);font-size:0.8rem">${(r.buckets||[]).length} bucket${(r.buckets||[]).length !== 1 ? 's' : ''}</td>
           <td style="text-align:right;white-space:nowrap;display:flex;gap:0.4rem;justify-content:flex-end">
@@ -733,7 +739,7 @@
         <tr>
           <td style="color:var(--muted);font-size:0.75rem;white-space:nowrap">${new Date(r.at).toLocaleTimeString()}</td>
           <td class="mono">${escapeHtml(r.protocol || 'http')}</td>
-          <td><span class="method-badge">${escapeHtml(r.method)}</span></td>
+          <td><span class="method-badge method-${escapeHtml(r.method)}">${escapeHtml(r.method)}</span></td>
           <td class="mono">${escapeHtml(r.path)}</td>
           <td style="text-align:right">
             <button class="btn-sm btn-primary" onclick="prefillFromUnmatched(${i})">Create Rule</button>
