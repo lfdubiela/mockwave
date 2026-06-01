@@ -32,6 +32,9 @@ type RequestInfo struct {
 // A random 8-byte hex request ID is generated automatically.
 // Call this at the entry point of each protocol adapter (HTTP, gRPC, etc.).
 func StampRequest(ctx context.Context, method, path, protocol string) context.Context {
+	if ctx.Value(keyRequestID) != nil {
+		return ctx // already stamped; don't overwrite the request ID
+	}
 	ctx = context.WithValue(ctx, keyRequestID, newRequestID())
 	ctx = context.WithValue(ctx, keyMethod, method)
 	ctx = context.WithValue(ctx, keyPath, path)
@@ -70,6 +73,8 @@ func FromContext(ctx context.Context) RequestInfo {
 // newRequestID generates a random 8-byte hex string for use as a request ID.
 func newRequestID() string {
 	b := make([]byte, 8)
-	_, _ = rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		panic("observability: crypto/rand unavailable: " + err.Error())
+	}
 	return fmt.Sprintf("%x", b)
 }
