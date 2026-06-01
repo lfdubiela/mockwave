@@ -45,6 +45,11 @@ func NewMiddleware(
 
 // Execute runs the wrapped pipeline and records the outcome.
 func (m *Middleware) Execute(ctx context.Context, pctx *pipeline.PipelineContext) error {
+	// Ensure the context has request-scoped fields even when the calling adapter
+	// (gRPC, GraphQL, SOAP) hasn't stamped them. StampRequest is idempotent —
+	// HTTP requests already stamped are passed through unchanged.
+	ctx = observability.StampRequest(ctx, pctx.Request.Method, pctx.Request.Path, pctx.Request.Protocol)
+
 	ctx, span := m.tracer.Start(ctx, "pipeline.Execute",
 		observability.A("method", pctx.Request.Method),
 		observability.A("path", pctx.Request.Path),

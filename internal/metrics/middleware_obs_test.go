@@ -111,3 +111,38 @@ func TestMiddleware_SetsSpanErrorOnPipelineError(t *testing.T) {
 	assert.NotNil(t, tracer.span)
 	assert.Equal(t, "pipeline boom", tracer.span.errSet.Error())
 }
+
+func TestMiddleware_StampsContextIfNotAlreadyStamped(t *testing.T) {
+	col := metrics.NewCollector()
+	buf := unmatched.NewBuffer(10)
+	rec := &recordingMetrics{}
+	tracer := observability.NoopTracer{}
+
+	// Use executorFunc with no match (miss path doesn't matter, we care about ctx)
+	var capturedCtx context.Context
+	captureExec := executorFunc(func(ctx context.Context, pctx *pipeline.PipelineContext) error {
+		capturedCtx = ctx
+		pctx.Response = &pipeline.MockResponse{Status: 200}
+		return nil
+	})
+
+	mw := metrics.NewMiddleware(captureExec, col, buf, tracer, rec)
+	pctx := &pipeline.PipelineContext{
+		Request: pipeline.NormalizedRequest{Method: "GET", Path: "/grpc-like", Protocol: "grpc"},
+	}
+	// Pass a bare context (no stamp — simulates gRPC/SOAP adapter)
+	_ = mw.Execute(context.Background(), pctx)
+
+	ri := observability.FromContext(capturedCtx)
+	assert.Equal(t, "GET", ri.Method)
+	assert.Equal(t, "/grpc-like", ri.Path)
+	assert.Equal(t, "grpc", ri.Protocol)
+	assert.NotEmpty(t, ri.RequestID)
+}
+
+// executorFunc allows using a closure as an Executor in tests.
+type executorFunc func(ctx context.Context, pctx *pipeline.PipelineContext) error
+
+func (f executorFunc) Execute(ctx context.Context, pctx *pipeline.PipelineContext) error {
+	return f(ctx, pctx)
+}
