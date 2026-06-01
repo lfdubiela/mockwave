@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/mockwave/mockwave/internal/domain/pipeline"
+	"github.com/mockwave/mockwave/observability"
 )
 
 type Executor interface {
@@ -24,6 +25,10 @@ func NewHandler(p Executor) *Handler {
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Stamp request-scoped metadata into the context so downstream
+	// middleware, loggers, and tracers can read it without touching http.Request.
+	ctx := observability.StampRequest(r.Context(), r.Method, r.URL.Path, "http")
+
 	body, _ := io.ReadAll(r.Body)
 	headers := make(map[string]string)
 	for k := range r.Header {
@@ -44,7 +49,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			PathSegs: pathSegments(r.URL.Path),
 		},
 	}
-	if err := h.pipeline.Execute(r.Context(), pctx); err != nil {
+	if err := h.pipeline.Execute(ctx, pctx); err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
