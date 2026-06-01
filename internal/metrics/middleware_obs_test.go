@@ -2,6 +2,7 @@ package metrics_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/mockwave/mockwave/domain"
@@ -65,4 +66,48 @@ func TestMiddleware_CallsUnmatchedOnMiss(t *testing.T) {
 	assert.Len(t, rec.unmatched, 1)
 	assert.Equal(t, []string{"POST", "/missing", "http"}, rec.unmatched[0])
 	assert.Empty(t, rec.requests)
+}
+
+// spySpan records whether SetError was called.
+type spySpan struct {
+	errSet error
+}
+
+func (s *spySpan) End()                    {}
+func (s *spySpan) SetError(err error)      { s.errSet = err }
+func (s *spySpan) SetAttr(_ string, _ any) {}
+
+// spyTracer returns a spySpan so tests can inspect it.
+type spyTracer struct {
+	span *spySpan
+}
+
+func (t *spyTracer) Start(ctx context.Context, _ string, _ ...observability.Attr) (context.Context, observability.Span) {
+	t.span = &spySpan{}
+	return ctx, t.span
+}
+
+// errExecutor always returns an error from Execute.
+type errExecutor struct{}
+
+func (e *errExecutor) Execute(_ context.Context, pctx *pipeline.PipelineContext) error {
+	return fmt.Errorf("pipeline boom")
+}
+
+func TestMiddleware_SetsSpanErrorOnPipelineError(t *testing.T) {
+	col := metrics.NewCollector()
+	buf := unmatched.NewBuffer(10)
+	rec := &recordingMetrics{}
+	tracer := &spyTracer{}
+
+	mw := metrics.NewMiddleware(&errExecutor{}, col, buf, tracer, rec)
+
+	pctx := &pipeline.PipelineContext{
+		Request: pipeline.NormalizedRequest{Method: "GET", Path: "/boom", Protocol: "http"},
+	}
+	err := mw.Execute(context.Background(), pctx)
+
+	assert.Error(t, err)
+	assert.NotNil(t, tracer.span)
+	assert.Equal(t, "pipeline boom", tracer.span.errSet.Error())
 }
