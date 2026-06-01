@@ -16,7 +16,7 @@ import (
 	"github.com/mockwave/mockwave/internal/adapters/cfg/restapi"
 	"github.com/mockwave/mockwave/internal/adapters/out/jsonfile"
 	"github.com/mockwave/mockwave/internal/metrics"
-	"github.com/mockwave/mockwave/internal/server"
+	"github.com/mockwave/mockwave/server"
 	"github.com/mockwave/mockwave/internal/unmatched"
 	"github.com/mockwave/mockwave/observability"
 	"github.com/stretchr/testify/assert"

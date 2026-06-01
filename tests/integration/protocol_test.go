@@ -14,7 +14,7 @@ import (
 	_ "github.com/mockwave/mockwave/internal/adapters/in/grpc"
 	"github.com/mockwave/mockwave/internal/adapters/out/jsonfile"
 	"github.com/mockwave/mockwave/domain"
-	"github.com/mockwave/mockwave/internal/server"
+	"github.com/mockwave/mockwave/server"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	googlegrpc "google.golang.org/grpc"
