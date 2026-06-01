@@ -18,7 +18,7 @@ import (
 type stubStore struct{}
 
 func (s *stubStore) GetRules() ([]domain.Rule, error)                    { return nil, nil }
-func (s *stubStore) GetSimulation(id string) (*domain.Simulation, error) { return nil, fmt.Errorf("nope") }
+func (s *stubStore) GetSimulation(id string) (*domain.Simulation, error) { return nil, nil }
 func (s *stubStore) ListSimulations() ([]domain.Simulation, error)       { return nil, nil }
 func (s *stubStore) SaveRule(r domain.Rule) error                        { return nil }
 func (s *stubStore) SaveSimulation(sim domain.Simulation) error          { return nil }

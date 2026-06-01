@@ -133,6 +133,9 @@ func (s *Server) rebuild() error {
 }
 
 // HTTPHandler returns an http.Handler backed directly by this server's pipeline.
+// Unlike MockHandler, this method does not accept an Executor and cannot be
+// wrapped with observability middleware. Prefer MockHandler for production use
+// when you need tracing, metrics, or logging on every request.
 func (s *Server) HTTPHandler() *httprest.Handler {
 	return httprest.NewHandler(&pipelineProxy{server: s})
 }
