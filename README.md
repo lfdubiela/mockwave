@@ -705,6 +705,16 @@ func (s *MyStore) DeleteSimulation(id string) error              { ... }
 
 ---
 
+## Observability
+
+Mockwave ships an `observability` package with **Logger**, **Tracer**, and **MetricsRecorder** interfaces. Every method is context-aware — implementations automatically extract `request_id`, `method`, `path`, and `protocol` from the context.
+
+Built-in defaults: `SlogLogger` (JSON to stdout), `NoopTracer`, `NoopMetrics`.
+
+**→ [Observability guide: custom implementations, wiring, zerolog/OTEL/Prometheus examples](docs/observability.md)**
+
+---
+
 ## Docker
 
 ```bash
