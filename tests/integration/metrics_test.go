@@ -18,6 +18,7 @@ import (
 	"github.com/mockwave/mockwave/internal/metrics"
 	"github.com/mockwave/mockwave/internal/server"
 	"github.com/mockwave/mockwave/internal/unmatched"
+	"github.com/mockwave/mockwave/observability"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -34,7 +35,7 @@ func startMetricsServer(t *testing.T, cfg domain.Config) (*httptest.Server, *htt
 	broker := metrics.NewBroker(col)
 
 	proxy := srv.NewProxy()
-	wrapped := metrics.NewMiddleware(proxy, col, buf)
+	wrapped := metrics.NewMiddleware(proxy, col, buf, observability.NoopTracer{}, observability.NoopMetrics{})
 
 	mockSrv := httptest.NewServer(srv.MockHandler([]string{"http"}, wrapped))
 	t.Cleanup(mockSrv.Close)

@@ -9,6 +9,7 @@ import (
 	"github.com/mockwave/mockwave/internal/domain/pipeline"
 	"github.com/mockwave/mockwave/internal/metrics"
 	"github.com/mockwave/mockwave/internal/unmatched"
+	"github.com/mockwave/mockwave/observability"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -26,7 +27,7 @@ func TestMiddleware_RecordsHit(t *testing.T) {
 	col := metrics.NewCollector()
 	buf := unmatched.NewBuffer(10)
 	stub := &stubExecutor{matchedRule: &domain.Rule{ID: "r1", Name: "Rule One"}}
-	mw := metrics.NewMiddleware(stub, col, buf)
+	mw := metrics.NewMiddleware(stub, col, buf, observability.NoopTracer{}, observability.NoopMetrics{})
 
 	pctx := &pipeline.PipelineContext{Request: pipeline.NormalizedRequest{Method: "GET", Path: "/foo"}}
 	_ = mw.Execute(context.Background(), pctx)
@@ -43,7 +44,7 @@ func TestMiddleware_RecordsMiss(t *testing.T) {
 	col := metrics.NewCollector()
 	buf := unmatched.NewBuffer(10)
 	stub := &stubExecutor{returnErr: errors.New("no rule matched")}
-	mw := metrics.NewMiddleware(stub, col, buf)
+	mw := metrics.NewMiddleware(stub, col, buf, observability.NoopTracer{}, observability.NoopMetrics{})
 
 	pctx := &pipeline.PipelineContext{
 		Request: pipeline.NormalizedRequest{Protocol: "http", Method: "POST", Path: "/missing"},
