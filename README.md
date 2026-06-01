@@ -16,7 +16,7 @@
 - **Multiple store backends** — JSON file, DynamoDB, MongoDB, Azure Cosmos DB (MongoDB API)
 - **Hot reload** — update rules without restarting via the admin API
 - **AI integration (MCP)** — `mockwave mcp` exposes a Model Context Protocol server so Claude Code can create rules, manage simulations, and auto-generate mocks from any OpenAPI 2.0/3.0 spec
-- **Embeddable library** — `store.DataStore` interface is public; bring your own backend
+- **Embeddable library** — public `store.DataStore`, `observability.Logger/Tracer/MetricsRecorder` interfaces; bring your own backends
 
 ---
 
@@ -683,35 +683,20 @@ Available in the script context:
 
 ---
 
-## Custom Store Backend
+## Extending Mockwave
 
-Implement the `store.DataStore` interface to plug in any storage:
+Mockwave exposes public Go interfaces for storage and observability. Implement any of them and pass to `server.New`:
 
-```go
-import "github.com/mockwave/mockwave/store"
+| Interface | Controls |
+|-----------|----------|
+| `store.DataStore` | Where rules and simulations are stored |
+| `observability.Logger` | Structured logging (zerolog, zap, …) |
+| `observability.Tracer` | Distributed tracing (OpenTelemetry, …) |
+| `observability.MetricsRecorder` | Request metrics (Prometheus, …) |
 
-type MyStore struct{}
+All fields in `server.Config` default to Noop implementations when nil — safe to omit anything you don't need.
 
-var _ store.DataStore = (*MyStore)(nil) // compile-time check
-
-func (s *MyStore) GetRules() ([]domain.Rule, error)              { ... }
-func (s *MyStore) GetSimulation(id string) (*domain.Simulation, error) { ... }
-func (s *MyStore) ListSimulations() ([]domain.Simulation, error) { ... }
-func (s *MyStore) SaveRule(r domain.Rule) error                  { ... }
-func (s *MyStore) SaveSimulation(s domain.Simulation) error      { ... }
-func (s *MyStore) DeleteRule(id string) error                    { ... }
-func (s *MyStore) DeleteSimulation(id string) error              { ... }
-```
-
----
-
-## Observability
-
-Mockwave ships an `observability` package with **Logger**, **Tracer**, and **MetricsRecorder** interfaces. Every method is context-aware — implementations automatically extract `request_id`, `method`, `path`, and `protocol` from the context.
-
-Built-in defaults: `SlogLogger` (JSON to stdout), `NoopTracer`, `NoopMetrics`.
-
-**→ [Observability guide: custom implementations, wiring, zerolog/OTEL/Prometheus examples](docs/observability.md)**
+**→ [Extension guide: DataStore + observability interfaces, full examples](docs/extending.md)**
 
 ---
 
