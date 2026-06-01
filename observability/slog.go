@@ -38,6 +38,9 @@ func (l *SlogLogger) log(ctx context.Context, level slog.Level, msg string, err 
 	for _, f := range fields {
 		attrs = append(attrs, slog.Any(f.Key, f.Value))
 	}
+	// pc=0 intentionally omits source-file/line from log output.
+	// Source location adds overhead (runtime.Callers) that outweighs its value
+	// in a mock server where all logging flows through this single method.
 	r := slog.NewRecord(time.Now(), level, msg, 0)
 	r.AddAttrs(attrs...)
 	_ = l.handler.Handle(ctx, r)

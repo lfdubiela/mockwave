@@ -70,6 +70,7 @@ func TestSlogLogger_ErrorIncludesErr(t *testing.T) {
 	ctx := context.Background()
 	l.Error(ctx, "something broke", errors.New("disk full"))
 
+	require.Equal(t, 1, h.count())
 	rec := h.last()
 	attrs := attrMap(rec)
 	assert.Equal(t, "disk full", attrs["error"].(error).Error())

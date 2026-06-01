@@ -12,6 +12,7 @@ import (
 // Compile-time interface checks — test fails to build if any impl is wrong.
 var (
 	_ observability.Logger          = observability.NoopLogger{}
+	_ observability.Logger          = (*observability.SlogLogger)(nil)
 	_ observability.Tracer          = observability.NoopTracer{}
 	_ observability.Span            = observability.NoopSpan{}
 	_ observability.MetricsRecorder = observability.NoopMetrics{}
