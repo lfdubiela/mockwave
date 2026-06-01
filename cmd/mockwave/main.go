@@ -18,9 +18,8 @@ import (
 	mongodb "github.com/mockwave/mockwave/internal/adapters/out/mongodb"
 	"github.com/mockwave/mockwave/internal/metrics"
 	"github.com/mockwave/mockwave/internal/scripting"
-	"github.com/mockwave/mockwave/server"
 	"github.com/mockwave/mockwave/internal/unmatched"
-	"github.com/mockwave/mockwave/observability"
+	"github.com/mockwave/mockwave/server"
 	"github.com/mockwave/mockwave/store"
 	"github.com/spf13/cobra"
 )
@@ -70,7 +69,7 @@ func startCmd() *cobra.Command {
 
 			// Wrap the pipeline proxy with the metrics middleware.
 			proxy := srv.NewProxy()
-			wrapped := metrics.NewMiddleware(proxy, col, buf, observability.NoopTracer{}, observability.NoopMetrics{})
+			wrapped := metrics.NewMiddleware(proxy, col, buf, srv.Tracer(), srv.MetricsRecorder())
 
 			// Admin API (includes UI at / once Task 9 is done)
 			evalEngine := scripting.NewEngine()

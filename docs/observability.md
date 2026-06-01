@@ -270,35 +270,35 @@ var _ observability.MetricsRecorder = (*PrometheusRecorder)(nil)
 
 ## Wiring custom implementations
 
-When using Mockwave as a Go library, pass your implementations to `metrics.NewMiddleware`:
+When using Mockwave as a Go library, pass your implementations through `server.Config`:
 
 ```go
 import (
-    "github.com/mockwave/mockwave/internal/metrics"
-    "github.com/mockwave/mockwave/internal/server"
-    "github.com/mockwave/mockwave/internal/unmatched"
+    "github.com/mockwave/mockwave/server"
     "github.com/mockwave/mockwave/observability"
 )
 
-srv, _ := server.New(server.Config{Store: myStore})
-col     := metrics.NewCollector()
-buf     := unmatched.NewBuffer(100)
-broker  := metrics.NewBroker(col)
-
-// Plug in your implementations:
 myLogger   := ZerologLogger{log: zerolog.New(os.Stdout)}
 myTracer   := NewOTelTracer("mockwave")
 myRecorder := NewPrometheusRecorder()
 
-proxy   := srv.NewProxy()
-wrapped := metrics.NewMiddleware(proxy, col, buf, myTracer, myRecorder)
+srv, _ := server.New(server.Config{
+    Store:   myStore,
+    Logger:  myLogger,
+    Tracer:  myTracer,
+    Metrics: myRecorder,
+})
 
-// Use wrapped as the executor for MockHandler / GRPCServer
-http.ListenAndServe(":8080", srv.MockHandler([]string{"http"}, wrapped))
+proxy := srv.NewProxy()
+
+// Use proxy as the executor for MockHandler / GRPCServer
+http.ListenAndServe(":8080", srv.MockHandler([]string{"http"}, proxy))
 ```
 
-> **Note:** The `Logger` interface is available for use in your own code today.
-> Passing a Logger into Mockwave's internal pipeline is planned for a future release.
+The `Tracer` and `MetricsRecorder` are applied automatically to every request that flows through the pipeline. Any nil field defaults to the matching Noop implementation.
+
+> **Note:** The `Logger` interface is wired for use in your own code.
+> Passing a Logger into Mockwave's internal request pipeline is planned for a future release.
 
 ---
 
