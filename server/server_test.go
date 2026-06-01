@@ -67,6 +67,10 @@ func TestServer_DefaultsToNoopWhenObservabilityNil(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotNil(t, srv)
 	assert.NoError(t, srv.Rebuild())
+	// Getters must never return nil even when Config fields were nil.
+	assert.NotNil(t, srv.Logger())
+	assert.NotNil(t, srv.Tracer())
+	assert.NotNil(t, srv.MetricsRecorder())
 }
 
 type stubStoreWithData struct{}
