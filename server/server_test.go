@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -36,11 +37,27 @@ func TestServer_BuildsPipeline(t *testing.T) {
 func TestServer_NilStoreUsesEnvFallback(t *testing.T) {
 	// No env vars set — MOCKWAVE_STORE defaults to "json", which requires MOCKWAVE_CONFIG.
 	// Ensure those vars are cleared so CI environment doesn't leak state.
-	t.Setenv("MOCKWAVE_STORE", "")
+	t.Setenv("MOCKWAVE_STORE", "json")
 	t.Setenv("MOCKWAVE_CONFIG", "")
 	_, err := server.New(server.Config{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "MOCKWAVE_CONFIG")
+}
+
+func TestServer_NilStoreBuildsFromEnv(t *testing.T) {
+	// Write a minimal valid JSON config to a temp file.
+	f, err := os.CreateTemp(t.TempDir(), "mockwave-*.json")
+	require.NoError(t, err)
+	_, err = f.WriteString(`{"rules":[],"simulations":[]}`)
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+
+	t.Setenv("MOCKWAVE_STORE", "json")
+	t.Setenv("MOCKWAVE_CONFIG", f.Name())
+
+	srv, err := server.New(server.Config{})
+	require.NoError(t, err)
+	assert.NotNil(t, srv)
 }
 
 func TestServer_Rebuild(t *testing.T) {
