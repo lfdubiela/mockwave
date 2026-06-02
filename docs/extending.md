@@ -164,11 +164,37 @@ func (s *RedisStore) saveRules(rules []domain.Rule) error {
 
 ### Wiring
 
+Pass your store explicitly:
+
 ```go
 myStore := NewRedisStore("localhost:6379")
 
 srv, err := server.New(server.Config{
     Store: myStore,
+})
+```
+
+Or omit `Store` entirely and configure via environment variables. When `Config.Store` is nil, `server.New` reads `MOCKWAVE_STORE` (default `json`) and constructs the appropriate backend:
+
+| Variable | Default | Backend |
+|----------|---------|---------|
+| `MOCKWAVE_STORE` | `json` | all — selects backend |
+| `MOCKWAVE_CONFIG` | — | `json` — path to config file (required) |
+| `MOCKWAVE_DYNAMO_RULES_TABLE` | `mockwave-rules` | `dynamodb` |
+| `MOCKWAVE_DYNAMO_SIMS_TABLE` | `mockwave-simulations` | `dynamodb` |
+| `MOCKWAVE_DYNAMO_REGION` | `us-east-1` | `dynamodb` |
+| `MOCKWAVE_DYNAMO_ENDPOINT` | `""` | `dynamodb` — empty = AWS default |
+| `MOCKWAVE_MONGO_URI` | `mongodb://localhost:27017` | `mongo` |
+| `MOCKWAVE_MONGO_DB` | `mockwave` | `mongo` |
+| `MOCKWAVE_COSMOS_URI` | `""` | `cosmos` — required |
+| `MOCKWAVE_COSMOS_DB` | `mockwave` | `cosmos` |
+
+```go
+// No Store in Config — server reads MOCKWAVE_STORE from environment.
+srv, err := server.New(server.Config{
+    Logger:  myLogger,
+    Tracer:  myTracer,
+    Metrics: myRecorder,
 })
 ```
 
