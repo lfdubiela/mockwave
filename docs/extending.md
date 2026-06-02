@@ -186,11 +186,13 @@ Or omit `Store` entirely and configure via environment variables. When `Config.S
 | `MOCKWAVE_DYNAMO_ENDPOINT` | `""` | `dynamodb` — empty = AWS default |
 | `MOCKWAVE_MONGO_URI` | `mongodb://localhost:27017` | `mongo` |
 | `MOCKWAVE_MONGO_DB` | `mockwave` | `mongo` |
-| `MOCKWAVE_COSMOS_URI` | `""` | `cosmos` — required |
+| `MOCKWAVE_COSMOS_URI` | — | `cosmos` — required |
 | `MOCKWAVE_COSMOS_DB` | `mockwave` | `cosmos` |
 
 ```go
 // No Store in Config — server reads MOCKWAVE_STORE from environment.
+// myLogger, myTracer, myRecorder are your own observability implementations
+// (see "Custom Observability" section below).
 srv, err := server.New(server.Config{
     Logger:  myLogger,
     Tracer:  myTracer,
