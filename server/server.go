@@ -35,7 +35,8 @@ import (
 )
 
 // Config holds all options for creating a Server.
-// Only Store is required; observability fields default to no-op when nil.
+// Store is optional: when nil, server.New reads MOCKWAVE_STORE from the environment
+// to select a backend. Observability fields default to no-op when nil.
 type Config struct {
 	MockPort  int
 	AdminPort int
@@ -58,11 +59,16 @@ type Server struct {
 }
 
 // New creates a Server from cfg, loading rules from the store.
-// Returns an error if Store is nil or rule loading fails.
+// If Store is nil, New falls back to building a store from environment variables
+// (see buildStoreFromEnv). Returns an error if store construction or rule loading fails.
 // Nil observability fields are replaced with no-op defaults.
 func New(cfg Config) (*Server, error) {
 	if cfg.Store == nil {
-		return nil, fmt.Errorf("server: store is required")
+		s, err := buildStoreFromEnv()
+		if err != nil {
+			return nil, err
+		}
+		cfg.Store = s
 	}
 	if cfg.Logger == nil {
 		cfg.Logger = observability.NoopLogger{}

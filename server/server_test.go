@@ -33,9 +33,14 @@ func TestServer_BuildsPipeline(t *testing.T) {
 	assert.NotNil(t, srv)
 }
 
-func TestServer_NilStoreReturnsError(t *testing.T) {
-	_, err := server.New(server.Config{Store: nil})
-	assert.Error(t, err)
+func TestServer_NilStoreUsesEnvFallback(t *testing.T) {
+	// No env vars set — MOCKWAVE_STORE defaults to "json", which requires MOCKWAVE_CONFIG.
+	// Ensure those vars are cleared so CI environment doesn't leak state.
+	t.Setenv("MOCKWAVE_STORE", "")
+	t.Setenv("MOCKWAVE_CONFIG", "")
+	_, err := server.New(server.Config{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "MOCKWAVE_CONFIG")
 }
 
 func TestServer_Rebuild(t *testing.T) {
