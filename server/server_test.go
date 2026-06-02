@@ -140,3 +140,4 @@ func TestServer_MockHandler_DefaultsToHTTP(t *testing.T) {
 	h.ServeHTTP(w, req)
 	assert.Contains(t, w.Header().Get("Content-Type"), "application/json")
 }
+
