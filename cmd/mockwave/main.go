@@ -8,7 +8,10 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
+	"time"
 
 	grpcadapter "github.com/mockwave/mockwave/internal/adapters/in/grpc"
 	cosmos "github.com/mockwave/mockwave/internal/adapters/out/cosmos"
@@ -61,9 +64,8 @@ func startCmd() *cobra.Command {
 				return err
 			}
 
-			ctx, stop := context.WithCancel(context.Background())
+			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
-			defer srv.Shutdown(ctx) //nolint:errcheck
 
 			proxy := srv.NewProxy() // metrics-wrapped; feeds admin dashboard automatically
 			protocols := splitProtocols(protocolsStr)
@@ -91,7 +93,19 @@ func startCmd() *cobra.Command {
 
 			log.Printf("mock server listening on :%d (protocols: %s, store: %s)", mockPort, protocolsStr, storeType)
 			log.Printf("admin API listening on :%d", adminPort)
-			return http.ListenAndServe(fmt.Sprintf(":%d", mockPort), srv.MockHandler(protocols, proxy))
+
+			go func() {
+				if err := http.ListenAndServe(fmt.Sprintf(":%d", mockPort), srv.MockHandler(protocols, proxy)); err != nil {
+					log.Printf("mock server stopped: %v", err)
+				}
+			}()
+
+			<-ctx.Done() // block until SIGINT or SIGTERM
+			log.Println("shutting down...")
+
+			shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			return srv.Shutdown(shutCtx)
 		},
 	}
 
