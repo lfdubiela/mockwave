@@ -414,7 +414,13 @@ Pass all your implementations to `server.New`. Any field left nil defaults to th
 
 ```go
 import (
+    "context"
+    "log"
     "net/http"
+    "os"
+    "os/signal"
+    "syscall"
+    "time"
 
     "github.com/mockwave/mockwave/server"
 )
@@ -427,7 +433,7 @@ func main() {
 
     srv, err := server.New(server.Config{
         MockPort:  8080,
-        AdminPort: 9090,
+        AdminPort: 9090,   // admin API + dashboard start automatically on :9090
         Store:     myStore,
         Logger:    myLogger,
         Tracer:    myTracer,
@@ -437,12 +443,24 @@ func main() {
         log.Fatal(err)
     }
 
-    proxy := srv.NewProxy()
-    http.ListenAndServe(":8080", srv.MockHandler([]string{"http"}, proxy))
+    ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+    defer stop()
+
+    proxy := srv.NewProxy()  // pre-wrapped with metrics; feeds the admin dashboard
+    go http.ListenAndServe(":8080", srv.MockHandler([]string{"http"}, proxy))
+
+    <-ctx.Done()
+    shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+    defer cancel()
+    srv.Shutdown(shutCtx)
 }
 ```
 
-`Tracer` and `MetricsRecorder` are applied automatically to every request. `Logger` is available for your own code via the context helpers; integration with Mockwave's internal request pipeline is planned for a future release.
+When `AdminPort > 0`, `server.New` binds the admin HTTP server on that port automatically — no extra wiring required. The admin dashboard is available at `http://localhost:9090`.
+
+`NewProxy()` includes metrics middleware automatically: every request through `MockHandler` feeds `/api/metrics` and the dashboard's live stream.
+
+Call `srv.Shutdown(ctx)` on exit to drain in-flight admin requests and stop background goroutines. When `AdminPort` is 0, `Shutdown` is a no-op.
 
 ---
 
