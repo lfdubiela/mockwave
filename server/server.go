@@ -28,7 +28,9 @@ import (
 	"github.com/mockwave/mockwave/internal/domain/pipeline"
 	"github.com/mockwave/mockwave/internal/domain/routing"
 	"github.com/mockwave/mockwave/internal/domain/simulation"
+	"github.com/mockwave/mockwave/internal/metrics"
 	"github.com/mockwave/mockwave/internal/scripting"
+	"github.com/mockwave/mockwave/internal/unmatched"
 	"github.com/mockwave/mockwave/observability"
 	"github.com/mockwave/mockwave/store"
 	googlegrpc "google.golang.org/grpc"
@@ -52,10 +54,15 @@ type Config struct {
 
 // Server holds the active pipeline and serves mock traffic across protocols.
 type Server struct {
-	cfg      Config
-	mu       sync.RWMutex
-	pipeline *pipeline.Pipeline
-	engine   *scripting.Engine
+	cfg          Config
+	mu           sync.RWMutex
+	pipeline     *pipeline.Pipeline
+	engine       *scripting.Engine
+	collector    *metrics.Collector
+	buffer       *unmatched.Buffer
+	broker       *metrics.Broker
+	brokerCancel context.CancelFunc
+	adminSrv     *http.Server
 }
 
 // New creates a Server from cfg, loading rules from the store.
@@ -79,8 +86,22 @@ func New(cfg Config) (*Server, error) {
 	if cfg.Metrics == nil {
 		cfg.Metrics = observability.NoopMetrics{}
 	}
-	s := &Server{cfg: cfg, engine: scripting.NewEngine()}
+	col := metrics.NewCollector()
+	buf := unmatched.NewBuffer(100)
+	broker := metrics.NewBroker(col)
+	brokerCtx, brokerCancel := context.WithCancel(context.Background())
+	go broker.Start(brokerCtx)
+
+	s := &Server{
+		cfg:          cfg,
+		engine:       scripting.NewEngine(),
+		collector:    col,
+		buffer:       buf,
+		broker:       broker,
+		brokerCancel: brokerCancel,
+	}
 	if err := s.rebuild(); err != nil {
+		brokerCancel()
 		return nil, err
 	}
 	return s, nil
@@ -97,10 +118,17 @@ type Executor interface {
 	Execute(ctx context.Context, pctx *pipeline.PipelineContext) error
 }
 
-// NewProxy returns an Executor backed by this server's active pipeline.
-// Wrap it with middleware before passing to MockHandler or GRPCServer.
+// NewProxy returns an Executor backed by this server's active pipeline,
+// pre-wrapped with metrics middleware. Every request through MockHandler
+// or GRPCServer automatically feeds the admin dashboard.
 func (s *Server) NewProxy() Executor {
-	return &pipelineProxy{server: s}
+	return metrics.NewMiddleware(
+		&pipelineProxy{server: s},
+		s.collector,
+		s.buffer,
+		s.cfg.Tracer,
+		s.cfg.Metrics,
+	)
 }
 
 // Logger returns the Logger configured for this server (never nil).

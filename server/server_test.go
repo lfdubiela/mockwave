@@ -163,3 +163,11 @@ func TestServer_MockHandler_DefaultsToHTTP(t *testing.T) {
 	assert.Contains(t, w.Header().Get("Content-Type"), "application/json")
 }
 
+func TestServer_NewProxy_Execute_NoError(t *testing.T) {
+	srv, err := server.New(server.Config{Store: newStubStore()})
+	require.NoError(t, err)
+	proxy := srv.NewProxy()
+	require.NotNil(t, proxy)
+	// Verify compile-time satisfaction of Executor interface.
+	var _ server.Executor = proxy
+}
