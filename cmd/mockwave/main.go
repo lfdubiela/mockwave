@@ -21,6 +21,7 @@ import (
 	"github.com/mockwave/mockwave/server"
 	"github.com/mockwave/mockwave/store"
 	"github.com/spf13/cobra"
+	googlegrpc "google.golang.org/grpc"
 )
 
 func main() {
@@ -70,6 +71,7 @@ func startCmd() *cobra.Command {
 			proxy := srv.NewProxy() // metrics-wrapped; feeds admin dashboard automatically
 			protocols := splitProtocols(protocolsStr)
 
+			var grpcSrv *googlegrpc.Server
 			if containsProtocol(protocols, "grpc") {
 				var registry *grpcadapter.FileRegistry
 				if grpcProto != "" {
@@ -78,7 +80,7 @@ func startCmd() *cobra.Command {
 						return fmt.Errorf("load grpc proto descriptor: %w", err)
 					}
 				}
-				grpcSrv := srv.GRPCServer(registry, proxy)
+				grpcSrv = srv.GRPCServer(registry, proxy)
 				lis, err := net.Listen("tcp", fmt.Sprintf(":%d", grpcPort))
 				if err != nil {
 					return fmt.Errorf("grpc listen: %w", err)
@@ -86,25 +88,35 @@ func startCmd() *cobra.Command {
 				go func() {
 					log.Printf("gRPC server listening on :%d", grpcPort)
 					if err := grpcSrv.Serve(lis); err != nil {
-						log.Fatalf("grpc server: %v", err)
+						log.Printf("grpc server stopped: %v", err)
 					}
 				}()
 			}
 
-			log.Printf("mock server listening on :%d (protocols: %s, store: %s)", mockPort, protocolsStr, storeType)
-			log.Printf("admin API listening on :%d", adminPort)
-
+			mockSrv := &http.Server{
+				Addr:    fmt.Sprintf(":%d", mockPort),
+				Handler: srv.MockHandler(protocols, proxy),
+			}
 			go func() {
-				if err := http.ListenAndServe(fmt.Sprintf(":%d", mockPort), srv.MockHandler(protocols, proxy)); err != nil {
+				log.Printf("mock server listening on :%d (protocols: %s, store: %s)", mockPort, protocolsStr, storeType)
+				log.Printf("admin API listening on :%d", adminPort)
+				if err := mockSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 					log.Printf("mock server stopped: %v", err)
 				}
 			}()
 
-			<-ctx.Done() // block until SIGINT or SIGTERM
+			<-ctx.Done()
 			log.Println("shutting down...")
 
 			shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
+
+			if grpcSrv != nil {
+				grpcSrv.GracefulStop()
+			}
+			if err := mockSrv.Shutdown(shutCtx); err != nil {
+				log.Printf("mock server shutdown: %v", err)
+			}
 			return srv.Shutdown(shutCtx)
 		},
 	}

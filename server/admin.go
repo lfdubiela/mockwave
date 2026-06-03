@@ -31,7 +31,13 @@ func (s *Server) startAdmin() error {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	s.adminSrv = srv
-	go srv.Serve(ln) //nolint:errcheck
+	go func() {
+		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
+			// Log to stderr; s.cfg.Logger is not available in the admin package context.
+			// A future enhancement could route this through s.cfg.Logger.
+			println("mockwave admin server error:", err.Error())
+		}
+	}()
 	return nil
 }
 
