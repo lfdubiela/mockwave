@@ -104,6 +104,12 @@ func New(cfg Config) (*Server, error) {
 		brokerCancel()
 		return nil, err
 	}
+	if cfg.AdminPort > 0 {
+		if err := s.startAdmin(); err != nil {
+			brokerCancel()
+			return nil, err
+		}
+	}
 	return s, nil
 }
 

@@ -1,13 +1,16 @@
 package server_test
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mockwave/mockwave/domain"
 	"github.com/mockwave/mockwave/observability"
@@ -170,4 +173,66 @@ func TestServer_NewProxy_Execute_NoError(t *testing.T) {
 	require.NotNil(t, proxy)
 	// Verify compile-time satisfaction of Executor interface.
 	var _ server.Executor = proxy
+}
+
+// freePort returns a TCP port that is free at the moment of the call.
+func freePort(t *testing.T) int {
+	t.Helper()
+	ln, err := net.Listen("tcp", ":0")
+	require.NoError(t, err)
+	port := ln.Addr().(*net.TCPAddr).Port
+	require.NoError(t, ln.Close())
+	return port
+}
+
+func TestServer_AdminStartsWhenPortSet(t *testing.T) {
+	port := freePort(t)
+	srv, err := server.New(server.Config{Store: newStubStore(), AdminPort: port})
+	require.NoError(t, err)
+	require.NotNil(t, srv)
+
+	time.Sleep(50 * time.Millisecond)
+
+	resp, err := http.Get(fmt.Sprintf("http://localhost:%d/api/health", port))
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	assert.NoError(t, srv.Shutdown(ctx))
+}
+
+func TestServer_AdminPortAlreadyInUse_ReturnsError(t *testing.T) {
+	ln, err := net.Listen("tcp", ":0")
+	require.NoError(t, err)
+	defer ln.Close()
+	port := ln.Addr().(*net.TCPAddr).Port
+
+	_, err = server.New(server.Config{Store: newStubStore(), AdminPort: port})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "admin listen")
+}
+
+func TestServer_ShutdownStopsAdmin(t *testing.T) {
+	port := freePort(t)
+	srv, err := server.New(server.Config{Store: newStubStore(), AdminPort: port})
+	require.NoError(t, err)
+
+	time.Sleep(50 * time.Millisecond)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	require.NoError(t, srv.Shutdown(ctx))
+
+	_, err = http.Get(fmt.Sprintf("http://localhost:%d/api/health", port))
+	assert.Error(t, err)
+}
+
+func TestServer_ShutdownNoopWhenAdminPortZero(t *testing.T) {
+	srv, err := server.New(server.Config{Store: newStubStore()})
+	require.NoError(t, err)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	assert.NoError(t, srv.Shutdown(ctx))
 }
