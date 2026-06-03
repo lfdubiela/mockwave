@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"time"
 
 	restapi "github.com/mockwave/mockwave/internal/adapters/cfg/restapi"
 )
@@ -25,7 +26,10 @@ func (s *Server) startAdmin() error {
 	if err != nil {
 		return fmt.Errorf("server: admin listen :%d: %w", s.cfg.AdminPort, err)
 	}
-	srv := &http.Server{Handler: mux}
+	srv := &http.Server{
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
 	s.adminSrv = srv
 	go srv.Serve(ln) //nolint:errcheck
 	return nil
@@ -33,6 +37,7 @@ func (s *Server) startAdmin() error {
 
 // Shutdown gracefully stops the admin HTTP server and cancels background goroutines.
 // Safe to call when AdminPort was 0 (no-op).
+// Shutdown is not safe for concurrent callers — call it from a single goroutine.
 func (s *Server) Shutdown(ctx context.Context) error {
 	if s.brokerCancel != nil {
 		s.brokerCancel()

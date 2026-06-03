@@ -190,8 +190,7 @@ func TestServer_AdminStartsWhenPortSet(t *testing.T) {
 	srv, err := server.New(server.Config{Store: newStubStore(), AdminPort: port})
 	require.NoError(t, err)
 	require.NotNil(t, srv)
-
-	time.Sleep(50 * time.Millisecond)
+	t.Cleanup(func() { _ = srv.Shutdown(context.Background()) })
 
 	resp, err := http.Get(fmt.Sprintf("http://localhost:%d/api/health", port))
 	require.NoError(t, err)
@@ -218,8 +217,6 @@ func TestServer_ShutdownStopsAdmin(t *testing.T) {
 	port := freePort(t)
 	srv, err := server.New(server.Config{Store: newStubStore(), AdminPort: port})
 	require.NoError(t, err)
-
-	time.Sleep(50 * time.Millisecond)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
