@@ -1,0 +1,25 @@
+# Integration-test dependencies for mockwave store adapters.
+# Brought up by `make test-integration`. Not for production use.
+services:
+  dynamodb:
+    image: amazon/dynamodb-local:latest
+    command: ["-jar", "DynamoDBLocal.jar", "-inMemory", "-port", "8000"]
+    ports:
+      - "8000:8000"
+    healthcheck:
+      # dynamodb-local image is amazonlinux-based (has bash, no curl); probe the
+      # listening port via /dev/tcp. The Go test also self-polls before asserting.
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/8000' || exit 1"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 2s
+      timeout: 3s
+      retries: 15

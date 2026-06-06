@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"sync"
 
 	"github.com/mockwave/mockwave/domain"
 	"github.com/mockwave/mockwave/internal/domain/pipeline"
 )
 
 type PercentileRouterStage struct {
+	mu  sync.Mutex
 	rng *rand.Rand
 }
 
@@ -46,7 +48,12 @@ func (s *PercentileRouterStage) selectBucket(buckets []domain.WeightedBucket) (d
 	for _, b := range buckets {
 		total += b.Weight
 	}
+	// math/rand.Rand is not safe for concurrent use; the router is shared across
+	// all in-flight requests, so guard rng access to keep the weighted draw fair
+	// under parallelism.
+	s.mu.Lock()
 	pick := s.rng.Intn(total)
+	s.mu.Unlock()
 	cumulative := 0
 	for _, b := range buckets {
 		cumulative += b.Weight

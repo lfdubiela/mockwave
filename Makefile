@@ -1,7 +1,26 @@
-.PHONY: test coverage build lint release-local
+.PHONY: test coverage build lint release-local test-integration itest-up itest-down
 
 test:
 	go test ./... -race
+
+# Bring up store dependencies (DynamoDB Local, MongoDB) for integration tests.
+itest-up:
+	docker compose -f docker-compose.test.yml up -d --wait
+
+# Tear down store dependencies and remove volumes.
+itest-down:
+	docker compose -f docker-compose.test.yml down -v
+
+# Run the integration-tagged tests against containerized dependencies.
+# Spins deps up, runs the suite with -race, tears deps down even on failure.
+test-integration:
+	docker compose -f docker-compose.test.yml up -d --wait
+	DYNAMO_TEST_ENDPOINT=http://localhost:8000 \
+	MONGO_TEST_URI=mongodb://localhost:27017 \
+		go test -tags integration -race ./... ; \
+	status=$$? ; \
+	docker compose -f docker-compose.test.yml down -v ; \
+	exit $$status
 
 coverage:
 	go test ./... -coverprofile=cover.out -covermode=atomic
