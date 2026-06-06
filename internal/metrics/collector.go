@@ -33,6 +33,7 @@ type Collector struct {
 	latencies map[string][]float64 // ruleID -> latency samples in ms
 	names     map[string]string    // ruleID -> rule name
 	hist      histRing
+	ruleHist  map[string]*histRing // ruleID -> per-minute ring
 }
 
 // NewCollector creates an empty Collector.
@@ -40,6 +41,7 @@ func NewCollector() *Collector {
 	return &Collector{
 		latencies: make(map[string][]float64),
 		names:     make(map[string]string),
+		ruleHist:  make(map[string]*histRing),
 	}
 }
 
@@ -49,8 +51,16 @@ func (c *Collector) RecordHit(ruleID, ruleName string, latencyMs float64) {
 	c.total++
 	c.latencies[ruleID] = append(c.latencies[ruleID], latencyMs)
 	c.names[ruleID] = ruleName
+	rh, ok := c.ruleHist[ruleID]
+	if !ok {
+		rh = &histRing{}
+		c.ruleHist[ruleID] = rh
+	}
 	c.mu.Unlock()
-	c.recordHistory(time.Now())
+
+	now := time.Now()
+	c.recordHistory(now)
+	rh.record(now)
 }
 
 // RecordMiss records a request that matched no rule.
@@ -90,6 +100,51 @@ func (c *Collector) Snapshot() Snapshot {
 		Rules:         rules,
 		At:            at,
 	}
+}
+
+// RuleSeries is a per-rule per-minute time series for the retained window.
+type RuleSeries struct {
+	RuleID   string         `json:"rule_id"`
+	RuleName string         `json:"rule_name"`
+	Buckets  []MinuteBucket `json:"buckets"`
+}
+
+// RuleHistory returns per-rule minute series ranked by total hits within the
+// retained window (busiest first). topN<=0 returns all rules. Ties are broken
+// by ruleID for deterministic ordering.
+func (c *Collector) RuleHistory(topN int) []RuleSeries {
+	c.mu.Lock()
+	type entry struct {
+		id, name string
+		ring     *histRing
+	}
+	entries := make([]entry, 0, len(c.ruleHist))
+	for id, ring := range c.ruleHist {
+		entries = append(entries, entry{id: id, name: c.names[id], ring: ring})
+	}
+	c.mu.Unlock()
+
+	sort.Slice(entries, func(i, j int) bool {
+		hi, hj := entries[i].ring.windowHits(), entries[j].ring.windowHits()
+		if hi != hj {
+			return hi > hj
+		}
+		return entries[i].id < entries[j].id
+	})
+
+	if topN > 0 && len(entries) > topN {
+		entries = entries[:topN]
+	}
+
+	out := make([]RuleSeries, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, RuleSeries{
+			RuleID:   e.id,
+			RuleName: e.name,
+			Buckets:  e.ring.snapshot(),
+		})
+	}
+	return out
 }
 
 func (c *Collector) recordHistory(at time.Time) {
