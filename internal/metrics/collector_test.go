@@ -105,3 +105,17 @@ func TestCollector_RuleHistory_Empty(t *testing.T) {
 		t.Fatalf("empty collector RuleHistory len = %d, want 0", len(got))
 	}
 }
+
+func TestCollector_Snapshot_CurrentTPS(t *testing.T) {
+	c := metrics.NewCollector()
+	c.RecordHit("r1", "Rule One", 1)
+
+	snap := c.Snapshot()
+	if len(snap.Rules) != 1 {
+		t.Fatalf("got %d rules, want 1", len(snap.Rules))
+	}
+	// Only the in-progress minute has data, so no completed minute -> 0 tps.
+	if snap.Rules[0].CurrentTPS != 0 {
+		t.Fatalf("CurrentTPS = %v, want 0 (only in-progress minute)", snap.Rules[0].CurrentTPS)
+	}
+}

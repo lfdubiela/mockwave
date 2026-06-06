@@ -9,11 +9,12 @@ import (
 
 // RuleStats is the per-rule metrics snapshot.
 type RuleStats struct {
-	RuleID   string  `json:"rule_id"`
-	RuleName string  `json:"rule_name"`
-	Hits     int64   `json:"hits"`
-	P50Ms    float64 `json:"p50_ms"`
-	P95Ms    float64 `json:"p95_ms"`
+	RuleID     string  `json:"rule_id"`
+	RuleName   string  `json:"rule_name"`
+	Hits       int64   `json:"hits"`
+	P50Ms      float64 `json:"p50_ms"`
+	P95Ms      float64 `json:"p95_ms"`
+	CurrentTPS float64 `json:"current_tps"`
 }
 
 // Snapshot is a point-in-time view of all metrics.
@@ -83,12 +84,19 @@ func (c *Collector) Snapshot() Snapshot {
 		sorted := make([]float64, len(lats))
 		copy(sorted, lats)
 		sort.Float64s(sorted)
+
+		var tps float64
+		if rh := c.ruleHist[id]; rh != nil {
+			tps = float64(rh.lastCompletedCount(at)) / 60.0
+		}
+
 		rules = append(rules, RuleStats{
-			RuleID:   id,
-			RuleName: c.names[id],
-			Hits:     int64(len(sorted)),
-			P50Ms:    percentile(sorted, 50),
-			P95Ms:    percentile(sorted, 95),
+			RuleID:     id,
+			RuleName:   c.names[id],
+			Hits:       int64(len(sorted)),
+			P50Ms:      percentile(sorted, 50),
+			P95Ms:      percentile(sorted, 95),
+			CurrentTPS: tps,
 		})
 	}
 	// Sort by hits descending for stable UI ordering.
