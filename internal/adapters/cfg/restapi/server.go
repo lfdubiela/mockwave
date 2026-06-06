@@ -290,14 +290,14 @@ func (a *adminAPI) metricsHistory(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 405, "method not allowed")
 		return
 	}
-	var buckets []metrics.MinuteBucket
+	var rules []metrics.RuleSeries
 	if a.collector != nil {
-		buckets = a.collector.History()
+		rules = a.collector.RuleHistory(10)
 	}
-	if buckets == nil {
-		buckets = []metrics.MinuteBucket{}
+	if rules == nil {
+		rules = []metrics.RuleSeries{}
 	}
-	writeJSON(w, 200, map[string]interface{}{"buckets": buckets})
+	writeJSON(w, 200, map[string]interface{}{"rules": rules})
 }
 
 func idFromPath(path, prefix string) string {

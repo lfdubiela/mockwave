@@ -462,11 +462,11 @@ func TestAdminAPI_MetricsHistory_NilCollector(t *testing.T) {
 	mux.ServeHTTP(w, req)
 	assert.Equal(t, 200, w.Code)
 	var body struct {
-		Buckets []interface{} `json:"buckets"`
+		Rules []interface{} `json:"rules"`
 	}
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&body))
-	assert.NotNil(t, body.Buckets)  // must be [] not null
-	assert.Empty(t, body.Buckets)
+	assert.NotNil(t, body.Rules) // must be [] not null
+	assert.Empty(t, body.Rules)
 }
 
 func TestAdminAPI_MetricsHistory_WithCollector(t *testing.T) {
@@ -479,11 +479,16 @@ func TestAdminAPI_MetricsHistory_WithCollector(t *testing.T) {
 	mux.ServeHTTP(w, req)
 	assert.Equal(t, 200, w.Code)
 	var body struct {
-		Buckets []metrics.MinuteBucket `json:"buckets"`
+		Rules []metrics.RuleSeries `json:"rules"`
 	}
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&body))
-	require.Len(t, body.Buckets, 1)
-	assert.Equal(t, int64(2), body.Buckets[0].Count)
+	require.Len(t, body.Rules, 1)
+	assert.Equal(t, "r1", body.Rules[0].RuleID)
+	var total int64
+	for _, b := range body.Rules[0].Buckets {
+		total += b.Count
+	}
+	assert.Equal(t, int64(2), total)
 }
 
 func TestAdminAPI_MetricsHistory_MethodNotAllowed(t *testing.T) {
@@ -500,4 +505,45 @@ func TestAdminAPI_ScriptEval_Stub(t *testing.T) {
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	assert.Equal(t, 503, w.Code)
+}
+
+func TestAdminAPI_MetricsHistory_PerRule(t *testing.T) {
+	col := metrics.NewCollector()
+	col.RecordHit("r1", "Rule One", 2)
+	col.RecordHit("r1", "Rule One", 3)
+	col.RecordHit("r2", "Rule Two", 1)
+
+	mux := restapi.NewMux(&memStore{}, nil, col, nil, nil, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/metrics/history", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	assert.Equal(t, 200, w.Code)
+
+	var body struct {
+		Rules []struct {
+			RuleID   string `json:"rule_id"`
+			RuleName string `json:"rule_name"`
+			Buckets  []struct {
+				Count int64 `json:"count"`
+			} `json:"buckets"`
+		} `json:"rules"`
+	}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&body))
+	require.Len(t, body.Rules, 2)
+	assert.Equal(t, "r1", body.Rules[0].RuleID) // busiest first
+	assert.Equal(t, "Rule One", body.Rules[0].RuleName)
+	var r1 int64
+	for _, b := range body.Rules[0].Buckets {
+		r1 += b.Count
+	}
+	assert.Equal(t, int64(2), r1)
+}
+
+func TestAdminAPI_MetricsHistory_EmptyRules(t *testing.T) {
+	mux := restapi.NewMux(&memStore{}, nil, metrics.NewCollector(), nil, nil, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/metrics/history", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	assert.Equal(t, 200, w.Code)
+	assert.JSONEq(t, `{"rules":[]}`, w.Body.String())
 }
