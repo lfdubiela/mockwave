@@ -20,6 +20,7 @@ import (
 	"github.com/mockwave/mockwave/internal/domain/pipeline"
 	"github.com/mockwave/mockwave/internal/domain/routing"
 	"github.com/mockwave/mockwave/internal/domain/simulation"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -313,4 +314,82 @@ func TestDynamoLocal_ConcurrentSplit(t *testing.T) {
 		parallelism, total, counts, okRatio*100)
 	require.InDelta(t, 0.5, okRatio, 0.1,
 		"200 ratio %.2f outside 50%%±10%% — concurrent rng skew", okRatio)
+}
+
+// TestDynamoLocal_ExactBeatsWildcard proves rule specificity ordering: an exact
+// path rule and a single-segment wildcard rule both match the same request, but
+// the matcher ranks the exact (no '*') rule higher, so the literal path gets the
+// exact rule's response and any other segment falls through to the wildcard.
+//
+//	/random-rule/1234/create   -> exact rule    -> 200 OK
+//	/random-rule/9999/create   -> wildcard rule -> 500 NOK
+func TestDynamoLocal_ExactBeatsWildcard(t *testing.T) {
+	endpoint := dynamoEndpoint(t)
+	client := newLocalClient(t, endpoint)
+	createTable(t, client, rulesTable)
+	createTable(t, client, simsTable)
+
+	store := dynamostore.NewStoreFromClient(client, dynamostore.Config{
+		RulesTable: rulesTable,
+		SimsTable:  simsTable,
+	})
+
+	require.NoError(t, store.SaveSimulation(domain.Simulation{
+		ID:       "sim-ok",
+		Protocol: "http",
+		Response: domain.HTTPResponse{Status: 200, Body: map[string]any{"status": "ok"}},
+	}))
+	require.NoError(t, store.SaveSimulation(domain.Simulation{
+		ID:       "sim-nok",
+		Protocol: "http",
+		Response: domain.HTTPResponse{Status: 500, Body: map[string]any{"status": "nok"}},
+	}))
+
+	// Exact rule -> 200.
+	require.NoError(t, store.SaveRule(domain.Rule{
+		ID:    "rule-exact",
+		Name:  "exact",
+		Match: domain.MatchCriteria{Protocol: "http", Method: "POST", Path: "/random-rule/1234/create"},
+		Buckets: []domain.WeightedBucket{
+			{Weight: 100, Action: domain.ActionSimulate, SimulationID: "sim-ok"},
+		},
+	}))
+	// Wildcard rule -> 500.
+	require.NoError(t, store.SaveRule(domain.Rule{
+		ID:    "rule-wildcard",
+		Name:  "wildcard",
+		Match: domain.MatchCriteria{Protocol: "http", Method: "POST", Path: "/random-rule/*/create"},
+		Buckets: []domain.WeightedBucket{
+			{Weight: 100, Action: domain.ActionSimulate, SimulationID: "sim-nok"},
+		},
+	}))
+
+	rules, err := store.GetRules()
+	require.NoError(t, err)
+	require.Len(t, rules, 2)
+
+	matchStage := matching.NewConditionMatchStage(rules)
+	routeStage := routing.NewPercentileRouterStage()
+	simStage := simulation.NewSimulationStage(store)
+	p := pipeline.New(matchStage, routeStage, simStage)
+
+	statusFor := func(path string) int {
+		pctx := &pipeline.PipelineContext{
+			Request: pipeline.NormalizedRequest{
+				Protocol: "http",
+				Method:   "POST",
+				Path:     path,
+			},
+		}
+		require.NoError(t, p.Execute(context.Background(), pctx))
+		require.NotNil(t, pctx.Response)
+		return pctx.Response.Status
+	}
+
+	// Exact path must hit the exact rule despite the wildcard also matching.
+	assert.Equal(t, 200, statusFor("/random-rule/1234/create"),
+		"exact path should match the exact rule (higher specificity)")
+	// A different segment falls through to the wildcard rule.
+	assert.Equal(t, 500, statusFor("/random-rule/9999/create"),
+		"non-exact segment should match the wildcard rule")
 }
