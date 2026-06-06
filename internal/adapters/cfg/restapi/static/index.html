@@ -303,6 +303,7 @@
       <button class="btn-sm btn-ghost" type="button" onclick="addBucket()">+ Add Bucket</button>
     </div>
     <div id="buckets-container"></div>
+    <div id="weight-sum-indicator" style="margin:0.25rem 0 0.5rem;font-size:0.8rem;font-weight:600"></div>
 
     <div class="form-group" id="forward-url-group" style="display:none;margin-top:0.5rem">
       <label>Forward URL (used by all Forward buckets)</label>
@@ -374,12 +375,42 @@
     _buckets.push(defaultBucket());
     renderBuckets();
     updateForwardURLVisibility();
+    updateWeightSum();
   }
 
   function removeBucket(i) {
     _buckets.splice(i, 1);
     renderBuckets();
     updateForwardURLVisibility();
+    updateWeightSum();
+  }
+
+  // Bucket weights are percentages and must sum to exactly 100 (enforced by the
+  // API with a 422). Show a live total and block Save until it is valid.
+  function weightSum() {
+    return _buckets.reduce((acc, b) => acc + (parseInt(b.weight) || 0), 0);
+  }
+
+  function updateWeightSum() {
+    const el = document.getElementById('weight-sum-indicator');
+    const btn = document.getElementById('btn-save-rule');
+    if (!el) return;
+    if (_buckets.length === 0) {
+      el.textContent = '';
+      if (btn) btn.disabled = false;
+      return;
+    }
+    const total = weightSum();
+    const ok = total === 100;
+    el.textContent = ok
+      ? `Total weight: ${total}% ✓`
+      : `Total weight: ${total}% — must equal 100%`;
+    el.style.color = ok ? 'var(--success, #22c55e)' : 'var(--error)';
+    if (btn) {
+      btn.disabled = !ok;
+      btn.style.opacity = ok ? '' : '0.5';
+      btn.style.cursor = ok ? '' : 'not-allowed';
+    }
   }
 
   function updateForwardURLVisibility() {
@@ -402,7 +433,7 @@
         <div class="form-row">
           <div class="form-group" style="flex:0 0 5rem">
             <label>Weight</label>
-            <input type="number" value="${b.weight}" min="1" oninput="_buckets[${i}].weight=parseInt(this.value)||1">
+            <input type="number" value="${b.weight}" min="1" oninput="_buckets[${i}].weight=parseInt(this.value)||1;updateWeightSum()">
           </div>
           <div class="form-group" style="flex:0 0 9rem">
             <label>Action</label>
@@ -448,6 +479,7 @@
           `}
         </div>` : ''}
       </div>`).join('');
+    updateWeightSum();
   }
 
   // ── Script editor ────────────────────────────────────────────────────────────
@@ -744,6 +776,12 @@
       if (_buckets.length === 0) {
         if (btn) setButtonState(btn, 'idle', 'Save Rule');
         alert('At least one bucket is required.');
+        return;
+      }
+      const totalWeight = weightSum();
+      if (totalWeight !== 100) {
+        if (btn) setButtonState(btn, 'idle', 'Save Rule');
+        alert('Bucket weights must sum to 100% (currently ' + totalWeight + '%).');
         return;
       }
 

@@ -74,13 +74,31 @@ func TestAdminAPI_PostRule(t *testing.T) {
 	mux := restapi.NewMux(store, nil, nil, nil, nil, nil)
 	r := domain.Rule{
 		ID: "r-new", Match: domain.MatchCriteria{Path: "/bar"},
-		Buckets: []domain.WeightedBucket{{Weight: 1, Action: domain.ActionSimulate, SimulationID: "s1"}},
+		Buckets: []domain.WeightedBucket{{Weight: 100, Action: domain.ActionSimulate, SimulationID: "s1"}},
 	}
 	body, _ := json.Marshal(r)
 	req := httptest.NewRequest(http.MethodPost, "/api/rules", bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	assert.Equal(t, 201, w.Code)
+}
+
+func TestAdminAPI_PostRule_WeightsNotSumming100(t *testing.T) {
+	store := &memStore{}
+	mux := restapi.NewMux(store, nil, nil, nil, nil, nil)
+	r := domain.Rule{
+		ID: "r-bad", Match: domain.MatchCriteria{Path: "/bar"},
+		Buckets: []domain.WeightedBucket{
+			{Weight: 60, Action: domain.ActionSimulate, SimulationID: "s1"},
+			{Weight: 60, Action: domain.ActionSimulate, SimulationID: "s2"},
+		},
+	}
+	body, _ := json.Marshal(r)
+	req := httptest.NewRequest(http.MethodPost, "/api/rules", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	assert.Equal(t, 422, w.Code)
+	assert.Contains(t, w.Body.String(), "sum to 100")
 }
 
 func TestAdminAPI_Health(t *testing.T) {
@@ -117,7 +135,7 @@ func TestAdminAPI_PutRule(t *testing.T) {
 	mux := restapi.NewMux(store, nil, nil, nil, nil, nil)
 	r := domain.Rule{
 		Match:   domain.MatchCriteria{Path: "/bar"},
-		Buckets: []domain.WeightedBucket{{Weight: 1, Action: domain.ActionSimulate, SimulationID: "s1"}},
+		Buckets: []domain.WeightedBucket{{Weight: 100, Action: domain.ActionSimulate, SimulationID: "s1"}},
 	}
 	body, _ := json.Marshal(r)
 	req := httptest.NewRequest(http.MethodPut, "/api/rules/r-updated", bytes.NewReader(body))
@@ -341,6 +359,8 @@ func TestAdminAPI_ServesUI(t *testing.T) {
 	assert.Contains(t, body, "editor-wrap")
 	assert.Contains(t, body, "setButtonState")
 	assert.Contains(t, body, "btn-save-rule")
+	assert.Contains(t, body, "updateWeightSum")
+	assert.Contains(t, body, "weight-sum-indicator")
 }
 
 func TestAdminAPI_GetRuleByID(t *testing.T) {

@@ -51,16 +51,43 @@ func TestRule_Validate(t *testing.T) {
 		assert.Contains(t, err.Error(), "forward_url")
 	})
 
-	t.Run("valid rule passes", func(t *testing.T) {
+	t.Run("valid single-bucket rule passes with weight 100", func(t *testing.T) {
 		r := domain.Rule{
 			ID: "r1",
 			Match: domain.MatchCriteria{Protocol: "http", Method: "GET", Path: "/foo"},
 			Buckets: []domain.WeightedBucket{
-				{Weight: 1, Action: domain.ActionSimulate, SimulationID: "sim1"},
+				{Weight: 100, Action: domain.ActionSimulate, SimulationID: "sim1"},
 			},
 		}
 		err := r.Validate()
 		assert.NoError(t, err)
+	})
+
+	t.Run("valid multi-bucket rule passes when weights sum to 100", func(t *testing.T) {
+		r := domain.Rule{
+			ID:    "r1",
+			Match: domain.MatchCriteria{Protocol: "http", Method: "GET", Path: "/foo"},
+			Buckets: []domain.WeightedBucket{
+				{Weight: 70, Action: domain.ActionSimulate, SimulationID: "sim1"},
+				{Weight: 30, Action: domain.ActionSimulate, SimulationID: "sim2"},
+			},
+		}
+		err := r.Validate()
+		assert.NoError(t, err)
+	})
+
+	t.Run("weights not summing to 100 rejected", func(t *testing.T) {
+		r := domain.Rule{
+			ID:    "r1",
+			Match: domain.MatchCriteria{Protocol: "http", Method: "GET", Path: "/foo"},
+			Buckets: []domain.WeightedBucket{
+				{Weight: 60, Action: domain.ActionSimulate, SimulationID: "sim1"},
+				{Weight: 60, Action: domain.ActionSimulate, SimulationID: "sim2"},
+			},
+		}
+		err := r.Validate()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "sum to 100")
 	})
 
 	t.Run("empty id invalid", func(t *testing.T) {

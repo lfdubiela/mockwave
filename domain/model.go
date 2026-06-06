@@ -56,6 +56,7 @@ func (r Rule) Validate() error {
 	if len(r.Buckets) == 0 {
 		return fmt.Errorf("rule must have at least one bucket")
 	}
+	total := 0
 	for i, b := range r.Buckets {
 		if err := b.Validate(); err != nil {
 			return fmt.Errorf("bucket[%d]: %w", i, err)
@@ -63,6 +64,11 @@ func (r Rule) Validate() error {
 		if b.Action == ActionForward && r.ForwardURL == "" {
 			return fmt.Errorf("rule has forward bucket but forward_url is empty")
 		}
+		total += b.Weight
+	}
+	// Bucket weights are percentages of traffic and must cover exactly 100%.
+	if total != 100 {
+		return fmt.Errorf("bucket weights must sum to 100, got %d", total)
 	}
 	return nil
 }

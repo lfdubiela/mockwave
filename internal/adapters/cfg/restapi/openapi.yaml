@@ -273,6 +273,10 @@ components:
         weight:
           type: integer
           minimum: 1
+          description: >-
+            Percentage share of traffic for this bucket. The weights of all
+            buckets in a rule must sum to exactly 100; otherwise the rule is
+            rejected with 422 Unprocessable Entity.
         action:
           type: string
           enum: [simulate, forward]
@@ -291,6 +295,8 @@ components:
           $ref: "#/components/schemas/MatchCriteria"
         buckets:
           type: array
+          description: >-
+            Weighted traffic buckets. Bucket weights must sum to exactly 100.
           items:
             $ref: "#/components/schemas/WeightedBucket"
         forward_url:
