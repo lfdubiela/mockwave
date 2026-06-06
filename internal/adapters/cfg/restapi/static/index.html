@@ -152,23 +152,18 @@
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
     <h2><span class="live-dot"></span>Live Metrics</h2>
   </div>
-  <!-- Area chart: requests over time -->
-  <div style="margin-bottom:1.5rem">
+  <!-- Multi-line throughput chart: req/s per rule -->
+  <div style="margin-bottom:1.5rem;position:relative">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem">
-      <span style="color:var(--muted);font-size:0.75rem;text-transform:uppercase;letter-spacing:0.05em">Requests Over Time (last 30 min)</span>
+      <span style="color:var(--muted);font-size:0.75rem;text-transform:uppercase;letter-spacing:0.05em">Throughput per Rule — req/s (last 30 min)</span>
     </div>
     <div id="chart-skeleton" style="height:80px" class="sk"></div>
     <svg id="req-chart" width="100%" height="80" style="display:none;overflow:visible" viewBox="0 0 600 80" preserveAspectRatio="none">
-      <defs>
-        <linearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.25"/>
-          <stop offset="100%" stop-color="#f59e0b" stop-opacity="0.02"/>
-        </linearGradient>
-      </defs>
-      <path id="chart-fill" fill="url(#chartGrad)" d=""/>
-      <path id="chart-line" fill="none" stroke="#f59e0b" stroke-width="1.5" d=""/>
+      <g id="chart-lines"></g>
     </svg>
+    <div id="chart-tooltip" style="display:none;position:absolute;pointer-events:none;background:var(--bg);border:1px solid var(--border);border-radius:0.25rem;padding:0.25rem 0.5rem;font-size:0.75rem;white-space:nowrap;z-index:5"></div>
     <div id="chart-no-data" style="display:none;color:var(--muted);font-size:0.8rem;text-align:center;padding:1.5rem 0">No request history yet.</div>
+    <div id="chart-chips" style="display:flex;flex-wrap:wrap;gap:0.4rem;margin-top:0.5rem"></div>
   </div>
   <div class="stats-grid">
     <div class="stat-card"><div class="stat-label">Total Requests</div><div class="stat-value sk" id="m-total" style="min-height:2.5rem">—</div></div>
@@ -976,49 +971,116 @@
   }
 
   // ── Area Chart ──────────────────────────────────────────────────────────────
+  const CHART_COLORS = ['#f59e0b','#3b82f6','#22c55e','#ef4444','#a855f7','#14b8a6','#eab308','#ec4899','#64748b','#f97316'];
+  let _series = [];        // [{rule_id, rule_name, buckets:[{ts,count}]}]
+  let _hidden = new Set(); // rule_ids toggled off
+
   async function loadChart() {
     try {
       const res = await fetch('/api/metrics/history');
       if (!res.ok) throw new Error('no history');
-      const { buckets } = await res.json();
-      renderChart(buckets || []);
+      const { rules } = await res.json();
+      _series = rules || [];
+      renderChart();
+      renderChips();
     } catch (_) {
       document.getElementById('chart-skeleton').style.display = 'none';
       document.getElementById('chart-no-data').style.display = 'block';
     }
   }
 
-  function renderChart(buckets) {
+  function renderChart() {
     const skeleton = document.getElementById('chart-skeleton');
     const svg = document.getElementById('req-chart');
     const noData = document.getElementById('chart-no-data');
-
+    const g = document.getElementById('chart-lines');
     skeleton.style.display = 'none';
     noData.style.display = 'none';
 
-    if (!buckets || buckets.length === 0) {
+    const visible = _series.filter(s => !_hidden.has(s.rule_id));
+    if (_series.length === 0) {
+      svg.style.display = 'none';
+      g.innerHTML = '';
       noData.style.display = 'block';
       return;
     }
-
     svg.style.display = 'block';
 
     const W = 600, H = 80, pad = 4;
-    const counts = buckets.map(b => b.count);
-    const maxC = Math.max(...counts, 1);
-    const n = counts.length;
+    // Max req/s across visible series (count/60), min tiny to avoid divide-by-zero.
+    let maxTps = 0;
+    for (const s of visible) {
+      for (const b of s.buckets) maxTps = Math.max(maxTps, b.count / 60);
+    }
+    maxTps = Math.max(maxTps, 0.0001);
 
-    const pts = counts.map((c, i) => {
-      const x = n === 1 ? W / 2 : (i / (n - 1)) * W;
-      const y = H - pad - ((c / maxC) * (H - 2 * pad));
-      return [x, y];
-    });
+    g.innerHTML = visible.map(s => {
+      const idx = _series.findIndex(x => x.rule_id === s.rule_id);
+      const color = CHART_COLORS[idx % CHART_COLORS.length];
+      const n = s.buckets.length;
+      const pts = s.buckets.map((b, i) => {
+        const x = n === 1 ? W / 2 : (i / (n - 1)) * W;
+        const y = H - pad - ((b.count / 60 / maxTps) * (H - 2 * pad));
+        return [x, y];
+      });
+      if (pts.length === 1) {
+        return `<circle cx="${pts[0][0]}" cy="${pts[0][1]}" r="2" fill="${color}"/>`;
+      }
+      const d = pts.map((p, i) => (i === 0 ? `M${p[0]},${p[1]}` : `L${p[0]},${p[1]}`)).join(' ');
+      return `<path d="${d}" fill="none" stroke="${color}" stroke-width="1.5"/>`;
+    }).join('');
 
-    const lineD = pts.map((p, i) => (i === 0 ? `M${p[0]},${p[1]}` : `L${p[0]},${p[1]}`)).join(' ');
-    const fillD = lineD + ` L${pts[pts.length-1][0]},${H} L${pts[0][0]},${H} Z`;
+    attachChartTooltip(visible, W, maxTps);
+  }
 
-    document.getElementById('chart-line').setAttribute('d', lineD);
-    document.getElementById('chart-fill').setAttribute('d', fillD);
+  function attachChartTooltip(visible, W, maxTps) {
+    const svg = document.getElementById('req-chart');
+    const tip = document.getElementById('chart-tooltip');
+    svg.onmousemove = (ev) => {
+      if (visible.length === 0) { tip.style.display = 'none'; return; }
+      const rect = svg.getBoundingClientRect();
+      const fx = (ev.clientX - rect.left) / rect.width; // 0..1
+      // Nearest minute column across the visible series.
+      let best = null, bestDist = Infinity;
+      for (const s of visible) {
+        const n = s.buckets.length;
+        for (let i = 0; i < n; i++) {
+          const x = n === 1 ? 0.5 : i / (n - 1);
+          const dist = Math.abs(x - fx);
+          if (dist < bestDist) {
+            bestDist = dist;
+            best = { name: s.rule_name || s.rule_id, count: s.buckets[i].count };
+          }
+        }
+      }
+      if (!best) { tip.style.display = 'none'; return; }
+      tip.textContent = `requests: ${best.count} · ${best.name}`;
+      tip.style.left = (ev.clientX - rect.left + 8) + 'px';
+      tip.style.top = (ev.clientY - rect.top - 8) + 'px';
+      tip.style.display = 'block';
+    };
+    svg.onmouseleave = () => { tip.style.display = 'none'; };
+  }
+
+  function renderChips() {
+    const el = document.getElementById('chart-chips');
+    if (!el) return;
+    el.innerHTML = _series.map((s, idx) => {
+      const color = CHART_COLORS[idx % CHART_COLORS.length];
+      const off = _hidden.has(s.rule_id);
+      const name = s.rule_name || s.rule_id;
+      return `<button type="button" class="chart-chip" data-rule="${escapeAttr(s.rule_id)}"
+        onclick="toggleSeries('${escapeAttr(s.rule_id)}')"
+        style="display:inline-flex;align-items:center;gap:0.35rem;border:1px solid var(--border);background:var(--bg);
+        border-radius:9999px;padding:0.15rem 0.6rem;font-size:0.75rem;cursor:pointer;opacity:${off ? '0.4' : '1'}">
+        <span style="width:0.6rem;height:0.6rem;border-radius:50%;background:${color}"></span>${name}</button>`;
+    }).join('');
+  }
+
+  function toggleSeries(ruleID) {
+    if (_hidden.has(ruleID)) _hidden.delete(ruleID); else _hidden.add(ruleID);
+    renderChart();
+    renderChips();
   }
 
   // Load chart on page load and refresh every 10s.
