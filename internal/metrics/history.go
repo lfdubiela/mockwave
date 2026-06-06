@@ -52,3 +52,36 @@ func (h *histRing) snapshot() []MinuteBucket {
 	}
 	return out
 }
+
+// windowHits returns the total count across all retained buckets.
+func (h *histRing) windowHits() int64 {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var total int64
+	for i := range h.slots {
+		if !h.slots[i].Ts.IsZero() {
+			total += h.slots[i].Count
+		}
+	}
+	return total
+}
+
+// lastCompletedCount returns the count of the most recent bucket strictly
+// before the minute containing now (i.e. the last fully-elapsed minute), or 0
+// if no such bucket exists.
+func (h *histRing) lastCompletedCount(now time.Time) int64 {
+	curMinute := now.UTC().Truncate(time.Minute)
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var best MinuteBucket
+	for i := range h.slots {
+		b := h.slots[i]
+		if b.Ts.IsZero() || !b.Ts.Before(curMinute) {
+			continue
+		}
+		if best.Ts.IsZero() || b.Ts.After(best.Ts) {
+			best = b
+		}
+	}
+	return best.Count
+}

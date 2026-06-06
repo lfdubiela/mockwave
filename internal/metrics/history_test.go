@@ -76,3 +76,34 @@ func TestHistoryBuffer_RecordMissUpdatesHistory(t *testing.T) {
 	assert.Len(t, c.History(), 1)
 	assert.Equal(t, int64(1), c.History()[0].Count)
 }
+
+func TestHistRing_WindowHits(t *testing.T) {
+	var h histRing
+	base := time.Date(2026, 6, 6, 10, 0, 0, 0, time.UTC)
+	h.record(base)                       // minute 10:00 -> 1
+	h.record(base.Add(10 * time.Second)) // minute 10:00 -> 2
+	h.record(base.Add(time.Minute))      // minute 10:01 -> 1
+	if got := h.windowHits(); got != 3 {
+		t.Fatalf("windowHits = %d, want 3", got)
+	}
+}
+
+func TestHistRing_LastCompletedCount(t *testing.T) {
+	var h histRing
+	base := time.Date(2026, 6, 6, 10, 0, 0, 0, time.UTC)
+	h.record(base)                  // 10:00 -> 1
+	h.record(base)                  // 10:00 -> 2
+	h.record(base.Add(time.Minute)) // 10:01 -> 1 (in-progress when now is 10:01:30)
+
+	now := base.Add(time.Minute + 30*time.Second) // 10:01:30 -> last completed minute is 10:00
+	if got := h.lastCompletedCount(now); got != 2 {
+		t.Fatalf("lastCompletedCount = %d, want 2", got)
+	}
+
+	// When only the in-progress minute exists, there is no completed minute.
+	var h2 histRing
+	h2.record(now) // 10:01
+	if got := h2.lastCompletedCount(now); got != 0 {
+		t.Fatalf("lastCompletedCount (only current) = %d, want 0", got)
+	}
+}
