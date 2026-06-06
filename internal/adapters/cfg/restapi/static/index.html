@@ -1131,7 +1131,7 @@
         <div class="bar-row">
           <span class="bar-label" title="${r.rule_name || r.rule_id}">${r.rule_name || r.rule_id}</span>
           <div class="bar-bg"><div class="bar-fill" style="width:${(r.hits / maxHits * 100).toFixed(1)}%"></div></div>
-          <span class="bar-meta">${r.hits} hits · p95 ${r.p95_ms != null ? r.p95_ms.toFixed(0) : '—'}ms</span>
+          <span class="bar-meta">${r.hits} hits · ${(r.current_tps ?? 0).toFixed(1)} tps · p95 ${r.p95_ms != null ? r.p95_ms.toFixed(0) : '—'}ms</span>
         </div>`).join('');
   }
 

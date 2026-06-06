@@ -361,6 +361,10 @@ func TestAdminAPI_ServesUI(t *testing.T) {
 	assert.Contains(t, body, "btn-save-rule")
 	assert.Contains(t, body, "updateWeightSum")
 	assert.Contains(t, body, "weight-sum-indicator")
+	assert.Contains(t, body, "chart-chips")
+	assert.Contains(t, body, "toggleSeries")
+	assert.Contains(t, body, "chart-tooltip")
+	assert.Contains(t, body, "tps")
 }
 
 func TestAdminAPI_GetRuleByID(t *testing.T) {
