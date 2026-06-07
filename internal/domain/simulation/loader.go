@@ -8,18 +8,20 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/mockwave/mockwave/domain"
 	"github.com/mockwave/mockwave/internal/domain/pipeline"
-	"github.com/mockwave/mockwave/store"
 )
 
 var templateRe = regexp.MustCompile(`\{\{request\.path\[(\d+)\]\}\}`)
 
 type SimulationStage struct {
-	store store.DataStore
+	sims map[string]domain.Simulation
 }
 
-func NewSimulationStage(store store.DataStore) *SimulationStage {
-	return &SimulationStage{store: store}
+// NewSimulationStage builds a stage that resolves responses from an in-memory
+// snapshot of simulations (no per-request store reads).
+func NewSimulationStage(sims map[string]domain.Simulation) *SimulationStage {
+	return &SimulationStage{sims: sims}
 }
 
 func (s *SimulationStage) Name() string { return "simulation" }
@@ -28,9 +30,9 @@ func (s *SimulationStage) Execute(_ context.Context, pctx *pipeline.PipelineCont
 	if pctx.ShouldForward {
 		return nil
 	}
-	sim, err := s.store.GetSimulation(pctx.SimulationID)
-	if err != nil {
-		return fmt.Errorf("simulation: %w", err)
+	sim, ok := s.sims[pctx.SimulationID]
+	if !ok {
+		return fmt.Errorf("simulation: not found: %q", pctx.SimulationID)
 	}
 
 	switch sim.Protocol {

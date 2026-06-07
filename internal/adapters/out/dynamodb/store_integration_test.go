@@ -130,7 +130,7 @@ func TestDynamoLocal_5050Distribution(t *testing.T) {
 
 	matchStage := matching.NewConditionMatchStage(rules)
 	routeStage := routing.NewPercentileRouterStage()
-	simStage := simulation.NewSimulationStage(store)
+	simStage := simulation.NewSimulationStage(mustSimMap(t, store))
 	p := pipeline.New(matchStage, routeStage, simStage)
 
 	counts := map[int]int{}
@@ -195,7 +195,7 @@ func TestDynamoLocal_PostFiftyFifty(t *testing.T) {
 
 	matchStage := matching.NewConditionMatchStage(rules)
 	routeStage := routing.NewPercentileRouterStage()
-	simStage := simulation.NewSimulationStage(store)
+	simStage := simulation.NewSimulationStage(mustSimMap(t, store))
 	p := pipeline.New(matchStage, routeStage, simStage)
 
 	counts := map[int]int{}
@@ -266,7 +266,7 @@ func TestDynamoLocal_ConcurrentSplit(t *testing.T) {
 
 	matchStage := matching.NewConditionMatchStage(rules)
 	routeStage := routing.NewPercentileRouterStage()
-	simStage := simulation.NewSimulationStage(store)
+	simStage := simulation.NewSimulationStage(mustSimMap(t, store))
 	p := pipeline.New(matchStage, routeStage, simStage)
 
 	const (
@@ -370,7 +370,7 @@ func TestDynamoLocal_ExactBeatsWildcard(t *testing.T) {
 
 	matchStage := matching.NewConditionMatchStage(rules)
 	routeStage := routing.NewPercentileRouterStage()
-	simStage := simulation.NewSimulationStage(store)
+	simStage := simulation.NewSimulationStage(mustSimMap(t, store))
 	p := pipeline.New(matchStage, routeStage, simStage)
 
 	statusFor := func(path string) int {
@@ -392,4 +392,17 @@ func TestDynamoLocal_ExactBeatsWildcard(t *testing.T) {
 	// A different segment falls through to the wildcard rule.
 	assert.Equal(t, 500, statusFor("/random-rule/9999/create"),
 		"non-exact segment should match the wildcard rule")
+}
+
+// mustSimMap loads all simulations from the store into a snapshot map, mirroring
+// how server.rebuild() feeds the simulation stage.
+func mustSimMap(t *testing.T, st *dynamostore.Store) map[string]domain.Simulation {
+	t.Helper()
+	sims, err := st.ListSimulations()
+	require.NoError(t, err)
+	m := make(map[string]domain.Simulation, len(sims))
+	for _, s := range sims {
+		m[s.ID] = s
+	}
+	return m
 }

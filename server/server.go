@@ -20,6 +20,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/mockwave/mockwave/domain"
 	graphqladapter "github.com/mockwave/mockwave/internal/adapters/in/graphql"
 	grpcadapter "github.com/mockwave/mockwave/internal/adapters/in/grpc"
 	"github.com/mockwave/mockwave/internal/adapters/in/httprest"
@@ -151,18 +152,22 @@ func (s *Server) rebuild() error {
 	if err != nil {
 		return fmt.Errorf("server: load rules: %w", err)
 	}
+	simList, err := s.cfg.Store.ListSimulations()
+	if err != nil {
+		return fmt.Errorf("server: load simulations: %w", err)
+	}
+	simMap := make(map[string]domain.Simulation, len(simList))
+	for _, sim := range simList {
+		simMap[sim.ID] = sim
+	}
 	matchStage := matching.NewConditionMatchStage(rules)
 	routeStage := routing.NewPercentileRouterStage()
-	simStage := simulation.NewSimulationStage(s.cfg.Store)
+	simStage := simulation.NewSimulationStage(simMap)
 	scriptStage := pipeline.NewScriptStage(s.engine, func(pctx *pipeline.PipelineContext) string {
 		if pctx.SimulationID == "" {
 			return ""
 		}
-		sim, err := s.cfg.Store.GetSimulation(pctx.SimulationID)
-		if err != nil || sim == nil {
-			return ""
-		}
-		return sim.Script
+		return simMap[pctx.SimulationID].Script
 	})
 	fwdStage := httprest.NewForwardStage(nil)
 	p := pipeline.New(matchStage, routeStage, simStage, scriptStage, fwdStage)

@@ -34,12 +34,12 @@ func (s *stubStore) SaveSimulation(s2 domain.Simulation) error { return nil }
 func (s *stubStore) DeleteRule(id string) error                { return nil }
 func (s *stubStore) DeleteSimulation(id string) error          { return nil }
 
-func newStore(sims ...domain.Simulation) *stubStore {
+func newStore(sims ...domain.Simulation) map[string]domain.Simulation {
 	m := make(map[string]domain.Simulation)
 	for _, s := range sims {
 		m[s.ID] = s
 	}
-	return &stubStore{sims: m}
+	return m
 }
 
 func TestSimulationStage_LoadsResponse(t *testing.T) {
@@ -141,7 +141,7 @@ func TestSimulationStage_SOAPProtocol(t *testing.T) {
 			},
 		},
 	}
-	stage := simulation.NewSimulationStage(store)
+	stage := simulation.NewSimulationStage(store.sims)
 	pctx := &pipeline.PipelineContext{
 		Request:      pipeline.NormalizedRequest{Protocol: "soap"},
 		SimulationID: "sim-soap",
@@ -166,7 +166,7 @@ func TestSimulationStage_GRPCProtocol(t *testing.T) {
 			},
 		},
 	}
-	stage := simulation.NewSimulationStage(store)
+	stage := simulation.NewSimulationStage(store.sims)
 	pctx := &pipeline.PipelineContext{
 		Request:      pipeline.NormalizedRequest{Protocol: "grpc"},
 		SimulationID: "sim-grpc",
@@ -177,4 +177,21 @@ func TestSimulationStage_GRPCProtocol(t *testing.T) {
 	assert.Equal(t, 0, pctx.Response.Status)
 	assert.Equal(t, `{"id":"42"}`, pctx.Response.Body)
 	assert.Equal(t, 50, pctx.Response.DelayMs)
+}
+
+func TestSimulationStage_ReadsFromSnapshot_NoStoreCalls(t *testing.T) {
+	sims := map[string]domain.Simulation{
+		"s1": {ID: "s1", Protocol: "http", Response: domain.HTTPResponse{Status: 201}},
+	}
+	stage := simulation.NewSimulationStage(sims)
+	pctx := &pipeline.PipelineContext{SimulationID: "s1"}
+	require.NoError(t, stage.Execute(context.Background(), pctx))
+	require.NotNil(t, pctx.Response)
+	assert.Equal(t, 201, pctx.Response.Status)
+}
+
+func TestSimulationStage_MissingSimulation(t *testing.T) {
+	stage := simulation.NewSimulationStage(map[string]domain.Simulation{})
+	pctx := &pipeline.PipelineContext{SimulationID: "nope"}
+	require.Error(t, stage.Execute(context.Background(), pctx))
 }

@@ -113,7 +113,9 @@ func (s *stubStoreWithData) GetSimulation(id string) (*domain.Simulation, error)
 	}
 	return nil, fmt.Errorf("not found")
 }
-func (s *stubStoreWithData) ListSimulations() ([]domain.Simulation, error) { return nil, nil }
+func (s *stubStoreWithData) ListSimulations() ([]domain.Simulation, error) {
+	return []domain.Simulation{{ID: "s1", Protocol: "http", Response: domain.HTTPResponse{Status: 200}}}, nil
+}
 func (s *stubStoreWithData) SaveRule(r domain.Rule) error                  { return nil }
 func (s *stubStoreWithData) SaveSimulation(sim domain.Simulation) error    { return nil }
 func (s *stubStoreWithData) DeleteRule(id string) error                    { return nil }
