@@ -181,9 +181,9 @@
     </div>
   </div>
   <div class="stats-grid">
-    <div class="stat-card"><div class="stat-label">Total Requests</div><div class="stat-value sk" id="m-total" style="min-height:2.5rem">—</div></div>
-    <div class="stat-card"><div class="stat-label">Matched</div><div class="stat-value sk" id="m-matched" style="min-height:2.5rem">—</div></div>
-    <div class="stat-card"><div class="stat-label">Unmatched</div><div class="stat-value sk" id="m-misses" style="min-height:2.5rem">—</div></div>
+    <div class="stat-card"><div class="stat-label">Total</div><div class="stat-value sk" id="m-total" style="min-height:2.5rem">—</div></div>
+    <div class="stat-card"><div class="stat-label">P95</div><div class="stat-value sk" id="m-p95" style="min-height:2.5rem;color:var(--accent)">—</div></div>
+    <div class="stat-card"><div class="stat-label">Misses</div><div class="stat-value sk" id="m-misses" style="min-height:2.5rem;color:var(--error)">—</div></div>
   </div>
   <div style="margin-top:2rem">
     <div class="section-header">
@@ -1176,13 +1176,14 @@
     es.onmessage = e => {
       try {
         const snap = JSON.parse(e.data);
-        const matched = snap.total_requests - snap.misses;
+        const rules = snap.rules || [];
         const totalEl = document.getElementById('m-total');
         totalEl.textContent = snap.total_requests;
         totalEl.classList.remove('sk');
-        const matchedEl = document.getElementById('m-matched');
-        matchedEl.textContent = matched;
-        matchedEl.classList.remove('sk');
+        const p95 = rules.length > 0 ? Math.max(...rules.map(r => r.p95_ms ?? 0)) : 0;
+        const p95El = document.getElementById('m-p95');
+        p95El.textContent = p95 > 0 ? p95.toFixed(0) + 'ms' : '—';
+        p95El.classList.remove('sk');
         const missesEl = document.getElementById('m-misses');
         missesEl.textContent = snap.misses;
         missesEl.classList.remove('sk');
