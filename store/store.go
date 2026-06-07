@@ -26,3 +26,14 @@ type DataStore interface {
 	DeleteRule(id string) error
 	DeleteSimulation(id string) error
 }
+
+// VersionedStore is an optional capability. Stores that can report a monotonic
+// config version enable the periodic version-poll reloader: the reloader reads
+// ConfigVersion cheaply each tick and triggers a full in-memory reload only when
+// the value changed. Stores that do not implement it (e.g. the JSON store) are
+// never polled.
+type VersionedStore interface {
+	// ConfigVersion returns a monotonically increasing marker that changes on
+	// every rule/simulation write. Returns 0 when no marker exists yet.
+	ConfigVersion() (int64, error)
+}
