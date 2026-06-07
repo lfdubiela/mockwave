@@ -90,6 +90,10 @@
   .listen-pulse { position: relative; display: inline-block; width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--accent); margin-right: 0.5rem; vertical-align: middle; }
   .listen-pulse::after { content: ''; position: absolute; inset: 0; border-radius: 50%; background: var(--accent); animation: ping 1.6s cubic-bezier(0,0,0.2,1) infinite; }
   @keyframes ping { 0% { transform: scale(1); opacity: 0.6; } 100% { transform: scale(3.5); opacity: 0; } }
+  /* Sweeping scan bar: an indeterminate radar-sweep for the empty unmatched state. */
+  .scan-bar { position: relative; height: 3px; width: 55%; margin: 0.25rem auto 0.75rem; background: var(--border); border-radius: 2px; overflow: hidden; }
+  .scan-bar::after { content: ''; position: absolute; top: 0; left: -30%; height: 100%; width: 30%; background: linear-gradient(90deg, transparent, var(--accent), transparent); animation: sweep 1.6s ease-in-out infinite; }
+  @keyframes sweep { 0% { left: -30%; } 100% { left: 100%; } }
   .empty { color: var(--muted); text-align: center; padding: 2.5rem; font-size: 0.875rem; }
   .mono { font-family: 'Courier New', monospace; font-size: 0.8rem; }
 
@@ -199,7 +203,7 @@
     </p>
     <table>
       <thead><tr><th>Time</th><th>Protocol</th><th>Method</th><th>Path</th><th></th></tr></thead>
-      <tbody id="unmatched-tbody"><tr><td colspan="5" class="empty">Listening for unmatched requests…</td></tr></tbody>
+      <tbody id="unmatched-tbody"><tr><td colspan="5" class="empty"><div class="scan-bar"></div>Listening for unmatched requests</td></tr></tbody>
     </table>
   </div>
 </div>
@@ -1241,7 +1245,7 @@
 
       if (!items || items.length === 0) {
         _unmatchedList = [];
-        tbody.innerHTML = '<tr><td colspan="5" class="empty">Listening for unmatched requests…</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" class="empty"><div class="scan-bar"></div>Listening for unmatched requests</td></tr>';
         badge.style.display = 'none';
         countEl.textContent = '';
         _prevUnmatchedCount = 0;
