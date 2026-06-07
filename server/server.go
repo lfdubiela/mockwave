@@ -121,6 +121,9 @@ func New(cfg Config) (*Server, error) {
 		return nil, err
 	}
 	if vs, ok := s.cfg.Store.(store.VersionedStore); ok {
+		if s.cfg.ReloadInterval == 0 {
+			s.cfg.ReloadInterval = reloadIntervalFromEnv()
+		}
 		rl := reload.New(vs, s.cfg.reloadInterval(), s.Rebuild, s.cfg.Logger)
 		rctx, rcancel := context.WithCancel(context.Background())
 		s.reloadCancel = rcancel

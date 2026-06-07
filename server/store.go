@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"os"
+	"time"
 
 	cosmos "github.com/mockwave/mockwave/internal/adapters/out/cosmos"
 	dynamostore "github.com/mockwave/mockwave/internal/adapters/out/dynamodb"
@@ -10,6 +11,17 @@ import (
 	mongodb "github.com/mockwave/mockwave/internal/adapters/out/mongodb"
 	"github.com/mockwave/mockwave/store"
 )
+
+// reloadIntervalFromEnv returns the parsed MOCKWAVE_RELOAD_INTERVAL, or 0 when
+// unset/invalid (0 lets Config.reloadInterval fall back to the 15s default).
+func reloadIntervalFromEnv() time.Duration {
+	if v := os.Getenv("MOCKWAVE_RELOAD_INTERVAL"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			return d
+		}
+	}
+	return 0
+}
 
 // buildStoreFromEnv constructs a DataStore from environment variables.
 // MOCKWAVE_STORE selects the backend (default: "json").

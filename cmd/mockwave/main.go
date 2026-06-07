@@ -41,11 +41,12 @@ func startCmd() *cobra.Command {
 		configFile   string
 		mockPort     int
 		adminPort    int
-		protocolsStr string
-		grpcPort     int
-		grpcProto    string
-		storeType    string
-		opts         storeOpts
+		protocolsStr   string
+		grpcPort       int
+		grpcProto      string
+		storeType      string
+		reloadInterval time.Duration
+		opts           storeOpts
 	)
 
 	cmd := &cobra.Command{
@@ -57,9 +58,10 @@ func startCmd() *cobra.Command {
 				return fmt.Errorf("init store: %w", err)
 			}
 			srv, err := server.New(server.Config{
-				MockPort:  mockPort,
-				AdminPort: adminPort,
-				Store:     s,
+				MockPort:       mockPort,
+				AdminPort:      adminPort,
+				Store:          s,
+				ReloadInterval: reloadInterval,
 			})
 			if err != nil {
 				return err
@@ -130,6 +132,7 @@ func startCmd() *cobra.Command {
 
 	// Store selection
 	cmd.Flags().StringVar(&storeType, "store", "json", "storage backend: json|dynamodb|mongo|cosmos")
+	cmd.Flags().DurationVar(&reloadInterval, "reload-interval", 15*time.Second, "version-poll reload interval for remote stores")
 
 	// DynamoDB flags
 	cmd.Flags().StringVar(&opts.DynamoRulesTable, "dynamo-rules-table", "mockwave-rules", "DynamoDB table for rules")
