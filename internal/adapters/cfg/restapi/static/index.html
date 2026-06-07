@@ -86,6 +86,10 @@
   .section-divider { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; margin: 1rem 0 0.5rem; }
   .live-dot { display: inline-block; width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--success); margin-right: 0.4rem; animation: pulse 2s infinite; }
   @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+  /* Radar-ping: a dot with an expanding ring, signals we're actively listening. */
+  .listen-pulse { position: relative; display: inline-block; width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--accent); margin-right: 0.5rem; vertical-align: middle; }
+  .listen-pulse::after { content: ''; position: absolute; inset: 0; border-radius: 50%; background: var(--accent); animation: ping 1.6s cubic-bezier(0,0,0.2,1) infinite; }
+  @keyframes ping { 0% { transform: scale(1); opacity: 0.6; } 100% { transform: scale(3.5); opacity: 0; } }
   .empty { color: var(--muted); text-align: center; padding: 2.5rem; font-size: 0.875rem; }
   .mono { font-family: 'Courier New', monospace; font-size: 0.8rem; }
 
@@ -187,7 +191,7 @@
   </div>
   <div style="margin-top:2rem">
     <div class="section-header">
-      <h2>Unmatched Requests <span id="dash-unmatched-count" style="color:var(--muted);font-size:0.8rem;font-weight:400"></span></h2>
+      <h2><span class="listen-pulse" title="Listening for unmatched requests"></span>Unmatched Requests <span id="dash-unmatched-count" style="color:var(--muted);font-size:0.8rem;font-weight:400"></span></h2>
       <button class="btn-danger btn-sm" onclick="clearUnmatched()">Clear All</button>
     </div>
     <p style="color:var(--muted);font-size:0.8rem;margin-bottom:1rem">
@@ -195,7 +199,7 @@
     </p>
     <table>
       <thead><tr><th>Time</th><th>Protocol</th><th>Method</th><th>Path</th><th></th></tr></thead>
-      <tbody id="unmatched-tbody"><tr><td colspan="5" class="empty">No unmatched requests captured.</td></tr></tbody>
+      <tbody id="unmatched-tbody"><tr><td colspan="5" class="empty">Listening for unmatched requests…</td></tr></tbody>
     </table>
   </div>
 </div>
@@ -1237,7 +1241,7 @@
 
       if (!items || items.length === 0) {
         _unmatchedList = [];
-        tbody.innerHTML = '<tr><td colspan="5" class="empty">No unmatched requests captured yet.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" class="empty">Listening for unmatched requests…</td></tr>';
         badge.style.display = 'none';
         countEl.textContent = '';
         _prevUnmatchedCount = 0;
