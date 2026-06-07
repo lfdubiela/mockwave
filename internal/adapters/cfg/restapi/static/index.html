@@ -1155,7 +1155,7 @@
       return `<button type="button" class="chart-chip" data-rule="${escapeAttr(s.rule_id)}"
         onclick="toggleSeries('${escapeAttr(s.rule_id)}')"
         style="display:inline-flex;align-items:center;gap:0.35rem;border:1px solid var(--border);background:var(--bg);
-        border-radius:9999px;padding:0.15rem 0.6rem;font-size:0.75rem;cursor:pointer;opacity:${off ? '0.4' : '1'}">
+        color:var(--text);border-radius:9999px;padding:0.15rem 0.6rem;font-size:0.75rem;cursor:pointer;opacity:${off ? '0.4' : '1'}">
         <span style="width:0.6rem;height:0.6rem;border-radius:50%;background:${color}"></span>${name}</button>`;
     }).join('');
   }
