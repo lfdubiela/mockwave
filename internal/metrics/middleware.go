@@ -62,7 +62,8 @@ func (m *Middleware) Execute(ctx context.Context, pctx *pipeline.PipelineContext
 	if err != nil {
 		span.SetError(err)
 	}
-	latencyMs := float64(time.Since(start).Milliseconds())
+	// Use microsecond precision so sub-millisecond handlers don't floor to 0ms.
+	latencyMs := float64(time.Since(start).Microseconds()) / 1000.0
 
 	if pctx.Matched != nil {
 		m.collector.RecordHit(pctx.Matched.ID, pctx.Matched.Name, latencyMs)

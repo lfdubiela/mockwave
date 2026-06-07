@@ -107,3 +107,28 @@ func TestHistRing_LastCompletedCount(t *testing.T) {
 		t.Fatalf("lastCompletedCount (only current) = %d, want 0", got)
 	}
 }
+
+func TestCollector_CurrentTPS_FromCompletedMinute(t *testing.T) {
+	// White-box: build a collector whose rule ring has a fully-elapsed minute
+	// with 120 hits, so current TPS must be 120/60 = 2.0.
+	base := time.Date(2026, 6, 6, 10, 0, 0, 0, time.UTC)
+	c := NewCollector()
+	rh := &histRing{}
+	for i := 0; i < 120; i++ {
+		rh.record(base) // minute 10:00 -> 120
+	}
+	c.ruleHist["r1"] = rh
+	c.names["r1"] = "Rule One"
+	c.latencies["r1"] = []float64{5}
+	c.total = 120
+
+	// Now is in a later minute, so 10:00 is the last completed minute.
+	// Snapshot uses time.Now(); base is far in the past, so it counts as completed.
+	snap := c.Snapshot()
+	if len(snap.Rules) != 1 {
+		t.Fatalf("got %d rules, want 1", len(snap.Rules))
+	}
+	if got := snap.Rules[0].CurrentTPS; got != 2.0 {
+		t.Fatalf("CurrentTPS = %v, want 2.0 (120 hits / 60s)", got)
+	}
+}

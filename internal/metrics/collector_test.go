@@ -119,3 +119,37 @@ func TestCollector_Snapshot_CurrentTPS(t *testing.T) {
 		t.Fatalf("CurrentTPS = %v, want 0 (only in-progress minute)", snap.Rules[0].CurrentTPS)
 	}
 }
+
+func TestCollector_Snapshot_P50P95(t *testing.T) {
+	c := metrics.NewCollector()
+	// 100 samples with latencies 1..100 ms for one rule.
+	for i := 1; i <= 100; i++ {
+		c.RecordHit("r1", "Rule One", float64(i))
+	}
+	snap := c.Snapshot()
+	if len(snap.Rules) != 1 {
+		t.Fatalf("got %d rules, want 1", len(snap.Rules))
+	}
+	r := snap.Rules[0]
+	if r.Hits != 100 {
+		t.Fatalf("hits = %d, want 100", r.Hits)
+	}
+	// percentile idx = ceil(n*p/100)-1 over sorted 1..100.
+	if r.P50Ms != 50 {
+		t.Fatalf("P50Ms = %v, want 50", r.P50Ms)
+	}
+	if r.P95Ms != 95 {
+		t.Fatalf("P95Ms = %v, want 95", r.P95Ms)
+	}
+}
+
+func TestCollector_Snapshot_SubMillisecondLatencyNotZero(t *testing.T) {
+	c := metrics.NewCollector()
+	// Fractional-ms latencies must survive (regression: integer ms truncated to 0).
+	c.RecordHit("r1", "Rule One", 0.3)
+	c.RecordHit("r1", "Rule One", 0.7)
+	snap := c.Snapshot()
+	if snap.Rules[0].P95Ms == 0 {
+		t.Fatalf("P95Ms = 0, want > 0 for sub-millisecond latencies")
+	}
+}
