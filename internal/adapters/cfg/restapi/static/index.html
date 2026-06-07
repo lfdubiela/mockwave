@@ -28,14 +28,20 @@
   .tab-content.active { display: block; animation: tabFadeIn 150ms ease-out; }
   @keyframes tabFadeIn { from { opacity: 0; } to { opacity: 1; } }
 
-  /* Stats rail */
-  .stats-rail { width: 160px; flex-shrink: 0; border-left: 1px solid var(--border); padding: 1.25rem 1rem; display: flex; flex-direction: column; gap: 1rem; }
-  .rail-card { background: var(--surface); border: 1px solid var(--border); border-radius: 0.5rem; padding: 0.75rem; text-align: center; }
-  .rail-card.rail-error { border-color: rgba(248,113,113,0.3); }
-  .rail-label { color: var(--muted); font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.2rem; }
-  .rail-value { font-size: 1.35rem; font-weight: 700; color: var(--text); }
-  .rail-value.accent { color: var(--accent); }
-  .rail-value.error { color: var(--error); }
+  /* Stats rail — per-rule hit distribution */
+  .stats-rail { width: 220px; flex-shrink: 0; border-left: 1px solid var(--border); padding: 1.25rem 0.9rem; display: flex; flex-direction: column; gap: 0.75rem; overflow-y: auto; }
+  .rail-title { color: var(--muted); font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
+  .rail-empty { color: var(--muted); font-size: 0.75rem; text-align: center; padding: 1.75rem 0; }
+  #rail-dist { display: flex; flex-direction: column; gap: 0.5rem; }
+  .dist-card { background: var(--surface); border: 1px solid var(--border); border-radius: 0.5rem; padding: 0.6rem 0.7rem; }
+  .dist-name { font-size: 0.78rem; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 0.45rem; }
+  .dist-metrics { display: flex; flex-direction: column; gap: 0.22rem; }
+  .dist-metrics > div { display: flex; justify-content: space-between; align-items: baseline; }
+  .dist-k { color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; font-size: 0.62rem; }
+  .dist-v { font-weight: 700; font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+  .dist-v.tps { color: var(--accent); }
+  .dist-bar { height: 3px; background: var(--border); border-radius: 9999px; margin-top: 0.5rem; overflow: hidden; }
+  .dist-bar > i { display: block; height: 100%; background: var(--accent); border-radius: 9999px; transition: width 0.5s ease; }
 
   /* Tables */
   table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
@@ -153,26 +159,32 @@
     <h2><span class="live-dot"></span>Live Metrics</h2>
   </div>
   <!-- Multi-line throughput chart: req/s per rule -->
-  <div style="margin-bottom:1.5rem;position:relative">
+  <div style="margin-bottom:1.5rem">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem">
       <span style="color:var(--muted);font-size:0.75rem;text-transform:uppercase;letter-spacing:0.05em">Throughput per Rule — req/s (last 30 min)</span>
     </div>
-    <div id="chart-skeleton" style="height:80px" class="sk"></div>
-    <svg id="req-chart" width="100%" height="80" style="display:none;overflow:visible" viewBox="0 0 600 80" preserveAspectRatio="none">
-      <g id="chart-lines"></g>
-    </svg>
-    <div id="chart-tooltip" style="display:none;position:absolute;pointer-events:none;background:var(--bg);border:1px solid var(--border);border-radius:0.25rem;padding:0.25rem 0.5rem;font-size:0.75rem;white-space:nowrap;z-index:5"></div>
-    <div id="chart-no-data" style="display:none;color:var(--muted);font-size:0.8rem;text-align:center;padding:1.5rem 0">No request history yet.</div>
-    <div id="chart-chips" style="display:flex;flex-wrap:wrap;gap:0.4rem;margin-top:0.5rem"></div>
+    <!-- chart on the left, per-rule filter chips listed on the right -->
+    <div style="display:flex;gap:1rem;align-items:flex-start">
+      <div style="flex:1;position:relative;min-width:0">
+        <div id="chart-skeleton" style="height:220px" class="sk"></div>
+        <svg id="req-chart" width="100%" height="220" style="display:none">
+          <defs id="chart-defs"></defs>
+          <g id="chart-grid"></g>
+          <g id="chart-areas"></g>
+          <g id="chart-lines"></g>
+          <g id="chart-axis"></g>
+        </svg>
+        <div id="chart-tooltip" style="display:none;position:absolute;pointer-events:none;background:var(--bg);border:1px solid var(--border);border-radius:0.25rem;padding:0.25rem 0.5rem;font-size:0.75rem;white-space:nowrap;z-index:5"></div>
+        <div id="chart-no-data" style="display:none;color:var(--muted);font-size:0.8rem;text-align:center;padding:1.5rem 0">No request history yet.</div>
+      </div>
+      <div id="chart-chips" style="display:flex;flex-direction:column;gap:0.4rem;flex:0 0 11rem;max-height:220px;overflow-y:auto"></div>
+    </div>
   </div>
   <div class="stats-grid">
     <div class="stat-card"><div class="stat-label">Total Requests</div><div class="stat-value sk" id="m-total" style="min-height:2.5rem">—</div></div>
     <div class="stat-card"><div class="stat-label">Matched</div><div class="stat-value sk" id="m-matched" style="min-height:2.5rem">—</div></div>
     <div class="stat-card"><div class="stat-label">Unmatched</div><div class="stat-value sk" id="m-misses" style="min-height:2.5rem">—</div></div>
   </div>
-  <div class="section-divider">Rule Hit Distribution</div>
-  <div id="metrics-bars"><p class="empty">No requests recorded yet.</p></div>
-
   <div style="margin-top:2rem">
     <div class="section-header">
       <h2>Unmatched Requests <span id="dash-unmatched-count" style="color:var(--muted);font-size:0.8rem;font-weight:400"></span></h2>
@@ -230,20 +242,10 @@
 
   </div><!-- /main-content -->
 
-  <!-- Persistent stats rail -->
+  <!-- Persistent rail — per-rule hit distribution -->
   <aside class="stats-rail">
-    <div class="rail-card">
-      <div class="rail-label">Total</div>
-      <div class="rail-value" id="rail-total">—</div>
-    </div>
-    <div class="rail-card">
-      <div class="rail-label">p95</div>
-      <div class="rail-value accent" id="rail-p95">—</div>
-    </div>
-    <div class="rail-card rail-error">
-      <div class="rail-label">Misses</div>
-      <div class="rail-value error" id="rail-misses">—</div>
-    </div>
+    <div class="rail-title">Rule Hit Distribution</div>
+    <div id="rail-dist"><p class="rail-empty">No requests yet.</p></div>
   </aside>
 </div><!-- /main-layout -->
 
@@ -989,73 +991,154 @@
     }
   }
 
+  // Fixed time window: the X axis always spans the last 30 minutes.
+  const CHART_WINDOW_MS = 30 * 60 * 1000;
+  const CHART_H = 220;
+  const CHART_PAD = { l: 40, r: 14, t: 12, b: 26 };
+  let _chartCtx = null;       // render context shared with the tooltip
+  let _chartResizeBound = false;
+
+  // Round a value up to a "nice" axis maximum (1/2/5 × 10ⁿ).
+  function niceCeil(v) {
+    if (v <= 0) return 1;
+    const exp = Math.floor(Math.log10(v));
+    const base = Math.pow(10, exp);
+    const f = v / base;
+    const nf = f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10;
+    return nf * base;
+  }
+
+  function fmtClock(ts) {
+    const d = new Date(ts);
+    return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  }
+
   function renderChart() {
     const skeleton = document.getElementById('chart-skeleton');
     const svg = document.getElementById('req-chart');
     const noData = document.getElementById('chart-no-data');
-    const g = document.getElementById('chart-lines');
+    const defs = document.getElementById('chart-defs');
+    const grid = document.getElementById('chart-grid');
+    const areas = document.getElementById('chart-areas');
+    const lines = document.getElementById('chart-lines');
+    const axis = document.getElementById('chart-axis');
+
+    if (!_chartResizeBound) {
+      window.addEventListener('resize', () => { if (_series.length) renderChart(); });
+      _chartResizeBound = true;
+    }
+
     skeleton.style.display = 'none';
     noData.style.display = 'none';
 
-    const visible = _series.filter(s => !_hidden.has(s.rule_id));
     if (_series.length === 0) {
       svg.style.display = 'none';
-      g.innerHTML = '';
+      [defs, grid, areas, lines, axis].forEach(el => el.innerHTML = '');
       noData.style.display = 'block';
       return;
     }
     svg.style.display = 'block';
 
-    const W = 600, H = 80, pad = 4;
-    // Max req/s across visible series (count/60), min tiny to avoid divide-by-zero.
-    let maxTps = 0;
-    for (const s of visible) {
-      for (const b of s.buckets) maxTps = Math.max(maxTps, b.count / 60);
-    }
-    maxTps = Math.max(maxTps, 0.0001);
+    const W = svg.getBoundingClientRect().width;
+    if (W <= 0) return; // not laid out yet (e.g. hidden tab)
+    const H = CHART_H, P = CHART_PAD;
+    const plotW = W - P.l - P.r, plotH = H - P.t - P.b;
+    const baseY = P.t + plotH;
 
-    g.innerHTML = visible.map(s => {
+    // Always the last 30 minutes, regardless of how sparse the data is.
+    const tMax = Date.now();
+    const tMin = tMax - CHART_WINDOW_MS;
+
+    const visible = _series.filter(s => !_hidden.has(s.rule_id));
+    let maxTps = 0;
+    for (const s of visible)
+      for (const b of s.buckets) maxTps = Math.max(maxTps, b.count / 60);
+    maxTps = niceCeil(maxTps);
+
+    const xFor = ts => P.l + ((ts - tMin) / CHART_WINDOW_MS) * plotW;
+    const yFor = tps => P.t + (1 - tps / maxTps) * plotH;
+    const fmtTps = v => (maxTps >= 10 ? Math.round(v).toString() : v.toFixed(1));
+
+    // ── Y grid + value scale (5 rows) ──────────────────────────────────────
+    const ROWS = 4;
+    let gridHtml = '';
+    for (let k = 0; k <= ROWS; k++) {
+      const val = (maxTps * k) / ROWS;
+      const gy = yFor(val);
+      gridHtml += `<line x1="${P.l}" y1="${gy.toFixed(1)}" x2="${P.l + plotW}" y2="${gy.toFixed(1)}" stroke="var(--border)" stroke-width="1"/>`;
+      gridHtml += `<text x="${P.l - 6}" y="${(gy + 3).toFixed(1)}" text-anchor="end" style="font-size:10px;fill:var(--muted);font-variant-numeric:tabular-nums">${fmtTps(val)}</text>`;
+    }
+    grid.innerHTML = gridHtml;
+
+    // ── X time axis (fixed 30-min window) ──────────────────────────────────
+    const nx = Math.max(3, Math.min(6, Math.round(plotW / 90)));
+    let axisHtml = '';
+    for (let i = 0; i <= nx; i++) {
+      const ts = tMin + (i / nx) * CHART_WINDOW_MS;
+      const x = P.l + (i / nx) * plotW;
+      const anchor = i === 0 ? 'start' : i === nx ? 'end' : 'middle';
+      axisHtml += `<text x="${x.toFixed(1)}" y="${H - 8}" text-anchor="${anchor}" style="font-size:10px;fill:var(--muted);font-variant-numeric:tabular-nums">${fmtClock(ts)}</text>`;
+    }
+    axis.innerHTML = axisHtml;
+
+    // ── Series: gradient area fill + line ──────────────────────────────────
+    let defsHtml = '', areaHtml = '', lineHtml = '';
+    visible.forEach(s => {
       const idx = _series.findIndex(x => x.rule_id === s.rule_id);
       const color = CHART_COLORS[idx % CHART_COLORS.length];
-      const n = s.buckets.length;
-      const pts = s.buckets.map((b, i) => {
-        const x = n === 1 ? W / 2 : (i / (n - 1)) * W;
-        const y = H - pad - ((b.count / 60 / maxTps) * (H - 2 * pad));
-        return [x, y];
-      });
+      const pts = s.buckets
+        .filter(b => { const t = new Date(b.ts).getTime(); return t >= tMin && t <= tMax; })
+        .map(b => [xFor(new Date(b.ts).getTime()), yFor(b.count / 60)])
+        .sort((a, b) => a[0] - b[0]);
+      if (pts.length === 0) return;
       if (pts.length === 1) {
-        return `<circle cx="${pts[0][0]}" cy="${pts[0][1]}" r="2" fill="${color}"/>`;
+        lineHtml += `<circle cx="${pts[0][0].toFixed(1)}" cy="${pts[0][1].toFixed(1)}" r="2.5" fill="${color}"/>`;
+        return;
       }
-      const d = pts.map((p, i) => (i === 0 ? `M${p[0]},${p[1]}` : `L${p[0]},${p[1]}`)).join(' ');
-      return `<path d="${d}" fill="none" stroke="${color}" stroke-width="1.5"/>`;
-    }).join('');
+      const gid = 'chart-grad-' + idx;
+      defsHtml += `<linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">`
+        + `<stop offset="0%" stop-color="${color}" stop-opacity="0.35"/>`
+        + `<stop offset="100%" stop-color="${color}" stop-opacity="0"/></linearGradient>`;
+      const line = pts.map((p, i) => (i === 0 ? 'M' : 'L') + p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ');
+      const area = `M${pts[0][0].toFixed(1)},${baseY} `
+        + pts.map(p => 'L' + p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ')
+        + ` L${pts[pts.length - 1][0].toFixed(1)},${baseY} Z`;
+      areaHtml += `<path d="${area}" fill="url(#${gid})"/>`;
+      lineHtml += `<path d="${line}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>`;
+    });
+    defs.innerHTML = defsHtml;
+    areas.innerHTML = areaHtml;
+    lines.innerHTML = lineHtml;
 
-    attachChartTooltip(visible, W, maxTps);
+    _chartCtx = { tMin, tMax, maxTps, P, plotW, visible, fmtTps };
+    attachChartTooltip();
   }
 
-  function attachChartTooltip(visible, W, maxTps) {
+  function attachChartTooltip() {
     const svg = document.getElementById('req-chart');
     const tip = document.getElementById('chart-tooltip');
     svg.onmousemove = (ev) => {
-      if (visible.length === 0) { tip.style.display = 'none'; return; }
+      const ctx = _chartCtx;
+      if (!ctx || ctx.visible.length === 0) { tip.style.display = 'none'; return; }
       const rect = svg.getBoundingClientRect();
-      const fx = (ev.clientX - rect.left) / rect.width; // 0..1
-      // Nearest minute column across the visible series.
+      const mx = ev.clientX - rect.left;
+      // Nearest data point (in X pixels) across the visible series.
       let best = null, bestDist = Infinity;
-      for (const s of visible) {
-        const n = s.buckets.length;
-        for (let i = 0; i < n; i++) {
-          const x = n === 1 ? 0.5 : i / (n - 1);
-          const dist = Math.abs(x - fx);
+      for (const s of ctx.visible) {
+        for (const b of s.buckets) {
+          const t = new Date(b.ts).getTime();
+          if (t < ctx.tMin || t > ctx.tMax) continue;
+          const x = ctx.P.l + ((t - ctx.tMin) / (ctx.tMax - ctx.tMin)) * ctx.plotW;
+          const dist = Math.abs(x - mx);
           if (dist < bestDist) {
             bestDist = dist;
-            best = { name: s.rule_name || s.rule_id, count: s.buckets[i].count };
+            best = { name: s.rule_name || s.rule_id, count: b.count, ts: t };
           }
         }
       }
-      if (!best) { tip.style.display = 'none'; return; }
-      tip.textContent = `requests: ${best.count} · ${best.name}`;
-      tip.style.left = (ev.clientX - rect.left + 8) + 'px';
+      if (!best || bestDist > 24) { tip.style.display = 'none'; return; }
+      tip.innerHTML = `<strong>${escapeHtml(best.name)}</strong><br>${fmtClock(best.ts)} · ${best.count} req · ${ctx.fmtTps(best.count / 60)} req/s`;
+      tip.style.left = Math.min(mx + 10, rect.width - 140) + 'px';
       tip.style.top = (ev.clientY - rect.top - 8) + 'px';
       tip.style.display = 'block';
     };
@@ -1103,13 +1186,7 @@
         const missesEl = document.getElementById('m-misses');
         missesEl.textContent = snap.misses;
         missesEl.classList.remove('sk');
-        renderBars(snap.rules || []);
-        // Update stats rail
-        document.getElementById('rail-total').textContent = snap.total_requests;
-        document.getElementById('rail-misses').textContent = snap.misses;
-        const rules = snap.rules || [];
-        const p95 = rules.length > 0 ? Math.max(...rules.map(r => r.p95_ms ?? 0)) : 0;
-        document.getElementById('rail-p95').textContent = p95 > 0 ? p95.toFixed(0) + 'ms' : '—';
+        renderRuleDist(snap.rules || []);
       } catch(_) {}
     };
     es.onerror = () => {
@@ -1118,21 +1195,33 @@
     };
   }
 
-  function renderBars(rules) {
-    const el = document.getElementById('metrics-bars');
-    if (rules.length === 0) {
-      el.innerHTML = '<p class="empty">No requests recorded yet.</p>';
+  // Per-rule hit distribution in the right rail: total hits, current tps, p95.
+  function renderRuleDist(rules) {
+    const el = document.getElementById('rail-dist');
+    if (!rules || rules.length === 0) {
+      el.innerHTML = '<p class="rail-empty">No requests yet.</p>';
       return;
     }
     const maxHits = Math.max(...rules.map(r => r.hits), 1);
     el.innerHTML = rules
+      .slice()
       .sort((a, b) => b.hits - a.hits)
-      .map(r => `
-        <div class="bar-row">
-          <span class="bar-label" title="${r.rule_name || r.rule_id}">${r.rule_name || r.rule_id}</span>
-          <div class="bar-bg"><div class="bar-fill" style="width:${(r.hits / maxHits * 100).toFixed(1)}%"></div></div>
-          <span class="bar-meta">${r.hits} hits · ${(r.current_tps ?? 0).toFixed(1)} tps · p95 ${r.p95_ms != null ? r.p95_ms.toFixed(0) : '—'}ms</span>
-        </div>`).join('');
+      .map(r => {
+        const name = r.rule_name || r.rule_id;
+        const tps = (r.current_tps ?? 0).toFixed(1);
+        const p95 = r.p95_ms != null ? r.p95_ms.toFixed(0) + 'ms' : '—';
+        const share = (r.hits / maxHits * 100).toFixed(1);
+        return `
+        <div class="dist-card">
+          <div class="dist-name" title="${escapeAttr(name)}">${escapeHtml(name)}</div>
+          <div class="dist-metrics">
+            <div><span class="dist-k">Total Hits</span><span class="dist-v">${r.hits.toLocaleString()}</span></div>
+            <div><span class="dist-k">TPS</span><span class="dist-v tps">${tps}</span></div>
+            <div><span class="dist-k">p95</span><span class="dist-v">${p95}</span></div>
+          </div>
+          <div class="dist-bar"><i style="width:${share}%"></i></div>
+        </div>`;
+      }).join('');
   }
 
   // ── Unmatched ──────────────────────────────────────────────────────────────
