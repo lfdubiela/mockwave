@@ -3,6 +3,7 @@ package dynamostore_test
 import (
 	"context"
 	"encoding/json"
+	"strconv"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -16,10 +17,12 @@ import (
 
 // mockDynamo implements dynamostore.DynamoClient for testing.
 type mockDynamo struct {
-	scanOut  map[string]*dynamodb.ScanOutput    // keyed by table name
-	getOut   map[string]*dynamodb.GetItemOutput // keyed by table name
-	putItems []dynamodb.PutItemInput
-	delItems []dynamodb.DeleteItemInput
+	scanOut      map[string]*dynamodb.ScanOutput    // keyed by table name
+	getOut       map[string]*dynamodb.GetItemOutput // keyed by table name
+	putItems     []dynamodb.PutItemInput
+	delItems     []dynamodb.DeleteItemInput
+	updateCount  int
+	versionValue int64
 }
 
 func (m *mockDynamo) Scan(_ context.Context, in *dynamodb.ScanInput, _ ...func(*dynamodb.Options)) (*dynamodb.ScanOutput, error) {
@@ -30,12 +33,26 @@ func (m *mockDynamo) Scan(_ context.Context, in *dynamodb.ScanInput, _ ...func(*
 }
 
 func (m *mockDynamo) GetItem(_ context.Context, in *dynamodb.GetItemInput, _ ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error) {
+	if idAttr, ok := in.Key["id"].(*types.AttributeValueMemberS); ok && idAttr.Value == "__mockwave_config_version__" {
+		if m.versionValue == 0 {
+			return &dynamodb.GetItemOutput{}, nil
+		}
+		return &dynamodb.GetItemOutput{Item: map[string]types.AttributeValue{
+			"id":      &types.AttributeValueMemberS{Value: "__mockwave_config_version__"},
+			"version": &types.AttributeValueMemberN{Value: strconv.FormatInt(m.versionValue, 10)},
+		}}, nil
+	}
 	if m.getOut != nil {
 		if out, ok := m.getOut[aws.ToString(in.TableName)]; ok {
 			return out, nil
 		}
 	}
 	return &dynamodb.GetItemOutput{}, nil
+}
+
+func (m *mockDynamo) UpdateItem(_ context.Context, in *dynamodb.UpdateItemInput, _ ...func(*dynamodb.Options)) (*dynamodb.UpdateItemOutput, error) {
+	m.updateCount++
+	return &dynamodb.UpdateItemOutput{}, nil
 }
 
 func (m *mockDynamo) PutItem(_ context.Context, in *dynamodb.PutItemInput, _ ...func(*dynamodb.Options)) (*dynamodb.PutItemOutput, error) {
@@ -167,4 +184,23 @@ func TestDynamo_DeleteSimulation(t *testing.T) {
 	require.NoError(t, s.DeleteSimulation("s1"))
 	require.Len(t, client.delItems, 1)
 	assert.Equal(t, "sims", aws.ToString(client.delItems[0].TableName))
+}
+
+func TestStore_ConfigVersion_AndBumpOnWrite(t *testing.T) {
+	m := &mockDynamo{}
+	s := dynamostore.NewStoreFromClient(m, dynamostore.Config{
+		RulesTable: "rules", SimsTable: "sims",
+	})
+
+	require.NoError(t, s.SaveRule(domain.Rule{ID: "r1", Match: domain.MatchCriteria{Path: "/x"},
+		Buckets: []domain.WeightedBucket{{Weight: 100, Action: domain.ActionSimulate, SimulationID: "s1"}}}))
+	require.NoError(t, s.SaveSimulation(domain.Simulation{ID: "s1", Protocol: "http"}))
+	require.NoError(t, s.DeleteRule("r1"))
+	require.NoError(t, s.DeleteSimulation("s1"))
+	assert.Equal(t, 4, m.updateCount, "expected one version bump per write")
+
+	m.versionValue = 7
+	v, err := s.ConfigVersion()
+	require.NoError(t, err)
+	assert.Equal(t, int64(7), v)
 }

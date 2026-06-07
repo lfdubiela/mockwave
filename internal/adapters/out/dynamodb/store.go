@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
@@ -13,8 +14,15 @@ import (
 	"github.com/mockwave/mockwave/store"
 )
 
-// compile-time interface check
-var _ store.DataStore = (*Store)(nil)
+// compile-time interface checks
+var (
+	_ store.DataStore      = (*Store)(nil)
+	_ store.VersionedStore = (*Store)(nil)
+)
+
+// versionItemID is the reserved rules-table key holding the config-version
+// marker. GetRules skips it naturally (it has no "data" string attribute).
+const versionItemID = "__mockwave_config_version__"
 
 // DynamoClient is the subset of DynamoDB operations used by Store.
 // Exported so tests can inject a mock without hitting AWS.
@@ -23,6 +31,7 @@ type DynamoClient interface {
 	GetItem(ctx context.Context, params *dynamodb.GetItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error)
 	PutItem(ctx context.Context, params *dynamodb.PutItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.PutItemOutput, error)
 	DeleteItem(ctx context.Context, params *dynamodb.DeleteItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.DeleteItemOutput, error)
+	UpdateItem(ctx context.Context, params *dynamodb.UpdateItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.UpdateItemOutput, error)
 }
 
 // Config holds DynamoDB connection parameters.
@@ -147,7 +156,10 @@ func (s *Store) SaveRule(r domain.Rule) error {
 			"data": &types.AttributeValueMemberS{Value: string(data)},
 		},
 	})
-	return wrapErr(err, "put rule %q", r.ID)
+	if err := wrapErr(err, "put rule %q", r.ID); err != nil {
+		return err
+	}
+	return s.bumpVersion()
 }
 
 func (s *Store) SaveSimulation(sim domain.Simulation) error {
@@ -162,7 +174,10 @@ func (s *Store) SaveSimulation(sim domain.Simulation) error {
 			"data": &types.AttributeValueMemberS{Value: string(data)},
 		},
 	})
-	return wrapErr(err, "put simulation %q", sim.ID)
+	if err := wrapErr(err, "put simulation %q", sim.ID); err != nil {
+		return err
+	}
+	return s.bumpVersion()
 }
 
 func (s *Store) DeleteRule(id string) error {
@@ -170,7 +185,10 @@ func (s *Store) DeleteRule(id string) error {
 		TableName: aws.String(s.rulesTable),
 		Key:       map[string]types.AttributeValue{"id": &types.AttributeValueMemberS{Value: id}},
 	})
-	return wrapErr(err, "delete rule %q", id)
+	if err := wrapErr(err, "delete rule %q", id); err != nil {
+		return err
+	}
+	return s.bumpVersion()
 }
 
 func (s *Store) DeleteSimulation(id string) error {
@@ -178,7 +196,45 @@ func (s *Store) DeleteSimulation(id string) error {
 		TableName: aws.String(s.simsTable),
 		Key:       map[string]types.AttributeValue{"id": &types.AttributeValueMemberS{Value: id}},
 	})
-	return wrapErr(err, "delete simulation %q", id)
+	if err := wrapErr(err, "delete simulation %q", id); err != nil {
+		return err
+	}
+	return s.bumpVersion()
+}
+
+// bumpVersion atomically increments the config-version marker in the rules table.
+func (s *Store) bumpVersion() error {
+	_, err := s.client.UpdateItem(context.Background(), &dynamodb.UpdateItemInput{
+		TableName:                 aws.String(s.rulesTable),
+		Key:                       map[string]types.AttributeValue{"id": &types.AttributeValueMemberS{Value: versionItemID}},
+		UpdateExpression:          aws.String("ADD #v :one"),
+		ExpressionAttributeNames:  map[string]string{"#v": "version"},
+		ExpressionAttributeValues: map[string]types.AttributeValue{":one": &types.AttributeValueMemberN{Value: "1"}},
+	})
+	return wrapErr(err, "bump config version")
+}
+
+// ConfigVersion returns the current config-version marker (0 if absent).
+func (s *Store) ConfigVersion() (int64, error) {
+	out, err := s.client.GetItem(context.Background(), &dynamodb.GetItemInput{
+		TableName: aws.String(s.rulesTable),
+		Key:       map[string]types.AttributeValue{"id": &types.AttributeValueMemberS{Value: versionItemID}},
+	})
+	if err != nil {
+		return 0, wrapErr(err, "get config version")
+	}
+	if out.Item == nil {
+		return 0, nil
+	}
+	n, ok := out.Item["version"].(*types.AttributeValueMemberN)
+	if !ok {
+		return 0, nil
+	}
+	v, err := strconv.ParseInt(n.Value, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("dynamodb: parse config version: %w", err)
+	}
+	return v, nil
 }
 
 func wrapErr(err error, format string, args ...interface{}) error {
