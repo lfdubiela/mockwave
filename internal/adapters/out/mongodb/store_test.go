@@ -78,11 +78,10 @@ func TestMongo_GetSimulation_NotFound(t *testing.T) {
 func TestMongo_SaveRule(t *testing.T) {
 	mt := mtest.New(t, mtest.NewOptions().ClientType(mtest.Mock))
 	mt.Run("upsert", func(mt *mtest.T) {
-		mt.AddMockResponses(bson.D{
-			{Key: "ok", Value: 1},
-			{Key: "n", Value: 0},
-			{Key: "nModified", Value: 0},
-		})
+		mt.AddMockResponses(
+			bson.D{{Key: "ok", Value: 1}, {Key: "n", Value: 0}, {Key: "nModified", Value: 0}},
+			bson.D{{Key: "ok", Value: 1}, {Key: "n", Value: 1}, {Key: "nModified", Value: 1}}, // bumpVersion
+		)
 		s := mongodb.NewStoreFromClient(mt.Client, "mockwave")
 		rule := domain.Rule{
 			ID:      "r1",
@@ -96,11 +95,10 @@ func TestMongo_SaveRule(t *testing.T) {
 func TestMongo_SaveSimulation(t *testing.T) {
 	mt := mtest.New(t, mtest.NewOptions().ClientType(mtest.Mock))
 	mt.Run("upsert", func(mt *mtest.T) {
-		mt.AddMockResponses(bson.D{
-			{Key: "ok", Value: 1},
-			{Key: "n", Value: 0},
-			{Key: "nModified", Value: 0},
-		})
+		mt.AddMockResponses(
+			bson.D{{Key: "ok", Value: 1}, {Key: "n", Value: 0}, {Key: "nModified", Value: 0}},
+			bson.D{{Key: "ok", Value: 1}, {Key: "n", Value: 1}, {Key: "nModified", Value: 1}}, // bumpVersion
+		)
 		s := mongodb.NewStoreFromClient(mt.Client, "mockwave")
 		require.NoError(mt, s.SaveSimulation(domain.Simulation{ID: "s1", Protocol: "http"}))
 	})
@@ -109,7 +107,10 @@ func TestMongo_SaveSimulation(t *testing.T) {
 func TestMongo_DeleteRule(t *testing.T) {
 	mt := mtest.New(t, mtest.NewOptions().ClientType(mtest.Mock))
 	mt.Run("delete", func(mt *mtest.T) {
-		mt.AddMockResponses(bson.D{{Key: "ok", Value: 1}, {Key: "n", Value: 1}})
+		mt.AddMockResponses(
+			bson.D{{Key: "ok", Value: 1}, {Key: "n", Value: 1}},
+			bson.D{{Key: "ok", Value: 1}, {Key: "n", Value: 1}, {Key: "nModified", Value: 1}}, // bumpVersion
+		)
 		s := mongodb.NewStoreFromClient(mt.Client, "mockwave")
 		require.NoError(mt, s.DeleteRule("r1"))
 	})
@@ -136,7 +137,10 @@ func TestMongo_ListSimulations(t *testing.T) {
 func TestMongo_DeleteSimulation(t *testing.T) {
 	mt := mtest.New(t, mtest.NewOptions().ClientType(mtest.Mock))
 	mt.Run("delete", func(mt *mtest.T) {
-		mt.AddMockResponses(bson.D{{Key: "ok", Value: 1}, {Key: "n", Value: 1}})
+		mt.AddMockResponses(
+			bson.D{{Key: "ok", Value: 1}, {Key: "n", Value: 1}},
+			bson.D{{Key: "ok", Value: 1}, {Key: "n", Value: 1}, {Key: "nModified", Value: 1}}, // bumpVersion
+		)
 		s := mongodb.NewStoreFromClient(mt.Client, "mockwave")
 		require.NoError(mt, s.DeleteSimulation("s1"))
 	})

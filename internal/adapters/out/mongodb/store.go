@@ -12,12 +12,19 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-var _ store.DataStore = (*Store)(nil) // compile-time interface check
+// compile-time interface checks
+var (
+	_ store.DataStore      = (*Store)(nil)
+	_ store.VersionedStore = (*Store)(nil)
+)
 
 const (
 	colRules       = "rules"
 	colSims        = "simulations"
 	connectTimeout = 10 * time.Second
+	// versionDocID is the reserved rules-collection _id holding the config-version
+	// marker; excluded from GetRules.
+	versionDocID = "__mockwave_config_version__"
 )
 
 // ruleDoc is the MongoDB document shape for a Rule.
@@ -65,7 +72,7 @@ func NewStoreFromClient(client *mongo.Client, dbName string) *Store {
 
 func (s *Store) GetRules() ([]domain.Rule, error) {
 	ctx := context.Background()
-	cur, err := s.rules.Find(ctx, bson.D{})
+	cur, err := s.rules.Find(ctx, bson.D{{Key: "_id", Value: bson.D{{Key: "$ne", Value: versionDocID}}}})
 	if err != nil {
 		return nil, fmt.Errorf("mongodb: find rules: %w", err)
 	}
@@ -125,7 +132,7 @@ func (s *Store) SaveRule(r domain.Rule) error {
 	if err != nil {
 		return fmt.Errorf("mongodb: upsert rule %q: %w", r.ID, err)
 	}
-	return nil
+	return s.bumpVersion()
 }
 
 func (s *Store) SaveSimulation(sim domain.Simulation) error {
@@ -136,7 +143,7 @@ func (s *Store) SaveSimulation(sim domain.Simulation) error {
 	if err != nil {
 		return fmt.Errorf("mongodb: upsert simulation %q: %w", sim.ID, err)
 	}
-	return nil
+	return s.bumpVersion()
 }
 
 func (s *Store) DeleteRule(id string) error {
@@ -144,7 +151,7 @@ func (s *Store) DeleteRule(id string) error {
 	if _, err := s.rules.DeleteOne(ctx, bson.D{{Key: "_id", Value: id}}); err != nil {
 		return fmt.Errorf("mongodb: delete rule %q: %w", id, err)
 	}
-	return nil
+	return s.bumpVersion()
 }
 
 func (s *Store) DeleteSimulation(id string) error {
@@ -152,5 +159,35 @@ func (s *Store) DeleteSimulation(id string) error {
 	if _, err := s.sims.DeleteOne(ctx, bson.D{{Key: "_id", Value: id}}); err != nil {
 		return fmt.Errorf("mongodb: delete simulation %q: %w", id, err)
 	}
+	return s.bumpVersion()
+}
+
+// bumpVersion atomically increments the config-version marker in the rules collection.
+func (s *Store) bumpVersion() error {
+	ctx := context.Background()
+	_, err := s.rules.UpdateOne(ctx,
+		bson.D{{Key: "_id", Value: versionDocID}},
+		bson.D{{Key: "$inc", Value: bson.D{{Key: "version", Value: 1}}}},
+		options.Update().SetUpsert(true),
+	)
+	if err != nil {
+		return fmt.Errorf("mongodb: bump config version: %w", err)
+	}
 	return nil
+}
+
+// ConfigVersion returns the current config-version marker (0 if absent).
+func (s *Store) ConfigVersion() (int64, error) {
+	ctx := context.Background()
+	var doc struct {
+		Version int64 `bson:"version"`
+	}
+	err := s.rules.FindOne(ctx, bson.D{{Key: "_id", Value: versionDocID}}).Decode(&doc)
+	if err == mongo.ErrNoDocuments {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("mongodb: get config version: %w", err)
+	}
+	return doc.Version, nil
 }
