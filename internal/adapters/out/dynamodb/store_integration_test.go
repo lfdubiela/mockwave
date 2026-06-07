@@ -406,3 +406,24 @@ func mustSimMap(t *testing.T, st *dynamostore.Store) map[string]domain.Simulatio
 	}
 	return m
 }
+
+func TestDynamoLocal_VersionPropagates(t *testing.T) {
+	endpoint := dynamoEndpoint(t)
+	client := newLocalClient(t, endpoint)
+	createTable(t, client, rulesTable)
+	createTable(t, client, simsTable)
+
+	a := dynamostore.NewStoreFromClient(client, dynamostore.Config{RulesTable: rulesTable, SimsTable: simsTable})
+	b := dynamostore.NewStoreFromClient(client, dynamostore.Config{RulesTable: rulesTable, SimsTable: simsTable})
+
+	v0, err := b.ConfigVersion()
+	require.NoError(t, err)
+
+	require.NoError(t, a.SaveSimulation(domain.Simulation{
+		ID: "ok", Protocol: "http", Response: domain.HTTPResponse{Status: 200},
+	}))
+
+	v1, err := b.ConfigVersion()
+	require.NoError(t, err)
+	require.Greater(t, v1, v0, "write through instance A must raise the version seen by instance B")
+}
