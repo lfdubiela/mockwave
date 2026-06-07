@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/mockwave/mockwave/domain"
 	graphqladapter "github.com/mockwave/mockwave/internal/adapters/in/graphql"
@@ -30,6 +31,7 @@ import (
 	"github.com/mockwave/mockwave/internal/domain/routing"
 	"github.com/mockwave/mockwave/internal/domain/simulation"
 	"github.com/mockwave/mockwave/internal/metrics"
+	"github.com/mockwave/mockwave/internal/reload"
 	"github.com/mockwave/mockwave/internal/scripting"
 	"github.com/mockwave/mockwave/internal/unmatched"
 	"github.com/mockwave/mockwave/observability"
@@ -51,6 +53,18 @@ type Config struct {
 	Tracer observability.Tracer
 	// Metrics records per-request metrics. Defaults to NoopMetrics when nil.
 	Metrics observability.MetricsRecorder
+
+	// ReloadInterval controls the version-poll reloader cadence for remote
+	// (store.VersionedStore) backends. 0 resolves to 15s. Ignored for stores that
+	// do not implement store.VersionedStore (e.g. the JSON store).
+	ReloadInterval time.Duration
+}
+
+func (c Config) reloadInterval() time.Duration {
+	if c.ReloadInterval <= 0 {
+		return 15 * time.Second
+	}
+	return c.ReloadInterval
 }
 
 // Server holds the active pipeline and serves mock traffic across protocols.
@@ -63,6 +77,7 @@ type Server struct {
 	buffer       *unmatched.Buffer
 	broker       *metrics.Broker
 	brokerCancel context.CancelFunc
+	reloadCancel context.CancelFunc
 	adminSrv     *http.Server
 }
 
@@ -104,6 +119,12 @@ func New(cfg Config) (*Server, error) {
 	if err := s.rebuild(); err != nil {
 		brokerCancel()
 		return nil, err
+	}
+	if vs, ok := s.cfg.Store.(store.VersionedStore); ok {
+		rl := reload.New(vs, s.cfg.reloadInterval(), s.Rebuild, s.cfg.Logger)
+		rctx, rcancel := context.WithCancel(context.Background())
+		s.reloadCancel = rcancel
+		go rl.Run(rctx)
 	}
 	if cfg.AdminPort > 0 {
 		if err := s.startAdmin(); err != nil {

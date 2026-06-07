@@ -235,3 +235,18 @@ func TestServer_ShutdownNoopWhenAdminPortZero(t *testing.T) {
 	defer cancel()
 	assert.NoError(t, srv.Shutdown(ctx))
 }
+
+type versionedStub struct {
+	*stubStore
+	version int64
+}
+
+func (v *versionedStub) ConfigVersion() (int64, error) { return v.version, nil }
+
+func TestServer_ReloaderEngagesForVersionedStore(t *testing.T) {
+	vs := &versionedStub{stubStore: newStubStore()}
+	srv, err := server.New(server.Config{Store: vs, ReloadInterval: 10 * time.Millisecond})
+	require.NoError(t, err)
+	defer srv.Shutdown(context.Background())
+	require.NotNil(t, srv)
+}

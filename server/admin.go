@@ -48,6 +48,9 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	if s.brokerCancel != nil {
 		s.brokerCancel()
 	}
+	if s.reloadCancel != nil {
+		s.reloadCancel()
+	}
 	if s.adminSrv != nil {
 		return s.adminSrv.Shutdown(ctx)
 	}
