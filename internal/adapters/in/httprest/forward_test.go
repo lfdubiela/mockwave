@@ -31,7 +31,7 @@ func TestForwardStage_NoForwardURL(t *testing.T) {
 	stage := httprest.NewForwardStage(nil)
 	pctx := &pipeline.PipelineContext{
 		ShouldForward: true,
-		Matched:       &domain.Rule{ID: "r1", ForwardURL: ""},
+		Matched:       &domain.Rule{ID: "r1"},
 	}
 	assert.Error(t, stage.Execute(context.Background(), pctx))
 }
@@ -52,7 +52,8 @@ func TestForwardStage_ForwardsRequest(t *testing.T) {
 	stage := httprest.NewForwardStage(nil)
 	pctx := &pipeline.PipelineContext{
 		ShouldForward: true,
-		Matched:       &domain.Rule{ID: "r1", ForwardURL: upstream.URL},
+		Matched:       &domain.Rule{ID: "r1"},
+		ForwardURL:    upstream.URL,
 		Request:       pipeline.NormalizedRequest{Method: "GET", Path: "/test"},
 	}
 	require.NoError(t, stage.Execute(context.Background(), pctx))
@@ -72,7 +73,8 @@ func TestForwardStage_ForwardsWithQuery(t *testing.T) {
 	stage := httprest.NewForwardStage(nil)
 	pctx := &pipeline.PipelineContext{
 		ShouldForward: true,
-		Matched:       &domain.Rule{ID: "r1", ForwardURL: upstream.URL},
+		Matched:       &domain.Rule{ID: "r1"},
+		ForwardURL:    upstream.URL,
 		Request: pipeline.NormalizedRequest{
 			Method: "GET",
 			Path:   "/test",
@@ -94,7 +96,8 @@ func TestForwardStage_DelayDominatesWhenLongerThanUpstream(t *testing.T) {
 	pctx := &pipeline.PipelineContext{
 		ShouldForward:  true,
 		ForwardDelayMs: 200,
-		Matched:        &domain.Rule{ID: "r1", ForwardURL: upstream.URL},
+		Matched:        &domain.Rule{ID: "r1"},
+		ForwardURL:     upstream.URL,
 		Request:        pipeline.NormalizedRequest{Method: "GET", Path: "/test"},
 	}
 	start := time.Now()
@@ -118,7 +121,8 @@ func TestForwardStage_UpstreamDominatesWhenSlowerThanDelay(t *testing.T) {
 	pctx := &pipeline.PipelineContext{
 		ShouldForward:  true,
 		ForwardDelayMs: 50,
-		Matched:        &domain.Rule{ID: "r1", ForwardURL: upstream.URL},
+		Matched:        &domain.Rule{ID: "r1"},
+		ForwardURL:     upstream.URL,
 		Request:        pipeline.NormalizedRequest{Method: "GET", Path: "/test"},
 	}
 	start := time.Now()
@@ -138,7 +142,8 @@ func TestForwardStage_DelaySkippedOnUpstreamError(t *testing.T) {
 	pctx := &pipeline.PipelineContext{
 		ShouldForward:  true,
 		ForwardDelayMs: 500,
-		Matched:        &domain.Rule{ID: "r1", ForwardURL: deadURL},
+		Matched:        &domain.Rule{ID: "r1"},
+		ForwardURL:     deadURL,
 		Request:        pipeline.NormalizedRequest{Method: "GET", Path: "/test"},
 	}
 	start := time.Now()
@@ -159,7 +164,8 @@ func TestForwardStage_ZeroDelayNoExtraWait(t *testing.T) {
 	pctx := &pipeline.PipelineContext{
 		ShouldForward:  true,
 		ForwardDelayMs: 0,
-		Matched:        &domain.Rule{ID: "r1", ForwardURL: upstream.URL},
+		Matched:        &domain.Rule{ID: "r1"},
+		ForwardURL:     upstream.URL,
 		Request:        pipeline.NormalizedRequest{Method: "GET", Path: "/test"},
 	}
 	start := time.Now()

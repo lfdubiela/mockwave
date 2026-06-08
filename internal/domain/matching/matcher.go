@@ -75,22 +75,58 @@ func matchRule(r *domain.Rule, req pipeline.NormalizedRequest) bool {
 	return true
 }
 
+// sortBySpecificity orders rules most-specific first using a strict tiered
+// (lexicographic) comparison. Stable: equal rules keep input order.
 func sortBySpecificity(rules []domain.Rule) {
 	for i := 1; i < len(rules); i++ {
 		for j := i; j > 0; j-- {
-			if specificity(rules[j]) > specificity(rules[j-1]) {
+			if moreSpecific(rules[j], rules[j-1]) {
 				rules[j], rules[j-1] = rules[j-1], rules[j]
+			} else {
+				break
 			}
 		}
 	}
 }
 
-func specificity(r domain.Rule) int {
-	score := len(r.Match.Headers)*10 + len(r.Match.Query)*5
-	if !strings.Contains(r.Match.Path, "*") {
-		score += 3
+// moreSpecific reports whether a ranks strictly above b under the tiered order
+// (headers, url, body, query) compared element-wise.
+func moreSpecific(a, b domain.Rule) bool {
+	ta, tb := specTuple(a), specTuple(b)
+	for i := range ta {
+		if ta[i] != tb[i] {
+			return ta[i] > tb[i]
+		}
 	}
-	return score
+	return false
+}
+
+// specTuple builds the precedence tuple: (headers, url, body, query).
+func specTuple(r domain.Rule) [4]int {
+	return [4]int{
+		len(r.Match.Headers),
+		urlScore(r.Match.Path),
+		len(r.Match.Body),
+		len(r.Match.Query),
+	}
+}
+
+// urlScore: exact non-empty path -> 1000; wildcard -> 100 + literal segment
+// count; empty -> 0. Exact always outranks any wildcard.
+func urlScore(p string) int {
+	if p == "" {
+		return 0
+	}
+	if !strings.Contains(p, "*") {
+		return 1000
+	}
+	literal := 0
+	for _, seg := range strings.Split(p, "/") {
+		if seg != "" && !strings.Contains(seg, "*") {
+			literal++
+		}
+	}
+	return 100 + literal
 }
 
 // resolvePath walks a dotted JSON path (optionally prefixed with "$." or "$")

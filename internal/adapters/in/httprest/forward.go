@@ -29,8 +29,8 @@ func (s *ForwardStage) Execute(_ context.Context, pctx *pipeline.PipelineContext
 	if !pctx.ShouldForward {
 		return nil
 	}
-	if pctx.Matched == nil || pctx.Matched.ForwardURL == "" {
-		return fmt.Errorf("forward: no forward_url configured on matched rule")
+	if pctx.ForwardURL == "" {
+		return fmt.Errorf("forward: no forward_url configured on selected bucket")
 	}
 
 	// Start the delay timer NOW so it runs concurrently with the upstream call.
@@ -40,7 +40,7 @@ func (s *ForwardStage) Execute(_ context.Context, pctx *pipeline.PipelineContext
 		delay = time.After(time.Duration(pctx.ForwardDelayMs) * time.Millisecond)
 	}
 
-	targetURL := strings.TrimRight(pctx.Matched.ForwardURL, "/") + pctx.Request.Path
+	targetURL := strings.TrimRight(pctx.ForwardURL, "/") + pctx.Request.Path
 	if len(pctx.Request.Query) > 0 {
 		params := make([]string, 0, len(pctx.Request.Query))
 		for k, v := range pctx.Request.Query {

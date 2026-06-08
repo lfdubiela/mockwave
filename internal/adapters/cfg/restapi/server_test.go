@@ -456,10 +456,9 @@ func TestRules_ForwardBucketDelayRoundTrips(t *testing.T) {
 	mux := restapi.NewMux(store, nil, nil, nil, nil, nil)
 
 	r := domain.Rule{
-		ID:         "r-delay",
-		Match:      domain.MatchCriteria{Path: "/forward-delay"},
-		ForwardURL: "http://localhost:9999",
-		Buckets:    []domain.WeightedBucket{{Weight: 100, Action: domain.ActionForward, DelayMs: 1500}},
+		ID:      "r-delay",
+		Match:   domain.MatchCriteria{Path: "/forward-delay"},
+		Buckets: []domain.WeightedBucket{{Weight: 100, Action: domain.ActionForward, DelayMs: 1500, ForwardURL: "http://localhost:9999"}},
 	}
 	body, _ := json.Marshal(r)
 	postReq := httptest.NewRequest(http.MethodPost, "/api/rules", bytes.NewReader(body))

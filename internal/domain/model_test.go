@@ -18,9 +18,16 @@ func TestWeightedBucket_Validate(t *testing.T) {
 	})
 
 	t.Run("forward bucket valid without simulation_id", func(t *testing.T) {
-		b := domain.WeightedBucket{Weight: 99, Action: domain.ActionForward}
+		b := domain.WeightedBucket{Weight: 99, Action: domain.ActionForward, ForwardURL: "https://upstream.example.com"}
 		err := b.Validate()
 		assert.NoError(t, err)
+	})
+
+	t.Run("forward bucket requires forward_url", func(t *testing.T) {
+		b := domain.WeightedBucket{Weight: 99, Action: domain.ActionForward}
+		err := b.Validate()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "forward_url")
 	})
 
 	t.Run("zero weight invalid", func(t *testing.T) {

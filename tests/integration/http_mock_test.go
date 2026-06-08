@@ -101,10 +101,9 @@ func TestIntegration_PercentileForwardProxy(t *testing.T) {
 	defer upstream.Close()
 	cfg := domain.Config{
 		Rules: []domain.Rule{{
-			ID:         "r1",
-			Match:      domain.MatchCriteria{Protocol: "http", Method: "GET", Path: "/data"},
-			ForwardURL: upstream.URL,
-			Buckets:    []domain.WeightedBucket{{Weight: 1, Action: domain.ActionForward}},
+			ID:      "r1",
+			Match:   domain.MatchCriteria{Protocol: "http", Method: "GET", Path: "/data"},
+			Buckets: []domain.WeightedBucket{{Weight: 1, Action: domain.ActionForward, ForwardURL: upstream.URL}},
 		}},
 	}
 	ts := newTestServer(t, cfg)
@@ -125,10 +124,9 @@ func TestIntegration_ForwardProxyWithDelay(t *testing.T) {
 	defer upstream.Close()
 	cfg := domain.Config{
 		Rules: []domain.Rule{{
-			ID:         "r1",
-			Match:      domain.MatchCriteria{Protocol: "http", Method: "GET", Path: "/data"},
-			ForwardURL: upstream.URL,
-			Buckets:    []domain.WeightedBucket{{Weight: 1, Action: domain.ActionForward, DelayMs: 300}},
+			ID:      "r1",
+			Match:   domain.MatchCriteria{Protocol: "http", Method: "GET", Path: "/data"},
+			Buckets: []domain.WeightedBucket{{Weight: 1, Action: domain.ActionForward, DelayMs: 300, ForwardURL: upstream.URL}},
 		}},
 	}
 	ts := newTestServer(t, cfg)

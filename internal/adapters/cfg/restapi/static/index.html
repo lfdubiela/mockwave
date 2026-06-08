@@ -303,17 +303,37 @@
       </div>
     </div>
 
+    <div class="form-group" style="margin-top:0.5rem">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <label style="margin-bottom:0">Header Matches (exact)</label>
+        <button class="btn-sm btn-ghost" type="button" onclick="addHeader()">+ Add header</button>
+      </div>
+      <div id="headers-container"></div>
+    </div>
+
+    <div class="form-group" style="margin-top:0.5rem">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <label style="margin-bottom:0">Query Matches (exact)</label>
+        <button class="btn-sm btn-ghost" type="button" onclick="addQuery()">+ Add query param</button>
+      </div>
+      <div id="query-container"></div>
+    </div>
+
+    <div class="form-group" style="margin-top:0.5rem">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <label style="margin-bottom:0">Body Matches (JSONPath, exact value)</label>
+        <button class="btn-sm btn-ghost" type="button" onclick="addBody()">+ Add body match</button>
+      </div>
+      <div id="body-container"></div>
+      <p style="color:var(--muted);font-size:0.72rem;margin-top:0.25rem">Matches JSON request bodies. JSONPath like <span class="mono">$.user.id</span>, exact value.</p>
+    </div>
+
     <div class="section-divider" style="display:flex;justify-content:space-between;align-items:center">
       <span>Response Buckets</span>
       <button class="btn-sm btn-ghost" type="button" onclick="addBucket()">+ Add Bucket</button>
     </div>
     <div id="buckets-container"></div>
     <div id="weight-sum-indicator" style="margin:0.25rem 0 0.5rem;font-size:0.8rem;font-weight:600"></div>
-
-    <div class="form-group" id="forward-url-group" style="display:none;margin-top:0.5rem">
-      <label>Forward URL (used by all Forward buckets)</label>
-      <input id="r-forward-url" placeholder="https://real-api.example.com">
-    </div>
 
     <div class="form-actions">
       <button class="btn-ghost" type="button" onclick="closeRuleModal()">Cancel</button>
@@ -363,6 +383,62 @@
   // ── Bucket state ─────────────────────────────────────────────────────────────
   let _buckets = [];
 
+  // ── Match criteria key/value groups ──────────────────────────────────────────
+  let _headers = []; // [{key, value}]
+  let _query   = [];
+  let _body    = []; // body uses JSONPath in `key`
+
+  function renderKV(arr, containerId, arrName, keyPlaceholder, valuePlaceholder) {
+    const c = document.getElementById(containerId);
+    if (!c) return;
+    if (arr.length === 0) { c.innerHTML = ''; return; }
+    c.innerHTML = arr.map((row, i) => `
+      <div class="form-row" style="margin-top:0.35rem">
+        <div class="form-group" style="margin-bottom:0">
+          <input value="${escapeAttr(row.key)}" placeholder="${escapeAttr(keyPlaceholder)}"
+            oninput="${arrName}[${i}].key=this.value">
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <input value="${escapeAttr(row.value)}" placeholder="${escapeAttr(valuePlaceholder || 'value')}"
+            oninput="${arrName}[${i}].value=this.value">
+        </div>
+        <button class="btn-sm btn-danger" type="button" style="align-self:center"
+          onclick="removeKV('${arrName}', ${i})">×</button>
+      </div>`).join('');
+  }
+
+  // Placeholders double as live examples of each matcher (e.g. header X-Client-Id=premium).
+  function renderHeaders() { renderKV(_headers, 'headers-container', '_headers', 'X-Client-Id', 'premium'); }
+  function renderQuery()   { renderKV(_query,   'query-container',   '_query',   'version',     'v2'); }
+  function renderBody()    { renderKV(_body,    'body-container',    '_body',    '$.user.role', 'admin'); }
+
+  function addHeader() { _headers.push({key:'',value:''}); renderHeaders(); }
+  function addQuery()  { _query.push({key:'',value:''});   renderQuery(); }
+  function addBody()   { _body.push({key:'',value:''});    renderBody(); }
+
+  function removeKV(arrName, i) {
+    const map = { _headers, _query, _body };
+    map[arrName].splice(i, 1);
+    if (arrName === '_headers') renderHeaders();
+    else if (arrName === '_query') renderQuery();
+    else renderBody();
+  }
+
+  // Build a {key:value} object from a KV array, skipping empty keys.
+  function kvToObject(arr) {
+    const out = {};
+    for (const row of arr) {
+      const k = (row.key || '').trim();
+      if (k) out[k] = row.value || '';
+    }
+    return out;
+  }
+
+  // Populate a KV array from a {key:value} object.
+  function objectToKV(obj) {
+    return Object.entries(obj || {}).map(([key, value]) => ({ key, value: String(value) }));
+  }
+
   function defaultBucket() {
     return {
       weight: 100, action: 'simulate',
@@ -373,6 +449,7 @@
       simScript: '',
       bodyType: 'json',
       fwdDelayMs: 0,
+      fwdURL: '',
       existingSimID: null
     };
   }
@@ -419,10 +496,10 @@
     }
   }
 
-  function updateForwardURLVisibility() {
-    const hasForward = _buckets.some(b => b.action === 'forward');
-    document.getElementById('forward-url-group').style.display = hasForward ? '' : 'none';
-  }
+  // Forward URL now lives inside each Forward bucket card (see renderBuckets),
+  // so there is no separate rule-level field to toggle. Kept as a no-op because
+  // bucket add/remove/action handlers still call it.
+  function updateForwardURLVisibility() {}
 
   function renderBuckets() {
     const container = document.getElementById('buckets-container');
@@ -457,8 +534,9 @@
             <label>Delay (ms)</label>
             <input type="number" value="${b.fwdDelayMs}" min="0" oninput="_buckets[${i}].fwdDelayMs=parseInt(this.value)||0">
           </div>
-          <div class="form-group" style="flex:1;align-self:flex-end">
-            <span style="color:var(--muted);font-size:0.75rem">Proxied to the Forward URL below. Delay runs concurrently (max of delay and upstream).</span>
+          <div class="form-group" style="flex:1">
+            <label>Forward URL</label>
+            <input value="${escapeAttr(b.fwdURL)}" placeholder="https://real-api.example.com" oninput="_buckets[${i}].fwdURL=this.value">
           </div>`}
         </div>
         ${b.action === 'simulate' ? `
@@ -601,6 +679,19 @@
     return `<span class="method-badge ${cls}">${escapeHtml(m || 'ANY')}</span>`;
   }
 
+  // Compact summary of configured header/query/body matchers for the rules table.
+  function matchChips(match) {
+    const parts = [];
+    for (const [k, v] of Object.entries(match?.headers || {})) parts.push('H:' + k + '=' + v);
+    for (const [k, v] of Object.entries(match?.query   || {})) parts.push('Q:' + k + '=' + v);
+    for (const [k, v] of Object.entries(match?.body    || {})) parts.push('B:' + k + '=' + v);
+    if (parts.length === 0) return '';
+    const shown = parts.slice(0, 3).map(p =>
+      `<span class="chip" style="cursor:default">${escapeHtml(p)}</span>`).join('');
+    const extra = parts.length > 3 ? `<span class="chip" style="cursor:default">+${parts.length - 3}</span>` : '';
+    return `<div class="chip-row" style="margin-top:0.3rem">${shown}${extra}</div>`;
+  }
+
   // ── Path suggestion chips ────────────────────────────────────────────────────
   const PATH_TEMPLATES = [
     { label: 'GET list',    match: /\/[a-z][a-z0-9_-]+$/i,   method:'GET',    status:200, body:'[\n  { "id": 1 }\n]' },
@@ -690,7 +781,7 @@
           <td>${r.name || '<span style="color:var(--muted)">—</span>'}</td>
           <td class="mono">${r.match?.protocol || '<em style="color:var(--muted)">any</em>'}</td>
           <td>${methodBadge(r.match?.method || 'ANY')}</td>
-          <td class="mono">${r.match?.path || '/'}</td>
+          <td class="mono">${r.match?.path || '/'}${matchChips(r.match)}</td>
           <td style="color:var(--muted);font-size:0.8rem">${(r.buckets||[]).length} bucket${(r.buckets||[]).length !== 1 ? 's' : ''}</td>
           <td style="text-align:right;white-space:nowrap;display:flex;gap:0.4rem;justify-content:flex-end">
             <button class="btn-sm btn-primary" onclick="editRuleByIdx(${i})">Edit</button>
@@ -720,10 +811,15 @@
     document.getElementById('r-protocol').value = prefill?.protocol || '';
     document.getElementById('r-method').value = prefill?.method || '';
     document.getElementById('r-path').value = prefill?.path || '';
-    document.getElementById('r-forward-url').value = '';
-    document.getElementById('forward-url-group').style.display = 'none';
 
     _buckets = [defaultBucket()];
+    _headers = objectToKV(prefill?.headers);
+    _query   = objectToKV(prefill?.query);
+    _body    = [];
+    // Seed one empty header row so the example placeholder (X-Client-Id=premium)
+    // is visible, demonstrating the header matcher on a fresh rule.
+    if (_headers.length === 0) _headers = [{ key: '', value: '' }];
+    renderHeaders(); renderQuery(); renderBody();
     renderBuckets();
 
     document.getElementById('rule-modal').classList.add('open');
@@ -739,12 +835,15 @@
     document.getElementById('r-protocol').value = r.match?.protocol || '';
     document.getElementById('r-method').value = r.match?.method || '';
     document.getElementById('r-path').value = r.match?.path || '';
-    document.getElementById('r-forward-url').value = r.forward_url || '';
+    _headers = objectToKV(r.match?.headers);
+    _query   = objectToKV(r.match?.query);
+    _body    = objectToKV(r.match?.body);
+    renderHeaders(); renderQuery(); renderBody();
 
     // Reconstruct _buckets — fetch simulation data for each simulate bucket
     const rawBuckets = r.buckets || [{ weight: 100, action: 'simulate', simulation_id: '' }];
     _buckets = await Promise.all(rawBuckets.map(async b => {
-      const bucket = { ...defaultBucket(), weight: b.weight || 100, action: b.action || 'simulate', fwdDelayMs: b.delay_ms || 0 };
+      const bucket = { ...defaultBucket(), weight: b.weight || 100, action: b.action || 'simulate', fwdDelayMs: b.delay_ms || 0, fwdURL: b.forward_url || '' };
       if (b.action === 'simulate' && b.simulation_id) {
         bucket.existingSimID = b.simulation_id;
         try {
@@ -795,11 +894,10 @@
         return;
       }
 
-      const hasForward = _buckets.some(b => b.action === 'forward');
-      const forwardURL = document.getElementById('r-forward-url').value.trim();
-      if (hasForward && !forwardURL) {
+      const missingForwardURL = _buckets.some(b => b.action === 'forward' && !(b.fwdURL || '').trim());
+      if (missingForwardURL) {
         if (btn) setButtonState(btn, 'idle', 'Save Rule');
-        alert('Forward URL is required when a bucket has action = forward.');
+        alert('Each Forward bucket requires a Forward URL.');
         return;
       }
 
@@ -808,7 +906,7 @@
 
       for (const b of _buckets) {
         if (b.action === 'forward') {
-          resolvedBuckets.push({ weight: b.weight, action: 'forward', delay_ms: b.fwdDelayMs || 0 });
+          resolvedBuckets.push({ weight: b.weight, action: 'forward', delay_ms: b.fwdDelayMs || 0, forward_url: (b.fwdURL || '').trim() });
           continue;
         }
         // Existing sim (editing) — PUT to update in place
@@ -875,10 +973,11 @@
           protocol: document.getElementById('r-protocol').value,
           method:   document.getElementById('r-method').value,
           path:     document.getElementById('r-path').value.trim(),
-          headers: {}, query: {}
+          headers: kvToObject(_headers),
+          query:   kvToObject(_query),
+          body:    kvToObject(_body)
         },
-        buckets: resolvedBuckets,
-        ...(forwardURL ? { forward_url: forwardURL } : {})
+        buckets: resolvedBuckets
       };
 
       const method = _editingRuleID ? 'PUT' : 'POST';

@@ -146,3 +146,57 @@ func TestConditionMatchStage_BodyNonLeaf(t *testing.T) {
 	pctx := bodyReq(`{"user":{"id":7}}`)
 	assert.Error(t, stage.Execute(context.Background(), pctx))
 }
+
+func mkMatchRule(id string, m domain.MatchCriteria) domain.Rule {
+	return domain.Rule{ID: id, Match: m, Buckets: []domain.WeightedBucket{{Weight: 1, Action: domain.ActionSimulate, SimulationID: "s1"}}}
+}
+
+func TestPrecedence_HeaderBeatsExactPath(t *testing.T) {
+	wild := mkMatchRule("wild", domain.MatchCriteria{Protocol: "http", Path: "/*", Headers: map[string]string{"x-cid": "1"}})
+	exact := mkMatchRule("exact", domain.MatchCriteria{Protocol: "http", Path: "/orders"})
+	stage := matching.NewConditionMatchStage([]domain.Rule{exact, wild})
+	pctx := &pipeline.PipelineContext{Request: pipeline.NormalizedRequest{
+		Protocol: "http", Method: "GET", Path: "/orders", Headers: map[string]string{"x-cid": "1"},
+	}}
+	require.NoError(t, stage.Execute(context.Background(), pctx))
+	assert.Equal(t, "wild", pctx.Matched.ID)
+}
+
+func TestPrecedence_ExactBeatsWildcard(t *testing.T) {
+	wild := mkMatchRule("wild", domain.MatchCriteria{Protocol: "http", Path: "/*"})
+	exact := mkMatchRule("exact", domain.MatchCriteria{Protocol: "http", Path: "/orders"})
+	stage := matching.NewConditionMatchStage([]domain.Rule{wild, exact})
+	pctx := &pipeline.PipelineContext{Request: pipeline.NormalizedRequest{Protocol: "http", Method: "GET", Path: "/orders"}}
+	require.NoError(t, stage.Execute(context.Background(), pctx))
+	assert.Equal(t, "exact", pctx.Matched.ID)
+}
+
+func TestPrecedence_DeeperWildcardBeatsRootWildcard(t *testing.T) {
+	root := mkMatchRule("root", domain.MatchCriteria{Protocol: "http", Path: "/*"})
+	deep := mkMatchRule("deep", domain.MatchCriteria{Protocol: "http", Path: "/api/v1/*"})
+	stage := matching.NewConditionMatchStage([]domain.Rule{root, deep})
+	pctx := &pipeline.PipelineContext{Request: pipeline.NormalizedRequest{Protocol: "http", Method: "GET", Path: "/api/v1/x"}}
+	require.NoError(t, stage.Execute(context.Background(), pctx))
+	assert.Equal(t, "deep", pctx.Matched.ID)
+}
+
+func TestPrecedence_BodyBeatsQuery(t *testing.T) {
+	q := mkMatchRule("q", domain.MatchCriteria{Protocol: "http", Path: "/orders", Query: map[string]string{"a": "1"}})
+	b := mkMatchRule("b", domain.MatchCriteria{Protocol: "http", Path: "/orders", Body: map[string]string{"$.k": "v"}})
+	stage := matching.NewConditionMatchStage([]domain.Rule{q, b})
+	pctx := &pipeline.PipelineContext{Request: pipeline.NormalizedRequest{
+		Protocol: "http", Method: "GET", Path: "/orders",
+		Query: map[string]string{"a": "1"}, Body: []byte(`{"k":"v"}`),
+	}}
+	require.NoError(t, stage.Execute(context.Background(), pctx))
+	assert.Equal(t, "b", pctx.Matched.ID)
+}
+
+func TestPrecedence_StableWhenEqual(t *testing.T) {
+	r1 := mkMatchRule("first", domain.MatchCriteria{Protocol: "http", Path: "/orders"})
+	r2 := mkMatchRule("second", domain.MatchCriteria{Protocol: "http", Path: "/orders"})
+	stage := matching.NewConditionMatchStage([]domain.Rule{r1, r2})
+	pctx := &pipeline.PipelineContext{Request: pipeline.NormalizedRequest{Protocol: "http", Method: "GET", Path: "/orders"}}
+	require.NoError(t, stage.Execute(context.Background(), pctx))
+	assert.Equal(t, "first", pctx.Matched.ID)
+}
