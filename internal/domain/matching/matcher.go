@@ -2,8 +2,10 @@ package matching
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"path"
+	"strconv"
 	"strings"
 
 	"github.com/mockwave/mockwave/domain"
@@ -58,6 +60,18 @@ func matchRule(r *domain.Rule, req pipeline.NormalizedRequest) bool {
 			return false
 		}
 	}
+	if len(m.Body) > 0 {
+		var parsed interface{}
+		if err := json.Unmarshal(req.Body, &parsed); err != nil {
+			return false
+		}
+		for pathExpr, want := range m.Body {
+			leaf, ok := resolvePath(parsed, pathExpr)
+			if !ok || leafToString(leaf) != want {
+				return false
+			}
+		}
+	}
 	return true
 }
 
@@ -77,4 +91,59 @@ func specificity(r domain.Rule) int {
 		score += 3
 	}
 	return score
+}
+
+// resolvePath walks a dotted JSON path (optionally prefixed with "$." or "$")
+// and returns the leaf value. Numeric segments index into arrays. The second
+// return is false if the path does not resolve to a scalar leaf.
+func resolvePath(root interface{}, expr string) (interface{}, bool) {
+	expr = strings.TrimPrefix(expr, "$")
+	expr = strings.TrimPrefix(expr, ".")
+	if expr == "" {
+		return nil, false
+	}
+	cur := root
+	for _, seg := range strings.Split(expr, ".") {
+		switch node := cur.(type) {
+		case map[string]interface{}:
+			v, ok := node[seg]
+			if !ok {
+				return nil, false
+			}
+			cur = v
+		case []interface{}:
+			idx, err := strconv.Atoi(seg)
+			if err != nil || idx < 0 || idx >= len(node) {
+				return nil, false
+			}
+			cur = node[idx]
+		default:
+			return nil, false
+		}
+	}
+	switch cur.(type) {
+	case map[string]interface{}, []interface{}:
+		return nil, false
+	}
+	return cur, true
+}
+
+// leafToString stringifies a scalar JSON value for exact comparison. JSON
+// numbers decode to float64; render integers without a trailing ".0".
+func leafToString(v interface{}) string {
+	switch t := v.(type) {
+	case string:
+		return t
+	case bool:
+		return strconv.FormatBool(t)
+	case float64:
+		if t == float64(int64(t)) {
+			return strconv.FormatInt(int64(t), 10)
+		}
+		return strconv.FormatFloat(t, 'f', -1, 64)
+	case nil:
+		return ""
+	default:
+		return fmt.Sprintf("%v", t)
+	}
 }
