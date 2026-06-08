@@ -335,11 +335,6 @@
     <div id="buckets-container"></div>
     <div id="weight-sum-indicator" style="margin:0.25rem 0 0.5rem;font-size:0.8rem;font-weight:600"></div>
 
-    <div class="form-group" id="forward-url-group" style="display:none;margin-top:0.5rem">
-      <label>Forward URL (used by all Forward buckets)</label>
-      <input id="r-forward-url" placeholder="https://real-api.example.com">
-    </div>
-
     <div class="form-actions">
       <button class="btn-ghost" type="button" onclick="closeRuleModal()">Cancel</button>
       <button class="btn-primary" id="btn-save-rule" data-idle-label="Save Rule" type="button" onclick="saveRule()">Save Rule</button>
@@ -392,8 +387,9 @@
   let _headers = []; // [{key, value}]
   let _query   = [];
   let _body    = []; // body uses JSONPath in `key`
+  let _forwardURL = ''; // rule-level forward URL, edited inside Forward bucket cards
 
-  function renderKV(arr, containerId, arrName, keyPlaceholder) {
+  function renderKV(arr, containerId, arrName, keyPlaceholder, valuePlaceholder) {
     const c = document.getElementById(containerId);
     if (!c) return;
     if (arr.length === 0) { c.innerHTML = ''; return; }
@@ -404,7 +400,7 @@
             oninput="${arrName}[${i}].key=this.value">
         </div>
         <div class="form-group" style="margin-bottom:0">
-          <input value="${escapeAttr(row.value)}" placeholder="value"
+          <input value="${escapeAttr(row.value)}" placeholder="${escapeAttr(valuePlaceholder || 'value')}"
             oninput="${arrName}[${i}].value=this.value">
         </div>
         <button class="btn-sm btn-danger" type="button" style="align-self:center"
@@ -412,9 +408,10 @@
       </div>`).join('');
   }
 
-  function renderHeaders() { renderKV(_headers, 'headers-container', '_headers', 'X-Client-Id'); }
-  function renderQuery()   { renderKV(_query,   'query-container',   '_query',   'q'); }
-  function renderBody()    { renderKV(_body,    'body-container',    '_body',    '$.user.id'); }
+  // Placeholders double as live examples of each matcher (e.g. header X-Client-Id=premium).
+  function renderHeaders() { renderKV(_headers, 'headers-container', '_headers', 'X-Client-Id', 'premium'); }
+  function renderQuery()   { renderKV(_query,   'query-container',   '_query',   'version',     'v2'); }
+  function renderBody()    { renderKV(_body,    'body-container',    '_body',    '$.user.role', 'admin'); }
 
   function addHeader() { _headers.push({key:'',value:''}); renderHeaders(); }
   function addQuery()  { _query.push({key:'',value:''});   renderQuery(); }
@@ -499,10 +496,10 @@
     }
   }
 
-  function updateForwardURLVisibility() {
-    const hasForward = _buckets.some(b => b.action === 'forward');
-    document.getElementById('forward-url-group').style.display = hasForward ? '' : 'none';
-  }
+  // Forward URL now lives inside each Forward bucket card (see renderBuckets),
+  // so there is no separate rule-level field to toggle. Kept as a no-op because
+  // bucket add/remove/action handlers still call it.
+  function updateForwardURLVisibility() {}
 
   function renderBuckets() {
     const container = document.getElementById('buckets-container');
@@ -537,8 +534,9 @@
             <label>Delay (ms)</label>
             <input type="number" value="${b.fwdDelayMs}" min="0" oninput="_buckets[${i}].fwdDelayMs=parseInt(this.value)||0">
           </div>
-          <div class="form-group" style="flex:1;align-self:flex-end">
-            <span style="color:var(--muted);font-size:0.75rem">Proxied to the Forward URL below. Delay runs concurrently (max of delay and upstream).</span>
+          <div class="form-group" style="flex:1">
+            <label>Forward URL${_buckets.filter(x => x.action === 'forward').length > 1 ? ' (shared by all forward buckets)' : ''}</label>
+            <input value="${escapeAttr(_forwardURL)}" placeholder="https://real-api.example.com" oninput="_forwardURL=this.value">
           </div>`}
         </div>
         ${b.action === 'simulate' ? `
@@ -813,13 +811,15 @@
     document.getElementById('r-protocol').value = prefill?.protocol || '';
     document.getElementById('r-method').value = prefill?.method || '';
     document.getElementById('r-path').value = prefill?.path || '';
-    document.getElementById('r-forward-url').value = '';
-    document.getElementById('forward-url-group').style.display = 'none';
+    _forwardURL = '';
 
     _buckets = [defaultBucket()];
     _headers = objectToKV(prefill?.headers);
     _query   = objectToKV(prefill?.query);
     _body    = [];
+    // Seed one empty header row so the example placeholder (X-Client-Id=premium)
+    // is visible, demonstrating the header matcher on a fresh rule.
+    if (_headers.length === 0) _headers = [{ key: '', value: '' }];
     renderHeaders(); renderQuery(); renderBody();
     renderBuckets();
 
@@ -840,7 +840,7 @@
     _query   = objectToKV(r.match?.query);
     _body    = objectToKV(r.match?.body);
     renderHeaders(); renderQuery(); renderBody();
-    document.getElementById('r-forward-url').value = r.forward_url || '';
+    _forwardURL = r.forward_url || '';
 
     // Reconstruct _buckets — fetch simulation data for each simulate bucket
     const rawBuckets = r.buckets || [{ weight: 100, action: 'simulate', simulation_id: '' }];
@@ -897,7 +897,7 @@
       }
 
       const hasForward = _buckets.some(b => b.action === 'forward');
-      const forwardURL = document.getElementById('r-forward-url').value.trim();
+      const forwardURL = (_forwardURL || '').trim();
       if (hasForward && !forwardURL) {
         if (btn) setButtonState(btn, 'idle', 'Save Rule');
         alert('Forward URL is required when a bucket has action = forward.');
