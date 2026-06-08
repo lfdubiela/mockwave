@@ -65,3 +65,24 @@ func TestPercentileRouterStage_EmptyBuckets(t *testing.T) {
 	pctx := &pipeline.PipelineContext{Matched: rule}
 	assert.Error(t, stage.Execute(context.Background(), pctx))
 }
+
+func TestRouter_SetsForwardDelayMs(t *testing.T) {
+	stage := routing.NewPercentileRouterStage()
+	pctx := &pipeline.PipelineContext{
+		Matched: &domain.Rule{
+			ID: "r1",
+			Buckets: []domain.WeightedBucket{
+				{Weight: 100, Action: domain.ActionForward, DelayMs: 1500},
+			},
+		},
+	}
+	if err := stage.Execute(context.Background(), pctx); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !pctx.ShouldForward {
+		t.Fatal("expected ShouldForward = true")
+	}
+	if pctx.ForwardDelayMs != 1500 {
+		t.Fatalf("expected ForwardDelayMs = 1500, got %d", pctx.ForwardDelayMs)
+	}
+}

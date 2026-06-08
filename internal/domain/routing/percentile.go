@@ -34,6 +34,7 @@ func (s *PercentileRouterStage) Execute(_ context.Context, pctx *pipeline.Pipeli
 		pctx.SimulationID = bucket.SimulationID
 	case domain.ActionForward:
 		pctx.ShouldForward = true
+		pctx.ForwardDelayMs = bucket.DelayMs
 	default:
 		return fmt.Errorf("percentile-router: unknown action %q", bucket.Action)
 	}

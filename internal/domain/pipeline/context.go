@@ -20,9 +20,10 @@ type MockResponse struct {
 }
 
 type PipelineContext struct {
-	Request       NormalizedRequest
-	Response      *MockResponse
-	Matched       *domain.Rule
-	SimulationID  string
-	ShouldForward bool
+	Request        NormalizedRequest
+	Response       *MockResponse
+	Matched        *domain.Rule
+	SimulationID   string
+	ShouldForward  bool
+	ForwardDelayMs int // delay (ms) for the selected forward bucket, applied concurrently in the forward stage
 }
