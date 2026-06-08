@@ -282,6 +282,14 @@ components:
           enum: [simulate, forward]
         simulation_id:
           type: string
+        delay_ms:
+          type: integer
+          minimum: 0
+          description: >-
+            Forward buckets only. Minimum response time in milliseconds. The
+            delay runs concurrently with the upstream proxy call, so the
+            effective latency is max(delay_ms, upstream latency). Ignored for
+            simulate buckets (mock delay lives on the simulation response).
 
     Rule:
       type: object
