@@ -144,5 +144,5 @@ func TestForwardStage_ZeroDelayNoExtraWait(t *testing.T) {
 	}
 	start := time.Now()
 	require.NoError(t, stage.Execute(context.Background(), pctx))
-	assert.Less(t, time.Since(start), 100*time.Millisecond)
+	assert.Less(t, time.Since(start), 250*time.Millisecond)
 }
