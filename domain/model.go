@@ -19,9 +19,10 @@ type MatchCriteria struct {
 
 // WeightedBucket is one branch in a rule's traffic split.
 type WeightedBucket struct {
-	Weight       int    `json:"weight"`        // relative weight, must be > 0
-	Action       string `json:"action"`        // "simulate" | "forward"
-	SimulationID string `json:"simulation_id"` // required when Action = "simulate"
+	Weight       int    `json:"weight"`             // relative weight, must be > 0
+	Action       string `json:"action"`             // "simulate" | "forward"
+	SimulationID string `json:"simulation_id"`      // required when Action = "simulate"
+	DelayMs      int    `json:"delay_ms,omitempty"` // forward bucket: min response time (ms), concurrent w/ upstream
 }
 
 func (b WeightedBucket) Validate() error {
@@ -33,6 +34,9 @@ func (b WeightedBucket) Validate() error {
 	}
 	if b.Action != ActionSimulate && b.Action != ActionForward {
 		return fmt.Errorf("bucket action must be 'simulate' or 'forward', got %q", b.Action)
+	}
+	if b.DelayMs < 0 {
+		return fmt.Errorf("bucket delay_ms must be >= 0, got %d", b.DelayMs)
 	}
 	return nil
 }
