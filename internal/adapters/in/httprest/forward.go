@@ -78,6 +78,8 @@ func (s *ForwardStage) Execute(_ context.Context, pctx *pipeline.PipelineContext
 		Headers: headers,
 		Body:    parsedBody,
 	}
+	// Drain the delay timer so total latency is max(delay, upstream). On an
+	// upstream error we return early above and intentionally skip the delay.
 	if delay != nil {
 		<-delay
 	}

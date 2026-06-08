@@ -128,6 +128,26 @@ func TestForwardStage_UpstreamDominatesWhenSlowerThanDelay(t *testing.T) {
 	require.NotNil(t, pctx.Response)
 }
 
+func TestForwardStage_DelaySkippedOnUpstreamError(t *testing.T) {
+	// Upstream that is immediately closed → client.Do returns an error fast.
+	dead := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	deadURL := dead.URL
+	dead.Close()
+
+	stage := httprest.NewForwardStage(nil)
+	pctx := &pipeline.PipelineContext{
+		ShouldForward:  true,
+		ForwardDelayMs: 500,
+		Matched:        &domain.Rule{ID: "r1", ForwardURL: deadURL},
+		Request:        pipeline.NormalizedRequest{Method: "GET", Path: "/test"},
+	}
+	start := time.Now()
+	err := stage.Execute(context.Background(), pctx)
+	elapsed := time.Since(start)
+	require.Error(t, err, "upstream error should propagate")
+	assert.Less(t, elapsed, 400*time.Millisecond, "delay is intentionally skipped when the upstream call errors")
+}
+
 func TestForwardStage_ZeroDelayNoExtraWait(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)

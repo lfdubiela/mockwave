@@ -451,6 +451,33 @@ func TestAdminAPI_OpenAPI(t *testing.T) {
 	assert.Contains(t, body, "/api/rules")
 }
 
+func TestRules_ForwardBucketDelayRoundTrips(t *testing.T) {
+	store := &memStore{}
+	mux := restapi.NewMux(store, nil, nil, nil, nil, nil)
+
+	r := domain.Rule{
+		ID:         "r-delay",
+		Match:      domain.MatchCriteria{Path: "/forward-delay"},
+		ForwardURL: "http://localhost:9999",
+		Buckets:    []domain.WeightedBucket{{Weight: 100, Action: domain.ActionForward, DelayMs: 1500}},
+	}
+	body, _ := json.Marshal(r)
+	postReq := httptest.NewRequest(http.MethodPost, "/api/rules", bytes.NewReader(body))
+	postW := httptest.NewRecorder()
+	mux.ServeHTTP(postW, postReq)
+	require.Equal(t, 201, postW.Code, "POST /api/rules should return 201")
+
+	getReq := httptest.NewRequest(http.MethodGet, "/api/rules/r-delay", nil)
+	getW := httptest.NewRecorder()
+	mux.ServeHTTP(getW, getReq)
+	require.Equal(t, 200, getW.Code, "GET /api/rules/r-delay should return 200")
+
+	var got domain.Rule
+	require.NoError(t, json.NewDecoder(getW.Body).Decode(&got))
+	require.Len(t, got.Buckets, 1)
+	assert.Equal(t, 1500, got.Buckets[0].DelayMs, "delay_ms must round-trip through the admin API")
+}
+
 func TestAdminAPI_OpenAPI_MethodNotAllowed(t *testing.T) {
 	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodPost, "/api/openapi.json", nil)

@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/mockwave/mockwave/internal/adapters/out/jsonfile"
 	"github.com/mockwave/mockwave/domain"
@@ -111,6 +112,36 @@ func TestIntegration_PercentileForwardProxy(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	assert.Equal(t, 200, resp.StatusCode)
+	var body map[string]interface{}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+	assert.Equal(t, "upstream", body["source"])
+}
+
+func TestIntegration_ForwardProxyWithDelay(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintln(w, `{"source":"upstream"}`)
+	}))
+	defer upstream.Close()
+	cfg := domain.Config{
+		Rules: []domain.Rule{{
+			ID:         "r1",
+			Match:      domain.MatchCriteria{Protocol: "http", Method: "GET", Path: "/data"},
+			ForwardURL: upstream.URL,
+			Buckets:    []domain.WeightedBucket{{Weight: 1, Action: domain.ActionForward, DelayMs: 300}},
+		}},
+	}
+	ts := newTestServer(t, cfg)
+	start := time.Now()
+	resp, err := http.Get(ts.URL + "/data")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	elapsed := time.Since(start)
+	assert.Equal(t, 200, resp.StatusCode)
+	// Delay (300ms) dominates the fast local upstream → full-stack latency >= delay.
+	assert.GreaterOrEqual(t, elapsed, 300*time.Millisecond, "forward delay must apply through the full server pipeline")
+	// And it must NOT double-apply (handler.go also sleeping) → well under 2x.
+	assert.Less(t, elapsed, 1*time.Second, "delay must not double-apply via the mock handler path")
 	var body map[string]interface{}
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
 	assert.Equal(t, "upstream", body["source"])
