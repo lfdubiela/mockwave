@@ -29,7 +29,7 @@ func NewServer(adminURL, version string) *server.MCPServer {
 	)
 	s.AddTool(
 		mcpsdk.NewTool("create_rule",
-			mcpsdk.WithDescription("Create a new rule. The 'rule' parameter is a JSON object matching the Rule schema (id, name, match, buckets, forward_url)."),
+			mcpsdk.WithDescription("Create a new rule. The 'rule' parameter is a JSON object matching the Rule schema (id, name, match, buckets). Forward buckets carry their own forward_url."),
 			mcpsdk.WithObject("rule", mcpsdk.Required(), mcpsdk.Description("Rule object")),
 		),
 		handleCreateRule(c),

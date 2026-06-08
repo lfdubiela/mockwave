@@ -25,5 +25,6 @@ type PipelineContext struct {
 	Matched        *domain.Rule
 	SimulationID   string
 	ShouldForward  bool
-	ForwardDelayMs int // delay (ms) for the selected forward bucket, applied concurrently in the forward stage
+	ForwardDelayMs int    // delay (ms) for the selected forward bucket, applied concurrently in the forward stage
+	ForwardURL     string // upstream base URL of the selected forward bucket
 }

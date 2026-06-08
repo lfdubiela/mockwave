@@ -86,3 +86,21 @@ func TestRouter_SetsForwardDelayMs(t *testing.T) {
 		t.Fatalf("expected ForwardDelayMs = 1500, got %d", pctx.ForwardDelayMs)
 	}
 }
+
+func TestRouter_SetsForwardURL(t *testing.T) {
+	stage := routing.NewPercentileRouterStage()
+	pctx := &pipeline.PipelineContext{
+		Matched: &domain.Rule{
+			ID: "r1",
+			Buckets: []domain.WeightedBucket{
+				{Weight: 100, Action: domain.ActionForward, ForwardURL: "https://upstream.example.com"},
+			},
+		},
+	}
+	if err := stage.Execute(context.Background(), pctx); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if pctx.ForwardURL != "https://upstream.example.com" {
+		t.Fatalf("expected ForwardURL propagated, got %q", pctx.ForwardURL)
+	}
+}

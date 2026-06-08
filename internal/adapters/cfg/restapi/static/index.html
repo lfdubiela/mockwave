@@ -387,7 +387,6 @@
   let _headers = []; // [{key, value}]
   let _query   = [];
   let _body    = []; // body uses JSONPath in `key`
-  let _forwardURL = ''; // rule-level forward URL, edited inside Forward bucket cards
 
   function renderKV(arr, containerId, arrName, keyPlaceholder, valuePlaceholder) {
     const c = document.getElementById(containerId);
@@ -450,6 +449,7 @@
       simScript: '',
       bodyType: 'json',
       fwdDelayMs: 0,
+      fwdURL: '',
       existingSimID: null
     };
   }
@@ -535,8 +535,8 @@
             <input type="number" value="${b.fwdDelayMs}" min="0" oninput="_buckets[${i}].fwdDelayMs=parseInt(this.value)||0">
           </div>
           <div class="form-group" style="flex:1">
-            <label>Forward URL${_buckets.filter(x => x.action === 'forward').length > 1 ? ' (shared by all forward buckets)' : ''}</label>
-            <input value="${escapeAttr(_forwardURL)}" placeholder="https://real-api.example.com" oninput="_forwardURL=this.value">
+            <label>Forward URL</label>
+            <input value="${escapeAttr(b.fwdURL)}" placeholder="https://real-api.example.com" oninput="_buckets[${i}].fwdURL=this.value">
           </div>`}
         </div>
         ${b.action === 'simulate' ? `
@@ -811,7 +811,6 @@
     document.getElementById('r-protocol').value = prefill?.protocol || '';
     document.getElementById('r-method').value = prefill?.method || '';
     document.getElementById('r-path').value = prefill?.path || '';
-    _forwardURL = '';
 
     _buckets = [defaultBucket()];
     _headers = objectToKV(prefill?.headers);
@@ -840,12 +839,11 @@
     _query   = objectToKV(r.match?.query);
     _body    = objectToKV(r.match?.body);
     renderHeaders(); renderQuery(); renderBody();
-    _forwardURL = r.forward_url || '';
 
     // Reconstruct _buckets — fetch simulation data for each simulate bucket
     const rawBuckets = r.buckets || [{ weight: 100, action: 'simulate', simulation_id: '' }];
     _buckets = await Promise.all(rawBuckets.map(async b => {
-      const bucket = { ...defaultBucket(), weight: b.weight || 100, action: b.action || 'simulate', fwdDelayMs: b.delay_ms || 0 };
+      const bucket = { ...defaultBucket(), weight: b.weight || 100, action: b.action || 'simulate', fwdDelayMs: b.delay_ms || 0, fwdURL: b.forward_url || '' };
       if (b.action === 'simulate' && b.simulation_id) {
         bucket.existingSimID = b.simulation_id;
         try {
@@ -896,11 +894,10 @@
         return;
       }
 
-      const hasForward = _buckets.some(b => b.action === 'forward');
-      const forwardURL = (_forwardURL || '').trim();
-      if (hasForward && !forwardURL) {
+      const missingForwardURL = _buckets.some(b => b.action === 'forward' && !(b.fwdURL || '').trim());
+      if (missingForwardURL) {
         if (btn) setButtonState(btn, 'idle', 'Save Rule');
-        alert('Forward URL is required when a bucket has action = forward.');
+        alert('Each Forward bucket requires a Forward URL.');
         return;
       }
 
@@ -909,7 +906,7 @@
 
       for (const b of _buckets) {
         if (b.action === 'forward') {
-          resolvedBuckets.push({ weight: b.weight, action: 'forward', delay_ms: b.fwdDelayMs || 0 });
+          resolvedBuckets.push({ weight: b.weight, action: 'forward', delay_ms: b.fwdDelayMs || 0, forward_url: (b.fwdURL || '').trim() });
           continue;
         }
         // Existing sim (editing) — PUT to update in place
@@ -980,8 +977,7 @@
           query:   kvToObject(_query),
           body:    kvToObject(_body)
         },
-        buckets: resolvedBuckets,
-        ...(forwardURL ? { forward_url: forwardURL } : {})
+        buckets: resolvedBuckets
       };
 
       const method = _editingRuleID ? 'PUT' : 'POST';

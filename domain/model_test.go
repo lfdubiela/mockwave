@@ -10,7 +10,7 @@ func TestWeightedBucket_NegativeDelayRejected(t *testing.T) {
 }
 
 func TestWeightedBucket_ForwardWithDelayValid(t *testing.T) {
-	b := WeightedBucket{Weight: 100, Action: ActionForward, DelayMs: 2000}
+	b := WeightedBucket{Weight: 100, Action: ActionForward, DelayMs: 2000, ForwardURL: "https://upstream.example.com"}
 	if err := b.Validate(); err != nil {
 		t.Fatalf("expected forward bucket with delay to be valid, got %v", err)
 	}

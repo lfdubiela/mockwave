@@ -290,6 +290,11 @@ components:
             delay runs concurrently with the upstream proxy call, so the
             effective latency is max(delay_ms, upstream latency). Ignored for
             simulate buckets (mock delay lives on the simulation response).
+        forward_url:
+          type: string
+          description: >-
+            Required for forward buckets. Upstream base URL the request is
+            proxied to. Ignored for simulate buckets.
 
     Rule:
       type: object
@@ -307,8 +312,6 @@ components:
             Weighted traffic buckets. Bucket weights must sum to exactly 100.
           items:
             $ref: "#/components/schemas/WeightedBucket"
-        forward_url:
-          type: string
 
     HTTPResponse:
       type: object

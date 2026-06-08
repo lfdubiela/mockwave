@@ -19,10 +19,11 @@ type MatchCriteria struct {
 
 // WeightedBucket is one branch in a rule's traffic split.
 type WeightedBucket struct {
-	Weight       int    `json:"weight"`             // relative weight, must be > 0
-	Action       string `json:"action"`             // "simulate" | "forward"
-	SimulationID string `json:"simulation_id"`      // required when Action = "simulate"
-	DelayMs      int    `json:"delay_ms,omitempty"` // forward bucket: min response time (ms), concurrent w/ upstream
+	Weight       int    `json:"weight"`                // relative weight, must be > 0
+	Action       string `json:"action"`                // "simulate" | "forward"
+	SimulationID string `json:"simulation_id"`         // required when Action = "simulate"
+	DelayMs      int    `json:"delay_ms,omitempty"`    // forward bucket: min response time (ms), concurrent w/ upstream
+	ForwardURL   string `json:"forward_url,omitempty"` // required when Action = "forward"; upstream base URL
 }
 
 func (b WeightedBucket) Validate() error {
@@ -38,16 +39,18 @@ func (b WeightedBucket) Validate() error {
 	if b.DelayMs < 0 {
 		return fmt.Errorf("bucket delay_ms must be >= 0, got %d", b.DelayMs)
 	}
+	if b.Action == ActionForward && b.ForwardURL == "" {
+		return fmt.Errorf("bucket with action=forward requires forward_url")
+	}
 	return nil
 }
 
 // Rule maps incoming requests to a set of weighted response buckets.
 type Rule struct {
-	ID         string           `json:"id"`
-	Name       string           `json:"name"`
-	Match      MatchCriteria    `json:"match"`
-	Buckets    []WeightedBucket `json:"buckets"`
-	ForwardURL string           `json:"forward_url"`
+	ID      string           `json:"id"`
+	Name    string           `json:"name"`
+	Match   MatchCriteria    `json:"match"`
+	Buckets []WeightedBucket `json:"buckets"`
 }
 
 func (r Rule) Validate() error {
@@ -64,9 +67,6 @@ func (r Rule) Validate() error {
 	for i, b := range r.Buckets {
 		if err := b.Validate(); err != nil {
 			return fmt.Errorf("bucket[%d]: %w", i, err)
-		}
-		if b.Action == ActionForward && r.ForwardURL == "" {
-			return fmt.Errorf("rule has forward bucket but forward_url is empty")
 		}
 		total += b.Weight
 	}
