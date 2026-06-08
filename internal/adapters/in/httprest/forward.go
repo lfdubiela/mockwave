@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/mockwave/mockwave/internal/domain/pipeline"
 )
@@ -31,6 +32,14 @@ func (s *ForwardStage) Execute(_ context.Context, pctx *pipeline.PipelineContext
 	if pctx.Matched == nil || pctx.Matched.ForwardURL == "" {
 		return fmt.Errorf("forward: no forward_url configured on matched rule")
 	}
+
+	// Start the delay timer NOW so it runs concurrently with the upstream call.
+	// Net effect on return is max(delay, upstreamLatency).
+	var delay <-chan time.Time
+	if pctx.ForwardDelayMs > 0 {
+		delay = time.After(time.Duration(pctx.ForwardDelayMs) * time.Millisecond)
+	}
+
 	targetURL := strings.TrimRight(pctx.Matched.ForwardURL, "/") + pctx.Request.Path
 	if len(pctx.Request.Query) > 0 {
 		params := make([]string, 0, len(pctx.Request.Query))
@@ -68,6 +77,9 @@ func (s *ForwardStage) Execute(_ context.Context, pctx *pipeline.PipelineContext
 		Status:  resp.StatusCode,
 		Headers: headers,
 		Body:    parsedBody,
+	}
+	if delay != nil {
+		<-delay
 	}
 	return nil
 }
