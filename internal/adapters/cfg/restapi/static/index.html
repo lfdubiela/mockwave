@@ -72,11 +72,11 @@
   @keyframes tabFadeIn { from { opacity: 0; } to { opacity: 1; } }
 
   /* Stats rail — per-rule hit distribution */
-  .stats-rail { width: 220px; flex-shrink: 0; border-left: 1px solid var(--border); padding: 1.25rem 0.9rem; display: flex; flex-direction: column; gap: 0.75rem; overflow-y: auto; }
+  .stats-rail { width: 220px; flex-shrink: 0; border-left: 1px solid var(--border-hair); padding: 1.25rem 0.9rem; display: flex; flex-direction: column; gap: 0.75rem; overflow-y: auto; }
   .rail-title { color: var(--muted); font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
   .rail-empty { color: var(--muted); font-size: 0.75rem; text-align: center; padding: 1.75rem 0; }
   #rail-dist { display: flex; flex-direction: column; gap: 0.5rem; }
-  .dist-card { background: var(--surface); border: 1px solid var(--border); border-radius: 0.5rem; padding: 0.6rem 0.7rem; }
+  .dist-card { background: var(--surface-2); border: 1px solid var(--border-hair); border-radius: var(--radius); padding: 0.6rem 0.7rem; box-shadow: var(--shadow-card); }
   .dist-name { font-size: 0.78rem; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 0.45rem; }
   .dist-metrics { display: flex; flex-direction: column; gap: 0.22rem; }
   .dist-metrics > div { display: flex; justify-content: space-between; align-items: baseline; }
@@ -87,9 +87,11 @@
   .dist-bar > i { display: block; height: 100%; background: var(--accent); border-radius: 9999px; transition: width 0.5s ease; }
 
   /* Tables */
-  table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
-  th, td { padding: 0.6rem 0.75rem; text-align: left; border-bottom: 1px solid var(--border); }
-  th { color: var(--muted); font-weight: 500; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.86rem; font-variant-numeric: tabular-nums; }
+  th, td { padding: 0.6rem 0.8rem; text-align: left; border-bottom: 1px solid var(--border-hair); }
+  th { color: var(--text-dim); font-weight: 600; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; position: sticky; top: 0; background: var(--surface); backdrop-filter: blur(var(--blur)); -webkit-backdrop-filter: blur(var(--blur)); }
+  tbody tr { transition: background-color 100ms; }
+  tbody tr:hover { background: var(--surface-2); }
   tr:last-child td { border-bottom: none; }
 
   /* Buttons */
