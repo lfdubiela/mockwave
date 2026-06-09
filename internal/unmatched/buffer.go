@@ -13,6 +13,9 @@ type Request struct {
 	Path     string            `json:"path"`
 	Headers  map[string]string `json:"headers"`
 	Body     string            `json:"body"`
+	// Count is the number of captured calls collapsed into this entry. Set only
+	// by ListDeduped; zero on raw List/Add entries.
+	Count int `json:"count,omitempty"`
 }
 
 // Buffer is a fixed-capacity ring buffer of unmatched requests.
@@ -72,6 +75,11 @@ func (b *Buffer) ListDeduped() []Request {
 	if len(all) == 0 {
 		return all
 	}
+	// Total occurrences per key, to annotate each kept entry with its count.
+	counts := make(map[string]int, len(all))
+	for i := range all {
+		counts[all[i].Path+"\x00"+all[i].Body]++
+	}
 	seen := make(map[string]bool, len(all))
 	// Walk newest → oldest so the kept entry is the most recent occurrence.
 	kept := make([]Request, 0, len(all))
@@ -81,7 +89,9 @@ func (b *Buffer) ListDeduped() []Request {
 			continue
 		}
 		seen[key] = true
-		kept = append(kept, all[i])
+		r := all[i]
+		r.Count = counts[key]
+		kept = append(kept, r)
 	}
 	// kept is newest → oldest; reverse to restore oldest-first ordering.
 	for l, r := 0, len(kept)-1; l < r; l, r = l+1, r-1 {

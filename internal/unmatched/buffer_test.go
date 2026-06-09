@@ -65,6 +65,7 @@ func TestBuffer_ListDeduped_CollapsesSamePathAndBody(t *testing.T) {
 	require.NotNil(t, ax)
 	assert.Equal(t, "POST", ax.Method)
 	assert.Equal(t, int64(3), ax.At.Unix())
+	assert.Equal(t, 2, ax.Count) // two (/a,x) calls collapsed
 
 	// Oldest-first ordering preserved among kept entries.
 	assert.True(t, items[0].At.Before(items[1].At))

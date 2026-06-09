@@ -1371,7 +1371,7 @@
           <td style="color:var(--muted);font-size:0.75rem;white-space:nowrap">${new Date(r.at).toLocaleTimeString()}</td>
           <td class="mono">${escapeHtml(r.protocol || 'http')}</td>
           <td><span class="method-badge method-${escapeHtml(r.method)}">${escapeHtml(r.method)}</span></td>
-          <td class="mono">${escapeHtml(r.path)}</td>
+          <td class="mono">${escapeHtml(r.path)}${(r.count > 1) ? ` <span class="badge" title="${r.count} calls with this path + body" style="background:var(--error);color:#fff">×${r.count}</span>` : ''}</td>
           <td style="text-align:right">
             <button class="btn-sm btn-primary" onclick="prefillFromUnmatched(${i})">Create Rule</button>
           </td>
