@@ -77,6 +77,19 @@
   /* Misc */
   .badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 9999px; font-size: 0.7rem; font-weight: 600; background: var(--accent-dim); color: var(--accent); border: 1px solid rgba(245,158,11,0.3); }
   .count-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 1.4rem; height: 1.4rem; padding: 0 0.45rem; margin-right: 0.5rem; border-radius: 9999px; font-size: 0.7rem; font-weight: 700; line-height: 1; background: var(--error); color: #fff; vertical-align: middle; }
+  .rule-row { cursor: pointer; }
+  .rule-row:hover { background: var(--accent-dim); }
+  .rule-caret { display: inline-block; width: 0.9rem; color: var(--muted); font-size: 0.7rem; }
+  .rule-detail > td { background: rgba(0,0,0,0.15); padding: 0.75rem 1rem; }
+  .rule-detail-body { font-size: 0.85rem; }
+  .bucket-list { display: flex; flex-direction: column; gap: 0.5rem; }
+  .bucket-card { padding: 0.5rem 0.75rem; border: 1px solid var(--border, rgba(255,255,255,0.1)); border-radius: 0.5rem; background: var(--bg, rgba(255,255,255,0.02)); }
+  .bucket-weight { display: inline-block; min-width: 2.8rem; font-weight: 700; }
+  .bucket-action { display: inline-block; padding: 0.05rem 0.5rem; border-radius: 9999px; font-size: 0.7rem; font-weight: 600; margin-left: 0.4rem; }
+  .act-simulate { background: rgba(34,197,94,0.15); color: #22c55e; }
+  .act-forward { background: rgba(59,130,246,0.15); color: #3b82f6; }
+  .bucket-meta { margin-top: 0.3rem; color: var(--muted); }
+  .bucket-tag { padding: 0 0.35rem; border-radius: 0.25rem; background: var(--accent-dim); color: var(--accent); font-size: 0.7rem; }
   .bar-row { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.6rem; font-size: 0.8rem; }
   .bar-label { width: 12rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
   .bar-bg { flex: 1; height: 0.375rem; background: var(--border); border-radius: 9999px; }
@@ -726,18 +739,21 @@
       }
       _rulesList = rules;
       tbody.innerHTML = rules.map((r, i) => `
-        <tr class="${_rulesLoaded ? 'row-new' : ''}">
-          <td><span class="badge">${r.id}</span></td>
+        <tr class="rule-row ${_rulesLoaded ? 'row-new' : ''}" onclick="toggleRuleDetail(${i})" title="Click to view buckets">
+          <td><span class="rule-caret" id="rule-caret-${i}">▸</span> <span class="badge">${r.id}</span></td>
           <td>${r.name || '<span style="color:var(--muted)">—</span>'}</td>
           <td class="mono">${r.match?.protocol || '<em style="color:var(--muted)">any</em>'}</td>
           <td>${methodBadge(r.match?.method || 'ANY')}</td>
           <td class="mono">${r.match?.path || '/'}${matchChips(r.match)}</td>
           <td style="color:var(--muted);font-size:0.8rem">${(r.buckets||[]).length} bucket${(r.buckets||[]).length !== 1 ? 's' : ''}</td>
-          <td style="text-align:right;white-space:nowrap;display:flex;gap:0.4rem;justify-content:flex-end">
+          <td style="text-align:right;white-space:nowrap;display:flex;gap:0.4rem;justify-content:flex-end" onclick="event.stopPropagation()">
             <button class="btn-sm btn-primary" onclick="editRuleByIdx(${i})">Edit</button>
             <button class="btn-sm" onclick="copyRuleByIdx(${i})">Copy</button>
             <button class="btn-sm btn-danger" onclick="deleteRule('${escapeAttr(r.id)}', this)">Delete</button>
           </td>
+        </tr>
+        <tr class="rule-detail" id="rule-detail-${i}" style="display:none">
+          <td colspan="7"><div id="rule-detail-body-${i}" class="rule-detail-body">Loading…</div></td>
         </tr>`).join('');
       _rulesLoaded = true;
     } catch (e) {
@@ -749,6 +765,72 @@
     const r = _rulesList[i];
     if (!r) return;
     editRule(r);
+  }
+
+  const _ruleDetailLoaded = new Set();
+
+  async function toggleRuleDetail(i) {
+    const row = document.getElementById('rule-detail-' + i);
+    const caret = document.getElementById('rule-caret-' + i);
+    if (!row) return;
+    const open = row.style.display !== 'none';
+    if (open) {
+      row.style.display = 'none';
+      if (caret) caret.textContent = '▸';
+      return;
+    }
+    row.style.display = '';
+    if (caret) caret.textContent = '▾';
+    if (!_ruleDetailLoaded.has(i)) {
+      _ruleDetailLoaded.add(i);
+      await renderRuleDetail(i);
+    }
+  }
+
+  async function renderRuleDetail(i) {
+    const r = _rulesList[i];
+    const el = document.getElementById('rule-detail-body-' + i);
+    if (!r || !el) return;
+    const buckets = r.buckets || [];
+    if (buckets.length === 0) {
+      el.innerHTML = '<span style="color:var(--muted)">No buckets.</span>';
+      return;
+    }
+    // Lazy-fetch simulate buckets' simulation summaries in parallel.
+    const cards = await Promise.all(buckets.map(async (b, bi) => {
+      const weight = `<span class="bucket-weight">${b.weight ?? 0}%</span>`;
+      if (b.action === 'forward') {
+        const delay = b.delay_ms ? ` · delay ${b.delay_ms}ms` : '';
+        return `<div class="bucket-card">
+          ${weight}<span class="bucket-action act-forward">forward</span>
+          <div class="bucket-meta">→ <span class="mono">${escapeHtml(b.forward_url || '—')}</span>${delay}</div>
+        </div>`;
+      }
+      // simulate
+      let sim = '';
+      if (b.simulation_id) {
+        try {
+          const res = await fetch('/api/simulations/' + encodeURIComponent(b.simulation_id));
+          if (res.ok) {
+            const s = await res.json();
+            const status = s.response?.status ?? '—';
+            const ct = s.response?.headers?.['Content-Type'] || '—';
+            const sdelay = s.response?.delay_ms ? ` · delay ${s.response.delay_ms}ms` : '';
+            const script = s.script ? ' · <span class="bucket-tag">script</span>' : '';
+            sim = `<div class="bucket-meta">status <strong>${escapeHtml(String(status))}</strong> · ${escapeHtml(ct)}${sdelay}${script}</div>`;
+          } else {
+            sim = `<div class="bucket-meta" style="color:var(--error)">simulation ${escapeHtml(b.simulation_id)} not found</div>`;
+          }
+        } catch (_) {
+          sim = `<div class="bucket-meta" style="color:var(--muted)">could not load simulation</div>`;
+        }
+      }
+      return `<div class="bucket-card">
+        ${weight}<span class="bucket-action act-simulate">simulate</span>
+        ${sim}
+      </div>`;
+    }));
+    el.innerHTML = `<div class="bucket-list">${cards.join('')}</div>`;
   }
 
   let _editingRuleID = null;
