@@ -5,14 +5,51 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Mockwave Admin</title>
 <style>
-  :root {
-    --bg: #111016; --surface: #181720; --border: #2a2838;
-    --text: #e2e8f0; --accent: #f59e0b; --accent-dim: rgba(245,158,11,0.1);
-    --muted: #6b7280; --success: #4ade80; --error: #f87171;
+  /* ── amber (legacy) — reproduces the original look ──────────────────────── */
+  [data-theme="amber"] {
+    --bg: #111016; --surface: #181720; --surface-2: #1f1e29;
+    --border: #2a2838; --border-hair: #232231;
+    --text: #e2e8f0; --text-dim: #6b7280; --muted: #6b7280;
+    --accent: #f59e0b; --accent-fg: #111016; --accent-dim: rgba(245,158,11,0.1);
+    --success: #4ade80; --error: #f87171;
+    --radius: 0.375rem; --radius-lg: 0.75rem;
+    --shadow-modal: 0 10px 40px rgba(0,0,0,0.5); --shadow-card: none;
+    --blur: 0px;
+    --ease-spring: ease-out; --dur-modal: 200ms;
+    --font: system-ui, sans-serif;
+  }
+
+  /* ── macos (default) — dark vibrancy ────────────────────────────────────── */
+  [data-theme="macos"] {
+    --bg: #1c1b22; --surface: rgba(36,34,46,0.62); --surface-2: rgba(255,255,255,0.06);
+    --border: rgba(255,255,255,0.10); --border-hair: rgba(255,255,255,0.07);
+    --text: #f3f4f6; --text-dim: #9aa0aa; --muted: #9aa0aa;
+    --accent: #0a84ff; --accent-fg: #ffffff; --accent-dim: rgba(10,132,255,0.25);
+    --success: #30d158; --error: #ff453a;
+    --radius: 8px; --radius-lg: 14px;
+    --shadow-modal: 0 24px 60px rgba(0,0,0,0.55); --shadow-card: 0 1px 3px rgba(0,0,0,0.3);
+    --blur: 24px;
+    --ease-spring: cubic-bezier(.32,.72,0,1); --dur-modal: 260ms;
+    --font: -apple-system, "SF Pro Text", system-ui, sans-serif;
+  }
+
+  /* fallback if no data-theme attribute is present */
+  :root:not([data-theme]) {
+    --bg: #1c1b22; --surface: rgba(36,34,46,0.62); --surface-2: rgba(255,255,255,0.06);
+    --border: rgba(255,255,255,0.10); --border-hair: rgba(255,255,255,0.07);
+    --text: #f3f4f6; --text-dim: #9aa0aa; --muted: #9aa0aa;
+    --accent: #0a84ff; --accent-fg: #ffffff; --accent-dim: rgba(10,132,255,0.25);
+    --success: #30d158; --error: #ff453a;
+    --radius: 8px; --radius-lg: 14px;
+    --shadow-modal: 0 24px 60px rgba(0,0,0,0.55); --shadow-card: 0 1px 3px rgba(0,0,0,0.3);
+    --blur: 24px;
+    --ease-spring: cubic-bezier(.32,.72,0,1); --dur-modal: 260ms;
+    --font: -apple-system, "SF Pro Text", system-ui, sans-serif;
   }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: 0ms !important; animation-duration: 0ms !important; } }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; display: flex; flex-direction: column; }
+  body { font-family: var(--font); background: var(--bg); color: var(--text); min-height: 100vh; display: flex; flex-direction: column; -webkit-font-smoothing: antialiased; }
+  [data-theme="macos"] body { background: radial-gradient(140% 120% at 20% 0%, #2b2740 0%, #15131f 60%, #100e18 100%); background-attachment: fixed; }
 
   /* Nav */
   nav { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 1.5rem; display: flex; gap: 0.25rem; align-items: center; flex-shrink: 0; }
