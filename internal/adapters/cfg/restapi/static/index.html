@@ -738,6 +738,9 @@
         return;
       }
       _rulesList = rules;
+      // tbody is rebuilt below; detail rows reset to "Loading…", so drop any
+      // cached "already rendered" markers or re-expanding would show stale text.
+      _ruleDetailLoaded.clear();
       tbody.innerHTML = rules.map((r, i) => `
         <tr class="rule-row ${_rulesLoaded ? 'row-new' : ''}" onclick="toggleRuleDetail(${i})" title="Click to view buckets">
           <td><span class="rule-caret" id="rule-caret-${i}">▸</span> <span class="badge">${r.id}</span></td>
@@ -781,7 +784,9 @@
     }
     row.style.display = '';
     if (caret) caret.textContent = '▾';
-    if (!_ruleDetailLoaded.has(i)) {
+    const body = document.getElementById('rule-detail-body-' + i);
+    const needsRender = !_ruleDetailLoaded.has(i) || (body && body.textContent.trim() === 'Loading…');
+    if (needsRender) {
       _ruleDetailLoaded.add(i);
       await renderRuleDetail(i);
     }
@@ -796,6 +801,7 @@
       el.innerHTML = '<span style="color:var(--muted)">No buckets.</span>';
       return;
     }
+    try {
     // Lazy-fetch simulate buckets' simulation summaries in parallel.
     const cards = await Promise.all(buckets.map(async (b, bi) => {
       const weight = `<span class="bucket-weight">${b.weight ?? 0}%</span>`;
@@ -831,6 +837,9 @@
       </div>`;
     }));
     el.innerHTML = `<div class="bucket-list">${cards.join('')}</div>`;
+    } catch (e) {
+      el.innerHTML = `<span style="color:var(--error)">Failed to load bucket details: ${escapeHtml(String(e))}</span>`;
+    }
   }
 
   let _editingRuleID = null;
