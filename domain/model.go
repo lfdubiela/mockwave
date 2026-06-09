@@ -10,9 +10,21 @@ const (
 	ActionForward  = "forward"
 )
 
-// ErrDuplicateRule is returned by a store when saving a rule whose match
-// criteria are identical to another existing rule (different ID).
+// ErrDuplicateRule is returned when saving a rule whose match criteria are
+// identical to another existing rule (different ID).
 var ErrDuplicateRule = errors.New("a rule with identical match criteria already exists")
+
+// FindDuplicateRule returns a pointer to the first rule in rules whose match
+// criteria equal r's, excluding any rule sharing r's ID (so editing a rule in
+// place is not flagged as a duplicate of itself). Returns nil when none match.
+func FindDuplicateRule(rules []Rule, r Rule) *Rule {
+	for i := range rules {
+		if rules[i].ID != r.ID && rules[i].Match.Equal(r.Match) {
+			return &rules[i]
+		}
+	}
+	return nil
+}
 
 // MatchCriteria defines conditions a request must satisfy for a rule to apply.
 type MatchCriteria struct {

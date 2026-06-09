@@ -83,6 +83,39 @@ func TestAdminAPI_PostRule(t *testing.T) {
 	assert.Equal(t, 201, w.Code)
 }
 
+func TestAdminAPI_PostRule_DuplicateMatchRejected(t *testing.T) {
+	store := &memStore{rules: []domain.Rule{
+		{ID: "r1", Name: "Existing", Match: domain.MatchCriteria{Path: "/dup", Method: "GET"}},
+	}}
+	mux := restapi.NewMux(store, nil, nil, nil, nil, nil)
+	r := domain.Rule{
+		ID: "r2", Match: domain.MatchCriteria{Path: "/dup", Method: "GET"},
+		Buckets: []domain.WeightedBucket{{Weight: 100, Action: domain.ActionSimulate, SimulationID: "s1"}},
+	}
+	body, _ := json.Marshal(r)
+	req := httptest.NewRequest(http.MethodPost, "/api/rules", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	assert.Equal(t, 409, w.Code)
+	assert.Len(t, store.rules, 1) // not saved
+}
+
+func TestAdminAPI_PutRule_SelfNotDuplicate(t *testing.T) {
+	store := &memStore{rules: []domain.Rule{
+		{ID: "r1", Match: domain.MatchCriteria{Path: "/a"}},
+	}}
+	mux := restapi.NewMux(store, nil, nil, nil, nil, nil)
+	r := domain.Rule{
+		Match:   domain.MatchCriteria{Path: "/a"},
+		Buckets: []domain.WeightedBucket{{Weight: 100, Action: domain.ActionSimulate, SimulationID: "s1"}},
+	}
+	body, _ := json.Marshal(r)
+	req := httptest.NewRequest(http.MethodPut, "/api/rules/r1", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	assert.Equal(t, 200, w.Code)
+}
+
 func TestAdminAPI_PostRule_WeightsNotSumming100(t *testing.T) {
 	store := &memStore{}
 	mux := restapi.NewMux(store, nil, nil, nil, nil, nil)

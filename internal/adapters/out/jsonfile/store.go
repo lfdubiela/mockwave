@@ -92,12 +92,6 @@ func (s *Store) ListSimulations() ([]domain.Simulation, error) {
 func (s *Store) SaveRule(r domain.Rule) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	// Reject a rule whose match criteria duplicate another rule (different ID).
-	for _, existing := range s.config.Rules {
-		if existing.ID != r.ID && existing.Match.Equal(r.Match) {
-			return domain.ErrDuplicateRule
-		}
-	}
 	for i, existing := range s.config.Rules {
 		if existing.ID == r.ID {
 			s.config.Rules[i] = r

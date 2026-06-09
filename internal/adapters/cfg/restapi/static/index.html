@@ -1081,8 +1081,15 @@
       // authoritative check (returns 409).
       const dup = _rulesList.find(o => o.id !== rule.id && sameMatch(o.match, rule.match));
       if (dup) {
-        if (btn) setButtonState(btn, 'idle', 'Save Rule');
-        alert('A rule with identical match criteria already exists (' + (dup.name || dup.id) + ').');
+        if (btn) setButtonState(btn, 'error', 'Save Rule', 'Duplicate match criteria');
+        alert(
+          '⚠ Duplicate rule\n\n' +
+          'This rule has the same match criteria (protocol, method, path, ' +
+          'headers, query and body) as an existing rule:\n\n' +
+          '    • ' + (dup.name || dup.id) + '  (id: ' + dup.id + ')\n\n' +
+          'Two rules cannot match identically. Change a match field — for ' +
+          'example the path, a header or a body matcher — to make this rule distinct.'
+        );
         return;
       }
 

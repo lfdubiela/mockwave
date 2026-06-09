@@ -2,7 +2,6 @@ package restapi
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 
@@ -52,6 +51,24 @@ type adminAPI struct {
 	engine    *scripting.Engine   // may be nil — eval endpoint returns 503
 }
 
+// duplicateMatchError returns a 409-ready, human-readable message if rule's
+// match criteria duplicate another existing rule's, or "" if it is unique.
+// Backend-agnostic: enforced here so every DataStore behaves identically.
+func (a *adminAPI) duplicateMatchError(rule domain.Rule) (string, error) {
+	rules, err := a.store.GetRules()
+	if err != nil {
+		return "", err
+	}
+	if dup := domain.FindDuplicateRule(rules, rule); dup != nil {
+		label := dup.Name
+		if label == "" {
+			label = dup.ID
+		}
+		return fmt.Sprintf("%s: rule %q (id %s) already has identical match criteria (protocol, method, path, headers, query, body). Change a match field to make this rule distinct.", domain.ErrDuplicateRule, label, dup.ID), nil
+	}
+	return "", nil
+}
+
 func (a *adminAPI) reload() {
 	if a.onReload != nil {
 		a.onReload()
@@ -81,11 +98,14 @@ func (a *adminAPI) rules(w http.ResponseWriter, r *http.Request) {
 			writeError(w, 422, err.Error())
 			return
 		}
+		if msg, err := a.duplicateMatchError(rule); err != nil {
+			writeError(w, 500, err.Error())
+			return
+		} else if msg != "" {
+			writeError(w, 409, msg)
+			return
+		}
 		if err := a.store.SaveRule(rule); err != nil {
-			if errors.Is(err, domain.ErrDuplicateRule) {
-				writeError(w, 409, err.Error())
-				return
-			}
 			writeError(w, 500, err.Error())
 			return
 		}
@@ -130,11 +150,14 @@ func (a *adminAPI) ruleByID(w http.ResponseWriter, r *http.Request) {
 			writeError(w, 422, err.Error())
 			return
 		}
+		if msg, err := a.duplicateMatchError(rule); err != nil {
+			writeError(w, 500, err.Error())
+			return
+		} else if msg != "" {
+			writeError(w, 409, msg)
+			return
+		}
 		if err := a.store.SaveRule(rule); err != nil {
-			if errors.Is(err, domain.ErrDuplicateRule) {
-				writeError(w, 409, err.Error())
-				return
-			}
 			writeError(w, 500, err.Error())
 			return
 		}
