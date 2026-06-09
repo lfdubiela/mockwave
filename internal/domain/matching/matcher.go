@@ -37,6 +37,9 @@ func (s *ConditionMatchStage) Execute(_ context.Context, pctx *pipeline.Pipeline
 }
 
 func matchRule(r *domain.Rule, req pipeline.NormalizedRequest) bool {
+	if r.Disabled {
+		return false
+	}
 	m := r.Match
 	if m.Protocol != "" && m.Protocol != req.Protocol {
 		return false

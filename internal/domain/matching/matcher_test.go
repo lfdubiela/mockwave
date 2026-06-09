@@ -200,3 +200,22 @@ func TestPrecedence_StableWhenEqual(t *testing.T) {
 	require.NoError(t, stage.Execute(context.Background(), pctx))
 	assert.Equal(t, "first", pctx.Matched.ID)
 }
+
+func TestConditionMatchStage_DisabledRuleSkipped(t *testing.T) {
+	disabled := mkRule("r1", "GET", "/users/42", nil)
+	disabled.Disabled = true
+	stage := matching.NewConditionMatchStage([]domain.Rule{disabled})
+	pctx := &pipeline.PipelineContext{Request: pipeline.NormalizedRequest{Protocol: "http", Method: "GET", Path: "/users/42"}}
+	require.Error(t, stage.Execute(context.Background(), pctx), "disabled rule must not match")
+	assert.Nil(t, pctx.Matched)
+}
+
+func TestConditionMatchStage_DisabledRuleFallsThroughToNext(t *testing.T) {
+	disabled := mkRule("r1", "GET", "/users/42", nil)
+	disabled.Disabled = true
+	enabled := mkRule("r2", "GET", "/users/42", nil)
+	stage := matching.NewConditionMatchStage([]domain.Rule{disabled, enabled})
+	pctx := &pipeline.PipelineContext{Request: pipeline.NormalizedRequest{Protocol: "http", Method: "GET", Path: "/users/42"}}
+	require.NoError(t, stage.Execute(context.Background(), pctx))
+	assert.Equal(t, "r2", pctx.Matched.ID)
+}

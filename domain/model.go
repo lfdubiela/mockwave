@@ -93,6 +93,9 @@ type Rule struct {
 	Name    string           `json:"name"`
 	Match   MatchCriteria    `json:"match"`
 	Buckets []WeightedBucket `json:"buckets"`
+	// Disabled rules are persisted but never match incoming requests.
+	// Omitted when false so existing rules stay byte-compatible.
+	Disabled bool `json:"disabled,omitempty"`
 }
 
 func (r Rule) Validate() error {
