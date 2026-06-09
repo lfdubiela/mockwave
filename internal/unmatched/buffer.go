@@ -63,6 +63,33 @@ func (b *Buffer) List() []Request {
 	return out
 }
 
+// ListDeduped returns captured requests in insertion order (oldest first) with
+// duplicates collapsed: entries sharing the same Path + Body are shown once,
+// keeping the most recent occurrence. Method, protocol and headers are not part
+// of the dedup key.
+func (b *Buffer) ListDeduped() []Request {
+	all := b.List()
+	if len(all) == 0 {
+		return all
+	}
+	seen := make(map[string]bool, len(all))
+	// Walk newest → oldest so the kept entry is the most recent occurrence.
+	kept := make([]Request, 0, len(all))
+	for i := len(all) - 1; i >= 0; i-- {
+		key := all[i].Path + "\x00" + all[i].Body
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		kept = append(kept, all[i])
+	}
+	// kept is newest → oldest; reverse to restore oldest-first ordering.
+	for l, r := 0, len(kept)-1; l < r; l, r = l+1, r-1 {
+		kept[l], kept[r] = kept[r], kept[l]
+	}
+	return kept
+}
+
 // Clear removes all captured requests.
 func (b *Buffer) Clear() {
 	b.mu.Lock()

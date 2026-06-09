@@ -372,7 +372,7 @@ func (a *adminAPI) unmatchedHandler(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, 200, []unmatched.Request{})
 			return
 		}
-		items := a.buffer.List()
+		items := a.buffer.ListDeduped()
 		if items == nil {
 			items = []unmatched.Request{}
 		}

@@ -44,3 +44,34 @@ func TestBuffer_Empty(t *testing.T) {
 	b := unmatched.NewBuffer(10)
 	assert.Nil(t, b.List())
 }
+
+func TestBuffer_ListDeduped_CollapsesSamePathAndBody(t *testing.T) {
+	b := unmatched.NewBuffer(10)
+	b.Add(unmatched.Request{At: time.Unix(1, 0), Method: "GET", Path: "/a", Body: "x"})
+	b.Add(unmatched.Request{At: time.Unix(2, 0), Method: "GET", Path: "/b", Body: "x"}) // diff path
+	b.Add(unmatched.Request{At: time.Unix(3, 0), Method: "POST", Path: "/a", Body: "x"}) // dup path+body (method differs, still dup)
+	b.Add(unmatched.Request{At: time.Unix(4, 0), Method: "GET", Path: "/a", Body: "y"})  // same path, diff body
+
+	items := b.ListDeduped()
+	require.Len(t, items, 3) // (/a,x) collapsed to one; (/b,x); (/a,y)
+
+	// (/a,x) keeps the most recent occurrence (At=3, method POST).
+	var ax *unmatched.Request
+	for i := range items {
+		if items[i].Path == "/a" && items[i].Body == "x" {
+			ax = &items[i]
+		}
+	}
+	require.NotNil(t, ax)
+	assert.Equal(t, "POST", ax.Method)
+	assert.Equal(t, int64(3), ax.At.Unix())
+
+	// Oldest-first ordering preserved among kept entries.
+	assert.True(t, items[0].At.Before(items[1].At))
+	assert.True(t, items[1].At.Before(items[2].At))
+}
+
+func TestBuffer_ListDeduped_Empty(t *testing.T) {
+	b := unmatched.NewBuffer(5)
+	assert.Empty(t, b.ListDeduped())
+}
