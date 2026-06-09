@@ -155,7 +155,6 @@
   <h1>⚡ Mockwave</h1>
   <div class="tab active" data-tab="dashboard">Dashboard <span id="unmatched-badge" style="display:none;background:var(--error);color:#fff;border-radius:9999px;padding:0.05rem 0.45rem;font-size:0.65rem;margin-left:0.35rem;vertical-align:middle"></span></div>
   <div class="tab" data-tab="rules">Rules</div>
-  <div class="tab" data-tab="simulations">Simulations</div>
 </nav>
 
 <div class="main-layout">
@@ -225,26 +224,6 @@
           <div class="sk" style="height:1.5rem;margin:0.4rem 0;border-radius:0.25rem"></div>
           <div class="sk" style="height:1.5rem;margin:0.4rem 0;border-radius:0.25rem;width:80%"></div>
           <div class="sk" style="height:1.5rem;margin:0.4rem 0;border-radius:0.25rem;width:65%"></div>
-        </td>
-      </tr>
-    </tbody>
-  </table>
-</div>
-
-<!-- Simulations -->
-<div class="tab-content" id="tab-simulations">
-  <div class="section-header">
-    <h2>Simulations</h2>
-    <button class="btn-primary" onclick="openSimModal()">+ Add Simulation (JSON)</button>
-  </div>
-  <p style="color:var(--muted);font-size:0.8rem;margin-bottom:1rem">Simulations are created automatically when you save a rule. Use this to add raw JSON simulations directly.</p>
-  <table>
-    <thead><tr><th>ID</th><th>Protocol</th><th>Status</th><th></th></tr></thead>
-    <tbody id="sims-tbody">
-      <tr>
-        <td colspan="4">
-          <div class="sk" style="height:1.5rem;margin:0.4rem 0;border-radius:0.25rem"></div>
-          <div class="sk" style="height:1.5rem;margin:0.4rem 0;border-radius:0.25rem;width:70%"></div>
         </td>
       </tr>
     </tbody>
@@ -341,31 +320,6 @@
     <div class="form-actions">
       <button class="btn-ghost" type="button" onclick="closeRuleModal()">Cancel</button>
       <button class="btn-primary" id="btn-save-rule" data-idle-label="Save Rule" type="button" onclick="saveRule()">Save Rule</button>
-    </div>
-  </div>
-</div>
-
-<!-- Simulation modal -->
-<div class="modal-overlay" id="sim-modal">
-  <div class="modal">
-    <h2>Add Simulation</h2>
-    <p style="color:var(--muted);font-size:0.8rem;margin-bottom:0.75rem">Paste a complete Simulation object as JSON.</p>
-    <div class="form-group">
-      <label>Simulation JSON</label>
-      <textarea id="sim-json" rows="14">{
-  "id": "sim-200-ok",
-  "protocol": "http",
-  "response": {
-    "status": 200,
-    "headers": { "Content-Type": "application/json" },
-    "body": { "message": "OK" },
-    "delay_ms": 0
-  }
-}</textarea>
-    </div>
-    <div class="form-actions">
-      <button class="btn-ghost" onclick="closeSimModal()">Cancel</button>
-      <button class="btn-primary" id="btn-save-sim" data-idle-label="Save Simulation" onclick="saveSim()">Save Simulation</button>
     </div>
   </div>
 </div>
@@ -661,7 +615,6 @@
       tab.classList.add('active');
       document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
       if (tab.dataset.tab === 'rules') loadRules();
-      if (tab.dataset.tab === 'simulations') loadSims();
       if (tab.dataset.tab === 'dashboard') {
         document.getElementById('unmatched-badge').style.display = 'none';
       }
@@ -883,19 +836,6 @@
     copyRule(r);
   }
 
-  // Snapshot of the simulation-defining fields of a bucket, used to detect
-  // whether the user edited a copied simulation (→ create a new one) or left
-  // it untouched (→ keep sharing the source rule's simulation_id).
-  function bucketSimSnapshot(b) {
-    return JSON.stringify({
-      status: b.simStatus || 200,
-      contentType: b.simContentType || 'application/json',
-      delayMs: b.simDelayMs || 0,
-      body: b.simBody || '',
-      script: b.simScript || ''
-    });
-  }
-
   async function copyRule(r) {
     // A copy is a brand-new rule: no _editingRuleID, so save POSTs.
     _editingRuleID = null;
@@ -915,9 +855,11 @@
 
     const rawBuckets = r.buckets || [{ weight: 100, action: 'simulate', simulation_id: '' }];
     _buckets = await Promise.all(rawBuckets.map(async b => {
+      // Copy never sets existingSimID — every simulate bucket is saved as a
+      // fresh simulation (new ID) so the source rule's simulations are never
+      // touched. Load the source sim's fields to pre-fill the editor.
       const bucket = { ...defaultBucket(), weight: b.weight || 100, action: b.action || 'simulate', fwdDelayMs: b.delay_ms || 0, fwdURL: b.forward_url || '' };
       if (b.action === 'simulate' && b.simulation_id) {
-        bucket.sharedSimID = b.simulation_id;
         try {
           const res = await fetch('/api/simulations/' + encodeURIComponent(b.simulation_id));
           if (res.ok) {
@@ -931,7 +873,6 @@
             if (sim.script) { bucket.simScript = sim.script; bucket.bodyType = 'script'; }
           }
         } catch (_) { /* leave defaults */ }
-        bucket.simSnapshot = bucketSimSnapshot(bucket);
       }
       return bucket;
     }));
@@ -999,15 +940,6 @@
         if (b.action === 'forward') {
           resolvedBuckets.push({ weight: b.weight, action: 'forward', delay_ms: b.fwdDelayMs || 0, forward_url: (b.fwdURL || '').trim() });
           continue;
-        }
-        // Copy mode: a shared simulation left untouched keeps the source's
-        // simulation_id (no write). If edited, fall through to create a new one
-        // so the original simulation is never mutated.
-        if (_copyMode && b.sharedSimID) {
-          if (bucketSimSnapshot(b) === b.simSnapshot) {
-            resolvedBuckets.push({ weight: b.weight, action: 'simulate', simulation_id: b.sharedSimID });
-            continue;
-          }
         }
         // Existing sim (editing) — PUT to update in place
         if (b.existingSimID) {
@@ -1108,7 +1040,6 @@
       if (btn) setButtonState(btn, 'success', 'Saved');
       closeRuleModal();
       loadRules();
-      loadSims();
     } catch (e) {
       if (btn) setButtonState(btn, 'error', 'Save Rule', e.message);
       alert('Error saving rule: ' + e.message);
@@ -1135,7 +1066,6 @@
       const res = await fetch('/api/rules', { method: 'DELETE' });
       if (!res.ok) throw new Error(await res.text());
       await loadRules();
-      loadSims();
     } catch (e) {
       alert('Clean all failed: ' + e.message);
     } finally {
@@ -1157,76 +1087,6 @@
     }
   }
 
-  // ── Simulations ────────────────────────────────────────────────────────────
-  let _simsLoaded = false;
-
-  async function loadSims() {
-    try {
-      const sims = await fetch('/api/simulations').then(r => r.json());
-      const tbody = document.getElementById('sims-tbody');
-      if (!sims || sims.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" class="empty">No simulations. Click "+ Add Simulation" to create one.</td></tr>';
-        _simsLoaded = true;
-        return;
-      }
-      tbody.innerHTML = sims.map(s => `
-        <tr class="${_simsLoaded ? 'row-new' : ''}">
-          <td><span class="badge">${escapeHtml(s.id)}</span></td>
-          <td class="mono">${escapeHtml(s.protocol || 'http')}</td>
-          <td>${s.response?.status ?? '—'}</td>
-          <td style="text-align:right">
-            <button class="btn-sm btn-danger" onclick="deleteSim('${escapeAttr(s.id)}', this)">Delete</button>
-          </td>
-        </tr>`).join('');
-      _simsLoaded = true;
-    } catch (e) {
-      console.error('loadSims:', e);
-    }
-  }
-
-  function openSimModal() { document.getElementById('sim-modal').classList.add('open'); }
-  function closeSimModal() { document.getElementById('sim-modal').classList.remove('open'); }
-
-  async function saveSim() {
-    const btn = document.getElementById('btn-save-sim');
-    if (btn) setButtonState(btn, 'loading', 'Saving…');
-    try {
-      let sim;
-      try { sim = JSON.parse(document.getElementById('sim-json').value); }
-      catch(e) {
-        if (btn) setButtonState(btn, 'idle', 'Save Simulation');
-        alert('Invalid JSON: ' + e.message);
-        return;
-      }
-      const res = await fetch('/api/simulations', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(sim) });
-      if (!res.ok) {
-        const msg = await res.json().catch(() => ({ error: 'Unknown server error' }));
-        if (btn) setButtonState(btn, 'error', 'Save Simulation', msg.error);
-        alert('Error: ' + msg.error);
-        return;
-      }
-      if (btn) setButtonState(btn, 'success', 'Saved');
-      closeSimModal();
-      loadSims();
-    } catch (e) {
-      if (btn) setButtonState(btn, 'error', 'Save Simulation', e.message);
-      alert('Error saving simulation: ' + e.message);
-    }
-  }
-
-  async function deleteSim(id, btnEl) {
-    if (!confirm(`Delete simulation "${id}"?`)) return;
-    const orig = btnEl ? btnEl.textContent : '';
-    if (btnEl) { btnEl.disabled = true; btnEl.textContent = '…'; }
-    try {
-      const res = await fetch('/api/simulations/' + encodeURIComponent(id), { method: 'DELETE' });
-      if (!res.ok) throw new Error(await res.text());
-      await loadSims();
-    } catch (e) {
-      if (btnEl) { btnEl.disabled = false; btnEl.textContent = orig; }
-      alert('Delete failed: ' + e.message);
-    }
-  }
 
   // ── Area Chart ──────────────────────────────────────────────────────────────
   const CHART_COLORS = ['#f59e0b','#3b82f6','#22c55e','#ef4444','#a855f7','#14b8a6','#eab308','#ec4899','#64748b','#f97316'];
@@ -1555,7 +1415,6 @@
 
   // ── Init ───────────────────────────────────────────────────────────────────
   loadRules();
-  loadSims();
   connectMetrics();
   pollUnmatched(); // start polling immediately; also loads unmatched now
 </script>

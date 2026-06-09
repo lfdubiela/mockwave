@@ -54,7 +54,15 @@ func (m *memStore) DeleteRule(id string) error {
 	return fmt.Errorf("not found")
 }
 func (m *memStore) ListSimulations() ([]domain.Simulation, error) { return m.sims, nil }
-func (m *memStore) DeleteSimulation(id string) error              { return nil }
+func (m *memStore) DeleteSimulation(id string) error {
+	for i, s := range m.sims {
+		if s.ID == id {
+			m.sims = append(m.sims[:i], m.sims[i+1:]...)
+			return nil
+		}
+	}
+	return fmt.Errorf("not found")
+}
 
 func TestAdminAPI_GetRules(t *testing.T) {
 	store := &memStore{rules: []domain.Rule{{ID: "r1", Match: domain.MatchCriteria{Path: "/foo"}}}}
@@ -100,6 +108,10 @@ func TestAdminAPI_PostRule_DuplicateMatchRejected(t *testing.T) {
 	assert.Len(t, store.rules, 1) // not saved
 }
 
+func simBucket(simID string) domain.WeightedBucket {
+	return domain.WeightedBucket{Weight: 100, Action: domain.ActionSimulate, SimulationID: simID}
+}
+
 func TestAdminAPI_DeleteAllRules(t *testing.T) {
 	store := &memStore{rules: []domain.Rule{
 		{ID: "r1", Match: domain.MatchCriteria{Path: "/a"}},
@@ -111,6 +123,62 @@ func TestAdminAPI_DeleteAllRules(t *testing.T) {
 	mux.ServeHTTP(w, req)
 	assert.Equal(t, 204, w.Code)
 	assert.Len(t, store.rules, 0)
+}
+
+func TestAdminAPI_DeleteRule_CascadesOwnedSims(t *testing.T) {
+	store := &memStore{
+		rules: []domain.Rule{
+			{ID: "r1", Match: domain.MatchCriteria{Path: "/a"}, Buckets: []domain.WeightedBucket{simBucket("s1")}},
+			{ID: "r2", Match: domain.MatchCriteria{Path: "/b"}, Buckets: []domain.WeightedBucket{simBucket("s2")}},
+		},
+		sims: []domain.Simulation{{ID: "s1"}, {ID: "s2"}},
+	}
+	mux := restapi.NewMux(store, nil, nil, nil, nil, nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/rules/r1", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	assert.Equal(t, 204, w.Code)
+	require.Len(t, store.sims, 1)
+	assert.Equal(t, "s2", store.sims[0].ID) // unrelated sim untouched
+}
+
+func TestAdminAPI_DeleteAllRules_ClearsSims(t *testing.T) {
+	store := &memStore{
+		rules: []domain.Rule{
+			{ID: "r1", Match: domain.MatchCriteria{Path: "/a"}, Buckets: []domain.WeightedBucket{simBucket("s1")}},
+			{ID: "r2", Match: domain.MatchCriteria{Path: "/b"}, Buckets: []domain.WeightedBucket{simBucket("s2")}},
+		},
+		sims: []domain.Simulation{{ID: "s1"}, {ID: "s2"}},
+	}
+	mux := restapi.NewMux(store, nil, nil, nil, nil, nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/rules", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	assert.Equal(t, 204, w.Code)
+	assert.Len(t, store.rules, 0)
+	assert.Len(t, store.sims, 0)
+}
+
+func TestAdminAPI_PutRule_DeletesOrphanedSim(t *testing.T) {
+	store := &memStore{
+		rules: []domain.Rule{
+			{ID: "r1", Match: domain.MatchCriteria{Path: "/a"}, Buckets: []domain.WeightedBucket{
+				{Weight: 50, Action: domain.ActionSimulate, SimulationID: "s1"},
+				{Weight: 50, Action: domain.ActionSimulate, SimulationID: "s2"},
+			}},
+		},
+		sims: []domain.Simulation{{ID: "s1"}, {ID: "s2"}},
+	}
+	mux := restapi.NewMux(store, nil, nil, nil, nil, nil)
+	// New version keeps s1, drops s2.
+	updated := domain.Rule{Match: domain.MatchCriteria{Path: "/a"}, Buckets: []domain.WeightedBucket{simBucket("s1")}}
+	body, _ := json.Marshal(updated)
+	req := httptest.NewRequest(http.MethodPut, "/api/rules/r1", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	assert.Equal(t, 200, w.Code)
+	require.Len(t, store.sims, 1)
+	assert.Equal(t, "s1", store.sims[0].ID)
 }
 
 func TestAdminAPI_PutRule_SelfNotDuplicate(t *testing.T) {
@@ -202,7 +270,7 @@ func TestAdminAPI_PostSimulation(t *testing.T) {
 }
 
 func TestAdminAPI_DeleteSimulation(t *testing.T) {
-	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil, nil)
+	mux := restapi.NewMux(&memStore{sims: []domain.Simulation{{ID: "s1"}}}, nil, nil, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodDelete, "/api/simulations/s1", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)

@@ -69,6 +69,39 @@ func (a *adminAPI) duplicateMatchError(rule domain.Rule) (string, error) {
 	return "", nil
 }
 
+// ruleSimIDs returns the simulation IDs owned by a rule (its simulate buckets).
+func ruleSimIDs(r domain.Rule) []string {
+	var ids []string
+	for _, b := range r.Buckets {
+		if b.Action == domain.ActionSimulate && b.SimulationID != "" {
+			ids = append(ids, b.SimulationID)
+		}
+	}
+	return ids
+}
+
+// deleteSimulations best-effort deletes the given simulation IDs. Not-found is
+// ignored so cascade cleanup is idempotent across backends.
+func (a *adminAPI) deleteSimulations(ids []string) {
+	for _, id := range ids {
+		_ = a.store.DeleteSimulation(id)
+	}
+}
+
+// ruleByID returns the current stored rule with the given ID, or nil.
+func (a *adminAPI) ruleByIDLookup(id string) (*domain.Rule, error) {
+	rules, err := a.store.GetRules()
+	if err != nil {
+		return nil, err
+	}
+	for i := range rules {
+		if rules[i].ID == id {
+			return &rules[i], nil
+		}
+	}
+	return nil, nil
+}
+
 func (a *adminAPI) reload() {
 	if a.onReload != nil {
 		a.onReload()
@@ -124,6 +157,7 @@ func (a *adminAPI) rules(w http.ResponseWriter, r *http.Request) {
 				writeError(w, 500, err.Error())
 				return
 			}
+			a.deleteSimulations(ruleSimIDs(rule)) // cascade: rule owns its sims
 		}
 		a.reload()
 		w.WriteHeader(204)
@@ -149,10 +183,20 @@ func (a *adminAPI) ruleByID(w http.ResponseWriter, r *http.Request) {
 		}
 		writeError(w, 404, "rule not found: "+id)
 	case http.MethodDelete:
+		// Capture owned simulation IDs before deleting (DeleteRule may mutate
+		// the store's backing slice, invalidating a held rule pointer).
+		var ownedSimIDs []string
+		if owned, err := a.ruleByIDLookup(id); err != nil {
+			writeError(w, 500, err.Error())
+			return
+		} else if owned != nil {
+			ownedSimIDs = ruleSimIDs(*owned)
+		}
 		if err := a.store.DeleteRule(id); err != nil {
 			writeError(w, 404, err.Error())
 			return
 		}
+		a.deleteSimulations(ownedSimIDs) // cascade: rule owns its sims
 		a.reload()
 		w.WriteHeader(204)
 	case http.MethodPut:
@@ -173,10 +217,30 @@ func (a *adminAPI) ruleByID(w http.ResponseWriter, r *http.Request) {
 			writeError(w, 409, msg)
 			return
 		}
+		// Capture the previous version's owned simulation IDs (before saving) to
+		// clean up any no longer referenced after this edit (e.g. removed bucket).
+		var prevSimIDs []string
+		if prev, err := a.ruleByIDLookup(id); err != nil {
+			writeError(w, 500, err.Error())
+			return
+		} else if prev != nil {
+			prevSimIDs = ruleSimIDs(*prev)
+		}
 		if err := a.store.SaveRule(rule); err != nil {
 			writeError(w, 500, err.Error())
 			return
 		}
+		newIDs := make(map[string]bool)
+		for _, sid := range ruleSimIDs(rule) {
+			newIDs[sid] = true
+		}
+		var orphaned []string
+		for _, sid := range prevSimIDs {
+			if !newIDs[sid] {
+				orphaned = append(orphaned, sid)
+			}
+		}
+		a.deleteSimulations(orphaned)
 		a.reload()
 		writeJSON(w, 200, rule)
 	default:
