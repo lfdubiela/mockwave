@@ -93,14 +93,15 @@
   tr:last-child td { border-bottom: none; }
 
   /* Buttons */
-  button { cursor: pointer; border: none; border-radius: 0.375rem; padding: 0.4rem 0.75rem; font-size: 0.8rem; font-family: inherit; transition: opacity 120ms, background-color 120ms; }
-  button:hover:not(:disabled) { opacity: 0.85; }
-  button:disabled { opacity: 0.5; cursor: not-allowed; }
-  .btn-primary { background: var(--accent); color: #111016; font-weight: 600; }
+  button { cursor: pointer; border: 1px solid transparent; border-radius: var(--radius); padding: 0.45rem 0.9rem; font-size: 0.8rem; font-weight: 500; font-family: inherit; transition: filter 120ms, background-color 120ms, transform 80ms; }
+  button:hover:not(:disabled) { filter: brightness(1.08); }
+  button:active:not(:disabled) { transform: scale(0.97); }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+  .btn-primary { background: var(--accent); color: var(--accent-fg); font-weight: 600; box-shadow: inset 0 1px 0 rgba(255,255,255,0.18); }
   .btn-danger { background: var(--error); color: #fff; font-weight: 600; }
-  .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
-  .btn-success-state { background: rgba(74,222,128,0.15); border: 1px solid rgba(74,222,128,0.3); color: var(--success); }
-  .btn-sm { padding: 0.2rem 0.5rem; font-size: 0.75rem; }
+  .btn-ghost { background: var(--surface-2); border: 1px solid var(--border-hair); color: var(--text); }
+  .btn-success-state { background: rgba(48,209,88,0.15); border: 1px solid rgba(48,209,88,0.3); color: var(--success); }
+  .btn-sm { padding: 0.25rem 0.6rem; font-size: 0.75rem; }
 
   /* Method badges */
   .method-badge { display: inline-block; padding: 0.1rem 0.45rem; border-radius: 0.25rem; font-size: 0.7rem; font-weight: 700; font-family: monospace; background: rgba(107,114,128,0.15); color: #6b7280; }
