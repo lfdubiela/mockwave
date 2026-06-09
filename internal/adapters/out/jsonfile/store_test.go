@@ -143,6 +143,29 @@ func TestStore_SaveRule_UpdatesExisting(t *testing.T) {
 	assert.Equal(t, "/new", rules[0].Match.Path)
 }
 
+func TestStore_SaveRule_DuplicateMatchRejected(t *testing.T) {
+	cfg := domain.Config{Rules: []domain.Rule{
+		{ID: "r1", Match: domain.MatchCriteria{Path: "/a", Method: "GET"}, Buckets: []domain.WeightedBucket{bucket()}},
+	}}
+	store, err := jsonfile.NewStore(writeConfig(t, cfg))
+	require.NoError(t, err)
+	dup := domain.Rule{ID: "r2", Match: domain.MatchCriteria{Path: "/a", Method: "GET"}, Buckets: []domain.WeightedBucket{bucket()}}
+	err = store.SaveRule(dup)
+	assert.ErrorIs(t, err, domain.ErrDuplicateRule)
+	rules, _ := store.GetRules()
+	assert.Len(t, rules, 1)
+}
+
+func TestStore_SaveRule_UpdateSelfNotDuplicate(t *testing.T) {
+	cfg := domain.Config{Rules: []domain.Rule{
+		{ID: "r1", Match: domain.MatchCriteria{Path: "/a"}, Buckets: []domain.WeightedBucket{bucket()}},
+	}}
+	store, err := jsonfile.NewStore(writeConfig(t, cfg))
+	require.NoError(t, err)
+	// Saving same ID with same match must be allowed (edit of itself).
+	require.NoError(t, store.SaveRule(domain.Rule{ID: "r1", Match: domain.MatchCriteria{Path: "/a"}, Buckets: []domain.WeightedBucket{bucket()}}))
+}
+
 func TestStore_NewMemStore(t *testing.T) {
 	cfg := domain.Config{
 		Simulations: []domain.Simulation{

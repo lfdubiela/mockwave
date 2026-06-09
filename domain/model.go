@@ -1,11 +1,18 @@
 package domain
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
 
 const (
 	ActionSimulate = "simulate"
 	ActionForward  = "forward"
 )
+
+// ErrDuplicateRule is returned by a store when saving a rule whose match
+// criteria are identical to another existing rule (different ID).
+var ErrDuplicateRule = errors.New("a rule with identical match criteria already exists")
 
 // MatchCriteria defines conditions a request must satisfy for a rule to apply.
 type MatchCriteria struct {
@@ -15,6 +22,29 @@ type MatchCriteria struct {
 	Headers  map[string]string `json:"headers"`  // exact key/value
 	Query    map[string]string `json:"query"`    // exact key/value (HTTP only)
 	Body     map[string]string `json:"body"`     // JSONPath → exact value
+}
+
+// Equal reports whether two MatchCriteria are identical across every field.
+// Map comparison is order-independent; a nil map and an empty map are equal.
+func (m MatchCriteria) Equal(o MatchCriteria) bool {
+	return m.Protocol == o.Protocol &&
+		m.Method == o.Method &&
+		m.Path == o.Path &&
+		equalStringMap(m.Headers, o.Headers) &&
+		equalStringMap(m.Query, o.Query) &&
+		equalStringMap(m.Body, o.Body)
+}
+
+func equalStringMap(a, b map[string]string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, v := range a {
+		if bv, ok := b[k]; !ok || bv != v {
+			return false
+		}
+	}
+	return true
 }
 
 // WeightedBucket is one branch in a rule's traffic split.

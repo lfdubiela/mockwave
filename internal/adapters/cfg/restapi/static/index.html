@@ -267,7 +267,7 @@
         <label>Rule Name</label>
         <input id="r-name" placeholder="Get Users" oninput="autoRuleID()">
       </div>
-      <div class="form-group" style="flex:0 0 14rem">
+      <div class="form-group" style="flex:0 0 14rem" id="r-id-group">
         <label>Rule ID *</label>
         <input id="r-id" placeholder="get-users">
       </div>
@@ -785,6 +785,7 @@
           <td style="color:var(--muted);font-size:0.8rem">${(r.buckets||[]).length} bucket${(r.buckets||[]).length !== 1 ? 's' : ''}</td>
           <td style="text-align:right;white-space:nowrap;display:flex;gap:0.4rem;justify-content:flex-end">
             <button class="btn-sm btn-primary" onclick="editRuleByIdx(${i})">Edit</button>
+            <button class="btn-sm" onclick="copyRuleByIdx(${i})">Copy</button>
             <button class="btn-sm btn-danger" onclick="deleteRule('${escapeAttr(r.id)}', this)">Delete</button>
           </td>
         </tr>`).join('');
@@ -801,9 +802,12 @@
   }
 
   let _editingRuleID = null;
+  let _copyMode = false;
 
   function openRuleModal(prefill) {
     _editingRuleID = null;
+    _copyMode = false;
+    document.getElementById('r-id-group').style.display = '';
     document.getElementById('rule-modal-title').textContent = 'Add Rule';
     document.getElementById('r-id').disabled = false;
     document.getElementById('r-id').value = '';
@@ -828,6 +832,8 @@
 
   async function editRule(r) {
     _editingRuleID = r.id;
+    _copyMode = false;
+    document.getElementById('r-id-group').style.display = '';
     document.getElementById('rule-modal-title').textContent = 'Edit Rule';
     document.getElementById('r-id').value = r.id;
     document.getElementById('r-id').disabled = true;
@@ -868,8 +874,90 @@
     document.getElementById('rule-modal').classList.add('open');
   }
 
+  function copyRuleByIdx(i) {
+    const r = _rulesList[i];
+    if (!r) return;
+    copyRule(r);
+  }
+
+  // Snapshot of the simulation-defining fields of a bucket, used to detect
+  // whether the user edited a copied simulation (→ create a new one) or left
+  // it untouched (→ keep sharing the source rule's simulation_id).
+  function bucketSimSnapshot(b) {
+    return JSON.stringify({
+      status: b.simStatus || 200,
+      contentType: b.simContentType || 'application/json',
+      delayMs: b.simDelayMs || 0,
+      body: b.simBody || '',
+      script: b.simScript || ''
+    });
+  }
+
+  async function copyRule(r) {
+    // A copy is a brand-new rule: no _editingRuleID, so save POSTs.
+    _editingRuleID = null;
+    _copyMode = true;
+    document.getElementById('rule-modal-title').textContent = 'Copy Rule';
+    document.getElementById('r-id').value = uuid();
+    document.getElementById('r-id').disabled = true;
+    document.getElementById('r-id-group').style.display = 'none';
+    document.getElementById('r-name').value = (r.name ? r.name + ' (copy)' : '');
+    document.getElementById('r-protocol').value = r.match?.protocol || '';
+    document.getElementById('r-method').value = r.match?.method || '';
+    document.getElementById('r-path').value = r.match?.path || '';
+    _headers = objectToKV(r.match?.headers);
+    _query   = objectToKV(r.match?.query);
+    _body    = objectToKV(r.match?.body);
+    renderHeaders(); renderQuery(); renderBody();
+
+    const rawBuckets = r.buckets || [{ weight: 100, action: 'simulate', simulation_id: '' }];
+    _buckets = await Promise.all(rawBuckets.map(async b => {
+      const bucket = { ...defaultBucket(), weight: b.weight || 100, action: b.action || 'simulate', fwdDelayMs: b.delay_ms || 0, fwdURL: b.forward_url || '' };
+      if (b.action === 'simulate' && b.simulation_id) {
+        bucket.sharedSimID = b.simulation_id;
+        try {
+          const res = await fetch('/api/simulations/' + encodeURIComponent(b.simulation_id));
+          if (res.ok) {
+            const sim = await res.json();
+            bucket.simName        = sim.name || '';
+            bucket.simStatus      = sim.response?.status || 200;
+            bucket.simContentType = sim.response?.headers?.['Content-Type'] || 'application/json';
+            bucket.simDelayMs     = sim.response?.delay_ms || 0;
+            const body = sim.response?.body;
+            bucket.simBody = typeof body === 'string' ? body : JSON.stringify(body, null, 2);
+            if (sim.script) { bucket.simScript = sim.script; bucket.bodyType = 'script'; }
+          }
+        } catch (_) { /* leave defaults */ }
+        bucket.simSnapshot = bucketSimSnapshot(bucket);
+      }
+      return bucket;
+    }));
+
+    renderBuckets();
+    updateForwardURLVisibility();
+    document.getElementById('rule-modal').classList.add('open');
+  }
+
   function closeRuleModal() {
     document.getElementById('rule-modal').classList.remove('open');
+  }
+
+  function sameStrMap(a, b) {
+    a = a || {}; b = b || {};
+    const ak = Object.keys(a), bk = Object.keys(b);
+    if (ak.length !== bk.length) return false;
+    return ak.every(k => a[k] === b[k]);
+  }
+
+  // Mirrors domain MatchCriteria.Equal — full criteria, order-independent maps.
+  function sameMatch(a, b) {
+    a = a || {}; b = b || {};
+    return (a.protocol || '') === (b.protocol || '') &&
+           (a.method || '') === (b.method || '') &&
+           (a.path || '') === (b.path || '') &&
+           sameStrMap(a.headers, b.headers) &&
+           sameStrMap(a.query, b.query) &&
+           sameStrMap(a.body, b.body);
   }
 
   async function saveRule() {
@@ -908,6 +996,15 @@
         if (b.action === 'forward') {
           resolvedBuckets.push({ weight: b.weight, action: 'forward', delay_ms: b.fwdDelayMs || 0, forward_url: (b.fwdURL || '').trim() });
           continue;
+        }
+        // Copy mode: a shared simulation left untouched keeps the source's
+        // simulation_id (no write). If edited, fall through to create a new one
+        // so the original simulation is never mutated.
+        if (_copyMode && b.sharedSimID) {
+          if (bucketSimSnapshot(b) === b.simSnapshot) {
+            resolvedBuckets.push({ weight: b.weight, action: 'simulate', simulation_id: b.sharedSimID });
+            continue;
+          }
         }
         // Existing sim (editing) — PUT to update in place
         if (b.existingSimID) {
@@ -979,6 +1076,15 @@
         },
         buckets: resolvedBuckets
       };
+
+      // Reject duplicates client-side for a friendly message; the server is the
+      // authoritative check (returns 409).
+      const dup = _rulesList.find(o => o.id !== rule.id && sameMatch(o.match, rule.match));
+      if (dup) {
+        if (btn) setButtonState(btn, 'idle', 'Save Rule');
+        alert('A rule with identical match criteria already exists (' + (dup.name || dup.id) + ').');
+        return;
+      }
 
       const method = _editingRuleID ? 'PUT' : 'POST';
       const url    = _editingRuleID ? `/api/rules/${_editingRuleID}` : '/api/rules';

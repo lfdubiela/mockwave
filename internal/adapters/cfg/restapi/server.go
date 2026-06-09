@@ -2,6 +2,7 @@ package restapi
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -81,6 +82,10 @@ func (a *adminAPI) rules(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := a.store.SaveRule(rule); err != nil {
+			if errors.Is(err, domain.ErrDuplicateRule) {
+				writeError(w, 409, err.Error())
+				return
+			}
 			writeError(w, 500, err.Error())
 			return
 		}
@@ -126,6 +131,10 @@ func (a *adminAPI) ruleByID(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := a.store.SaveRule(rule); err != nil {
+			if errors.Is(err, domain.ErrDuplicateRule) {
+				writeError(w, 409, err.Error())
+				return
+			}
 			writeError(w, 500, err.Error())
 			return
 		}
