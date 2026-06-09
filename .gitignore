@@ -13,3 +13,12 @@ coverage.html
 vendor/
 cov.out
 docs/superpowers/
+
+# OS
+.DS_Store
+
+# Agent tooling / local scratch
+.claude/
+.serena/
+.superpowers/
+.playwright-mcp/
