@@ -100,6 +100,19 @@ func TestAdminAPI_PostRule_DuplicateMatchRejected(t *testing.T) {
 	assert.Len(t, store.rules, 1) // not saved
 }
 
+func TestAdminAPI_DeleteAllRules(t *testing.T) {
+	store := &memStore{rules: []domain.Rule{
+		{ID: "r1", Match: domain.MatchCriteria{Path: "/a"}},
+		{ID: "r2", Match: domain.MatchCriteria{Path: "/b"}},
+	}}
+	mux := restapi.NewMux(store, nil, nil, nil, nil, nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/rules", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	assert.Equal(t, 204, w.Code)
+	assert.Len(t, store.rules, 0)
+}
+
 func TestAdminAPI_PutRule_SelfNotDuplicate(t *testing.T) {
 	store := &memStore{rules: []domain.Rule{
 		{ID: "r1", Match: domain.MatchCriteria{Path: "/a"}},
@@ -198,7 +211,7 @@ func TestAdminAPI_DeleteSimulation(t *testing.T) {
 
 func TestAdminAPI_MethodNotAllowed(t *testing.T) {
 	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil, nil)
-	req := httptest.NewRequest(http.MethodDelete, "/api/rules", nil)
+	req := httptest.NewRequest(http.MethodPut, "/api/rules", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	assert.Equal(t, 405, w.Code)

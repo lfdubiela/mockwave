@@ -212,7 +212,10 @@
 <div class="tab-content" id="tab-rules">
   <div class="section-header">
     <h2>Rules</h2>
-    <button class="btn-primary" onclick="openRuleModal()">+ Add Rule</button>
+    <div style="display:flex;gap:0.5rem">
+      <button class="btn-danger" onclick="cleanAllRules(this)">Clean All</button>
+      <button class="btn-primary" onclick="openRuleModal()">+ Add Rule</button>
+    </div>
   </div>
   <table>
     <thead><tr><th>ID</th><th>Name</th><th>Protocol</th><th>Method</th><th>Path</th><th>Buckets</th><th></th></tr></thead>
@@ -1109,6 +1112,34 @@
     } catch (e) {
       if (btn) setButtonState(btn, 'error', 'Save Rule', e.message);
       alert('Error saving rule: ' + e.message);
+    }
+  }
+
+  async function cleanAllRules(btnEl) {
+    if (!_rulesList || _rulesList.length === 0) {
+      alert('No rules to clean.');
+      return;
+    }
+    const answer = prompt(
+      '⚠ Delete ALL ' + _rulesList.length + ' rule(s)? This cannot be undone.\n\n' +
+      'Type  confirm  to proceed:'
+    );
+    if (answer === null) return; // cancelled
+    if (answer.trim().toLowerCase() !== 'confirm') {
+      alert('Cancelled — you must type "confirm" exactly to delete all rules.');
+      return;
+    }
+    const orig = btnEl ? btnEl.textContent : '';
+    if (btnEl) { btnEl.disabled = true; btnEl.textContent = 'Cleaning…'; }
+    try {
+      const res = await fetch('/api/rules', { method: 'DELETE' });
+      if (!res.ok) throw new Error(await res.text());
+      await loadRules();
+      loadSims();
+    } catch (e) {
+      alert('Clean all failed: ' + e.message);
+    } finally {
+      if (btnEl) { btnEl.disabled = false; btnEl.textContent = orig; }
     }
   }
 

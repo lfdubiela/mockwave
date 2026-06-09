@@ -111,6 +111,22 @@ func (a *adminAPI) rules(w http.ResponseWriter, r *http.Request) {
 		}
 		a.reload()
 		writeJSON(w, 201, rule)
+	case http.MethodDelete:
+		// Bulk delete: remove every rule. Backend-agnostic — iterates the
+		// store's own delete so any DataStore behaves identically.
+		rules, err := a.store.GetRules()
+		if err != nil {
+			writeError(w, 500, err.Error())
+			return
+		}
+		for _, rule := range rules {
+			if err := a.store.DeleteRule(rule.ID); err != nil {
+				writeError(w, 500, err.Error())
+				return
+			}
+		}
+		a.reload()
+		w.WriteHeader(204)
 	default:
 		writeError(w, 405, "method not allowed")
 	}
