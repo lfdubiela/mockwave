@@ -52,11 +52,17 @@
   [data-theme="macos"] body { background: radial-gradient(140% 120% at 20% 0%, #2b2740 0%, #15131f 60%, #100e18 100%); background-attachment: fixed; }
 
   /* Nav */
-  nav { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 1.5rem; display: flex; gap: 0.25rem; align-items: center; flex-shrink: 0; }
-  nav h1 { font-size: 1rem; font-weight: 700; color: var(--accent); padding: 1rem 0; margin-right: 1rem; }
-  .tab { padding: 1rem 0.75rem; cursor: pointer; border-bottom: 2px solid transparent; color: var(--muted); font-size: 0.875rem; user-select: none; transition: color 120ms, border-color 120ms; }
+  nav { background: var(--surface); backdrop-filter: blur(var(--blur)); -webkit-backdrop-filter: blur(var(--blur)); border-bottom: 1px solid var(--border-hair); padding: 0 1.25rem; display: flex; gap: 0.4rem; align-items: center; flex-shrink: 0; position: sticky; top: 0; z-index: 50; }
+  nav h1 { font-size: 0.95rem; font-weight: 700; color: var(--text); padding: 0.85rem 0; margin-right: 0.75rem; letter-spacing: -0.01em; }
+  .nav-tabs { display: flex; gap: 0.15rem; padding: 0.2rem; background: var(--surface-2); border-radius: var(--radius); }
+  .tab { padding: 0.4rem 0.85rem; cursor: pointer; border-radius: calc(var(--radius) - 2px); color: var(--text-dim); font-size: 0.82rem; font-weight: 500; user-select: none; transition: color 120ms, background-color 120ms; }
   .tab:hover { color: var(--text); }
-  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab.active { color: var(--accent-fg); background: var(--accent); }
+  .nav-spacer { flex: 1; }
+  .theme-switch { display: flex; gap: 0.15rem; padding: 0.2rem; background: var(--surface-2); border-radius: var(--radius); }
+  .theme-opt { padding: 0.35rem 0.7rem; cursor: pointer; border-radius: calc(var(--radius) - 2px); color: var(--text-dim); font-size: 0.78rem; font-weight: 500; user-select: none; transition: color 120ms, background-color 120ms; }
+  .theme-opt:hover { color: var(--text); }
+  .theme-opt.active { color: var(--text); background: var(--surface); }
 
   /* Main layout */
   .main-layout { display: flex; flex: 1; min-height: 0; }
@@ -204,8 +210,15 @@
 
 <nav>
   <h1>⚡ Mockwave</h1>
-  <div class="tab active" data-tab="dashboard">Dashboard <span id="unmatched-badge" style="display:none;background:var(--error);color:#fff;border-radius:9999px;padding:0.05rem 0.45rem;font-size:0.65rem;margin-left:0.35rem;vertical-align:middle"></span></div>
-  <div class="tab" data-tab="rules">Rules</div>
+  <div class="nav-tabs">
+    <div class="tab active" data-tab="dashboard">Dashboard <span id="unmatched-badge" style="display:none;background:var(--error);color:#fff;border-radius:9999px;padding:0.05rem 0.45rem;font-size:0.65rem;margin-left:0.35rem;vertical-align:middle"></span></div>
+    <div class="tab" data-tab="rules">Rules</div>
+  </div>
+  <div class="nav-spacer"></div>
+  <div class="theme-switch" id="theme-switch">
+    <div class="theme-opt" data-theme-opt="macos">macOS</div>
+    <div class="theme-opt" data-theme-opt="amber">Amber</div>
+  </div>
 </nav>
 
 <div class="main-layout">
@@ -1536,6 +1549,25 @@
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') document.querySelectorAll('.modal-overlay.open').forEach(m => m.classList.remove('open'));
   });
+
+  // ── Theme switcher ─────────────────────────────────────────────────────────
+  function setThemeCookie(name) {
+    document.cookie = 'mw-theme=' + name + ';path=/;max-age=31536000;SameSite=Lax';
+  }
+  function applyTheme(name) {
+    document.documentElement.dataset.theme = name;
+    document.querySelectorAll('.theme-opt').forEach(o => {
+      o.classList.toggle('active', o.dataset.themeOpt === name);
+    });
+  }
+  document.querySelectorAll('.theme-opt').forEach(opt => {
+    opt.addEventListener('click', () => {
+      const name = opt.dataset.themeOpt;
+      setThemeCookie(name);
+      applyTheme(name);
+    });
+  });
+  applyTheme(document.documentElement.dataset.theme || 'macos');
 
   // ── Init ───────────────────────────────────────────────────────────────────
   loadRules();
