@@ -247,7 +247,7 @@
     <div class="form-row">
       <div class="form-group">
         <label>Rule Name</label>
-        <input id="r-name" placeholder="Get Users" oninput="autoRuleID()">
+        <input id="r-name" placeholder="Get Users">
       </div>
       <div class="form-group" style="flex:0 0 14rem" id="r-id-group">
         <label>Rule ID *</label>
@@ -600,13 +600,6 @@
   }
 
   // ── Auto-slug Rule ID ────────────────────────────────────────────────────────
-  function autoRuleID() {
-    if (_editingRuleID) return; // don't overwrite when editing
-    const name = document.getElementById('r-name').value;
-    document.getElementById('r-id').value = name.toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-  }
-
   // ── Tab switching ──────────────────────────────────────────────────────────
   document.querySelectorAll('.tab').forEach(tab => {
     tab.addEventListener('click', () => {
@@ -763,10 +756,12 @@
   function openRuleModal(prefill) {
     _editingRuleID = null;
     _copyMode = false;
-    document.getElementById('r-id-group').style.display = '';
+    // Rule ID is an auto-generated uuid, hidden from the user (the Name
+    // identifies a rule in the table).
+    document.getElementById('r-id-group').style.display = 'none';
     document.getElementById('rule-modal-title').textContent = 'Add Rule';
-    document.getElementById('r-id').disabled = false;
-    document.getElementById('r-id').value = '';
+    document.getElementById('r-id').disabled = true;
+    document.getElementById('r-id').value = uuid();
     document.getElementById('r-name').value = '';
     document.getElementById('r-protocol').value = prefill?.protocol || '';
     document.getElementById('r-method').value = prefill?.method || '';
@@ -789,7 +784,7 @@
   async function editRule(r) {
     _editingRuleID = r.id;
     _copyMode = false;
-    document.getElementById('r-id-group').style.display = '';
+    document.getElementById('r-id-group').style.display = 'none';
     document.getElementById('rule-modal-title').textContent = 'Edit Rule';
     document.getElementById('r-id').value = r.id;
     document.getElementById('r-id').disabled = true;
