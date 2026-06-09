@@ -824,10 +824,12 @@
           <td>${methodBadge(r.match?.method || 'ANY')}</td>
           <td class="mono">${r.match?.path || '/'}${matchChips(r.match)}</td>
           <td style="color:var(--muted);font-size:0.8rem">${(r.buckets||[]).length} bucket${(r.buckets||[]).length !== 1 ? 's' : ''}</td>
-          <td style="text-align:right;white-space:nowrap;display:flex;gap:0.4rem;justify-content:flex-end" onclick="event.stopPropagation()">
-            <button class="btn-sm btn-primary" onclick="editRuleByIdx(${i})">Edit</button>
-            <button class="btn-sm" onclick="copyRuleByIdx(${i})">Copy</button>
-            <button class="btn-sm btn-danger" onclick="deleteRule('${escapeAttr(r.id)}', this)">Delete</button>
+          <td style="white-space:nowrap" onclick="event.stopPropagation()">
+            <div style="display:flex;gap:0.4rem;justify-content:flex-end">
+              <button class="btn-sm btn-primary" onclick="editRuleByIdx(${i})">Edit</button>
+              <button class="btn-sm" onclick="copyRuleByIdx(${i})">Copy</button>
+              <button class="btn-sm btn-danger" onclick="deleteRule('${escapeAttr(r.id)}', this)">Delete</button>
+            </div>
           </td>
         </tr>
         <tr class="rule-detail" id="rule-detail-${i}" style="display:none">
