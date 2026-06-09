@@ -184,6 +184,23 @@
   .form-row .form-group { flex: 1; }
   .form-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.25rem; }
 
+  /* Settings-style inset groups (rule form) */
+  .sg-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-dim); font-weight: 600; margin: 1.1rem 0.25rem 0.4rem; display: flex; justify-content: space-between; align-items: center; }
+  .settings-group { background: var(--surface-2); border: 1px solid var(--border-hair); border-radius: var(--radius-lg); overflow: hidden; }
+  .sg-row { display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 0.85rem; border-bottom: 1px solid var(--border-hair); }
+  .sg-row:last-child { border-bottom: none; }
+  .sg-row > label { flex: 0 0 8rem; min-width: 8rem; margin: 0; color: var(--text); font-size: 0.82rem; text-transform: none; letter-spacing: 0; }
+  .sg-row > .sg-ctl { flex: 1; min-width: 0; }
+  .sg-row.sg-col { flex-direction: column; align-items: stretch; gap: 0.4rem; }
+  .sg-row.sg-col > label { flex: none; min-width: 0; color: var(--text-dim); font-size: 0.75rem; }
+  .sg-kv { display: flex; align-items: center; gap: 0.5rem; padding: 0.45rem 0.85rem; border-bottom: 1px solid var(--border-hair); }
+  .sg-empty { padding: 0.6rem 0.85rem; color: var(--text-dim); font-size: 0.8rem; font-style: italic; border-bottom: 1px solid var(--border-hair); }
+  .sg-add { padding: 0.55rem 0.85rem; color: var(--accent); font-size: 0.82rem; font-weight: 500; cursor: pointer; user-select: none; transition: background-color 100ms; }
+  .sg-add:hover { background: var(--surface); }
+  .sg-remove { width: auto; background: transparent; border: none; color: var(--text-dim); font-size: 1.05rem; line-height: 1; cursor: pointer; padding: 0 0.35rem; flex: 0 0 auto; }
+  .sg-remove:hover { color: var(--error); }
+  .sg-note { color: var(--text-dim); font-size: 0.72rem; margin: 0.4rem 0.25rem 0; }
+
   /* Skeleton shimmer */
   .sk { background: linear-gradient(90deg, var(--surface) 25%, var(--border) 50%, var(--surface) 75%); background-size: 400px 100%; animation: shimmer 1.4s infinite; border-radius: 0.25rem; display: block; }
   @keyframes shimmer { 0% { background-position: -400px 0; } 100% { background-position: 400px 0; } }
@@ -327,71 +344,61 @@
     </div>
     <div class="modal-body">
 
-    <div class="form-row">
-      <div class="form-group">
-        <label>Rule Name</label>
-        <input id="r-name" placeholder="Get Users">
+    <div class="sg-label">General</div>
+    <div class="settings-group">
+      <div class="sg-row">
+        <label for="r-name">Rule Name</label>
+        <div class="sg-ctl"><input id="r-name" placeholder="Get Users"></div>
       </div>
-      <div class="form-group" style="flex:0 0 14rem" id="r-id-group">
-        <label>Rule ID *</label>
-        <input id="r-id" placeholder="get-users">
+      <div class="sg-row" id="r-id-group">
+        <label for="r-id">Rule ID *</label>
+        <div class="sg-ctl"><input id="r-id" placeholder="get-users"></div>
       </div>
     </div>
 
-    <div class="section-divider">Match Criteria</div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>Protocol</label>
-        <select id="r-protocol">
-          <option value="">Any</option>
-          <option value="http">http</option>
-          <option value="graphql">graphql</option>
-          <option value="soap">soap</option>
-          <option value="grpc">grpc</option>
-        </select>
+    <div class="sg-label">Match Criteria</div>
+    <div class="settings-group">
+      <div class="sg-row">
+        <label for="r-protocol">Protocol</label>
+        <div class="sg-ctl">
+          <select id="r-protocol">
+            <option value="">Any</option>
+            <option value="http">http</option>
+            <option value="graphql">graphql</option>
+            <option value="soap">soap</option>
+            <option value="grpc">grpc</option>
+          </select>
+        </div>
       </div>
-      <div class="form-group">
-        <label>Method</label>
-        <select id="r-method">
-          <option value="">Any</option>
-          <option value="GET">GET</option>
-          <option value="POST">POST</option>
-          <option value="PUT">PUT</option>
-          <option value="DELETE">DELETE</option>
-          <option value="PATCH">PATCH</option>
-        </select>
+      <div class="sg-row">
+        <label for="r-method">Method</label>
+        <div class="sg-ctl">
+          <select id="r-method">
+            <option value="">Any</option>
+            <option value="GET">GET</option>
+            <option value="POST">POST</option>
+            <option value="PUT">PUT</option>
+            <option value="DELETE">DELETE</option>
+            <option value="PATCH">PATCH</option>
+          </select>
+        </div>
       </div>
-      <div class="form-group" style="flex:2">
-        <label>Path (glob: /users/*, /api/**)</label>
+      <div class="sg-row sg-col">
+        <label for="r-path">Path (glob: /users/*, /api/**)</label>
         <input id="r-path" placeholder="/api/users/*" oninput="updatePathChips(this.value)">
         <div class="chip-row" id="path-chips"></div>
       </div>
     </div>
 
-    <div class="form-group" style="margin-top:0.5rem">
-      <div style="display:flex;justify-content:space-between;align-items:center">
-        <label style="margin-bottom:0">Header Matches (exact)</label>
-        <button class="btn-sm btn-ghost" type="button" onclick="addHeader()">+ Add header</button>
-      </div>
-      <div id="headers-container"></div>
-    </div>
+    <div class="sg-label">Header Matches (exact)</div>
+    <div class="settings-group" id="headers-container"></div>
 
-    <div class="form-group" style="margin-top:0.5rem">
-      <div style="display:flex;justify-content:space-between;align-items:center">
-        <label style="margin-bottom:0">Query Matches (exact)</label>
-        <button class="btn-sm btn-ghost" type="button" onclick="addQuery()">+ Add query param</button>
-      </div>
-      <div id="query-container"></div>
-    </div>
+    <div class="sg-label">Query Matches (exact)</div>
+    <div class="settings-group" id="query-container"></div>
 
-    <div class="form-group" style="margin-top:0.5rem">
-      <div style="display:flex;justify-content:space-between;align-items:center">
-        <label style="margin-bottom:0">Body Matches (JSONPath, exact value)</label>
-        <button class="btn-sm btn-ghost" type="button" onclick="addBody()">+ Add body match</button>
-      </div>
-      <div id="body-container"></div>
-      <p style="color:var(--muted);font-size:0.72rem;margin-top:0.25rem">Matches JSON request bodies. JSONPath like <span class="mono">$.user.id</span>, exact value.</p>
-    </div>
+    <div class="sg-label">Body Matches (JSONPath, exact value)</div>
+    <div class="settings-group" id="body-container"></div>
+    <p class="sg-note">Matches JSON request bodies. JSONPath like <span class="mono">$.user.id</span>, exact value.</p>
 
     <div class="section-divider" style="display:flex;justify-content:space-between;align-items:center">
       <span>Response Buckets</span>
@@ -429,29 +436,27 @@
   let _query   = [];
   let _body    = []; // body uses JSONPath in `key`
 
-  function renderKV(arr, containerId, arrName, keyPlaceholder, valuePlaceholder) {
+  function renderKV(arr, containerId, arrName, keyPlaceholder, valuePlaceholder, addFn, addLabel, emptyText) {
     const c = document.getElementById(containerId);
     if (!c) return;
-    if (arr.length === 0) { c.innerHTML = ''; return; }
-    c.innerHTML = arr.map((row, i) => `
-      <div class="form-row" style="margin-top:0.35rem">
-        <div class="form-group" style="margin-bottom:0">
-          <input value="${escapeAttr(row.key)}" placeholder="${escapeAttr(keyPlaceholder)}"
-            oninput="${arrName}[${i}].key=this.value">
-        </div>
-        <div class="form-group" style="margin-bottom:0">
-          <input value="${escapeAttr(row.value)}" placeholder="${escapeAttr(valuePlaceholder || 'value')}"
-            oninput="${arrName}[${i}].value=this.value">
-        </div>
-        <button class="btn-sm btn-danger" type="button" style="align-self:center"
+    const rows = arr.length === 0
+      ? `<div class="sg-empty">${escapeHtml(emptyText)}</div>`
+      : arr.map((row, i) => `
+      <div class="sg-kv">
+        <input value="${escapeAttr(row.key)}" placeholder="${escapeAttr(keyPlaceholder)}"
+          oninput="${arrName}[${i}].key=this.value">
+        <input value="${escapeAttr(row.value)}" placeholder="${escapeAttr(valuePlaceholder || 'value')}"
+          oninput="${arrName}[${i}].value=this.value">
+        <button class="sg-remove" type="button" title="Remove"
           onclick="removeKV('${arrName}', ${i})">×</button>
       </div>`).join('');
+    c.innerHTML = rows + `<div class="sg-add" onclick="${addFn}()">+ ${escapeHtml(addLabel)}</div>`;
   }
 
   // Placeholders double as live examples of each matcher (e.g. header X-Client-Id=premium).
-  function renderHeaders() { renderKV(_headers, 'headers-container', '_headers', 'X-Client-Id', 'premium'); }
-  function renderQuery()   { renderKV(_query,   'query-container',   '_query',   'version',     'v2'); }
-  function renderBody()    { renderKV(_body,    'body-container',    '_body',    '$.user.role', 'admin'); }
+  function renderHeaders() { renderKV(_headers, 'headers-container', '_headers', 'X-Client-Id', 'premium', 'addHeader', 'Add header', 'No header matches — matches any request'); }
+  function renderQuery()   { renderKV(_query,   'query-container',   '_query',   'version',     'v2',      'addQuery',  'Add query param', 'No query matches — matches any request'); }
+  function renderBody()    { renderKV(_body,    'body-container',    '_body',    '$.user.role', 'admin',   'addBody',   'Add body match',  'No body matches — matches any request'); }
 
   function addHeader() { _headers.push({key:'',value:''}); renderHeaders(); }
   function addQuery()  { _query.push({key:'',value:''});   renderQuery(); }
@@ -933,9 +938,6 @@
     _headers = objectToKV(prefill?.headers);
     _query   = objectToKV(prefill?.query);
     _body    = [];
-    // Seed one empty header row so the example placeholder (X-Client-Id=premium)
-    // is visible, demonstrating the header matcher on a fresh rule.
-    if (_headers.length === 0) _headers = [{ key: '', value: '' }];
     renderHeaders(); renderQuery(); renderBody();
     renderBuckets();
 
