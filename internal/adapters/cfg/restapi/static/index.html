@@ -247,6 +247,9 @@
 
   /* Spinner for inline loading */
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Import/export feature — hidden until health flag enables them */
+  .ie-only { display: none; }
 </style>
 </head>
 <body>
@@ -318,13 +321,22 @@
 <div class="tab-content" id="tab-rules">
   <div class="section-header">
     <h2>Rules</h2>
-    <div style="display:flex;gap:0.5rem">
-      <button class="btn-danger" onclick="cleanAllRules(this)">Clean All</button>
-      <button class="btn-primary" onclick="openRuleModal()">+ Add Rule</button>
+    <div style="display:flex;gap:0.5rem" id="rules-header-btns">
+      <!-- Normal mode buttons -->
+      <button class="btn-ghost ie-only" id="btn-export" onclick="toggleExportMode()">Export</button>
+      <button class="btn-ghost ie-only" id="btn-import" onclick="document.getElementById('import-file').click()">Import</button>
+      <input type="file" id="import-file" accept="application/json,.json" style="display:none" onchange="handleImportFile(this)">
+      <!-- Export mode buttons (hidden until export mode active) -->
+      <button class="btn-primary" id="btn-export-selected" style="display:none" disabled onclick="doExport(false)">Export Selected (0)</button>
+      <button class="btn-ghost" id="btn-export-all" style="display:none" onclick="doExport(true)">Export All</button>
+      <button class="btn-ghost" id="btn-export-cancel" style="display:none" onclick="toggleExportMode()">Cancel</button>
+      <!-- Always-visible buttons -->
+      <button class="btn-danger" id="btn-clean-all" onclick="cleanAllRules(this)">Clean All</button>
+      <button class="btn-primary" id="btn-add-rule" onclick="openRuleModal()">+ Add Rule</button>
     </div>
   </div>
   <table>
-    <thead><tr><th>On</th><th>ID</th><th>Name</th><th>Protocol</th><th>Method</th><th>Path</th><th>Buckets</th><th></th></tr></thead>
+    <thead><tr><th id="th-export-pick" style="display:none"></th><th>On</th><th>ID</th><th>Name</th><th>Protocol</th><th>Method</th><th>Path</th><th>Buckets</th><th></th></tr></thead>
     <tbody id="rules-tbody">
       <tr>
         <td colspan="8">
@@ -809,26 +821,48 @@
     }
   }
 
+  // ── Health flags ───────────────────────────────────────────────────────────
+  let importExportEnabled = false;
+
+  async function loadHealthFlags() {
+    try {
+      const h = await fetch('/api/health').then(r => r.json());
+      importExportEnabled = !!(h && h.import_export);
+    } catch (_) {
+      importExportEnabled = false;
+    }
+    document.querySelectorAll('.ie-only').forEach(el => {
+      el.style.display = importExportEnabled ? '' : 'none';
+    });
+  }
+
   // ── Rules ──────────────────────────────────────────────────────────────────
   let _rulesList = [];
   let _rulesLoaded = false;
 
-  async function loadRules() {
-    try {
-      const rules = await fetch('/api/rules').then(r => r.json());
-      const tbody = document.getElementById('rules-tbody');
-      if (!rules || rules.length === 0) {
-        _rulesList = [];
-        tbody.innerHTML = '<tr><td colspan="8" class="empty">No rules configured. Click "+ Add Rule" to create one.</td></tr>';
-        _rulesLoaded = true;
-        return;
-      }
-      _rulesList = rules;
-      // tbody is rebuilt below; detail rows reset to "Loading…", so drop any
-      // cached "already rendered" markers or re-expanding would show stale text.
-      _ruleDetailLoaded.clear();
-      tbody.innerHTML = rules.map((r, i) => `
+  // Export selection state
+  let exportMode = false;
+  const exportSelection = new Set();
+
+  function renderRulesTable() {
+    const rules = _rulesList;
+    const tbody = document.getElementById('rules-tbody');
+    const colSpan = exportMode ? 9 : 8;
+    if (!rules || rules.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="${colSpan}" class="empty">No rules configured. Click "+ Add Rule" to create one.</td></tr>`;
+      return;
+    }
+    _ruleDetailLoaded.clear();
+    tbody.innerHTML = rules.map((r, i) => {
+      const checkCell = exportMode
+        ? `<td onclick="event.stopPropagation()" style="width:1.5rem">
+            <input type="checkbox" ${exportSelection.has(r.id) ? 'checked' : ''}
+              onchange="toggleExportPick('${escapeAttr(r.id)}', this.checked)">
+           </td>`
+        : '';
+      return `
         <tr class="rule-row ${_rulesLoaded ? 'row-new' : ''}${r.disabled ? ' rule-disabled' : ''}" onclick="toggleRuleDetail(${i})" title="Click to view buckets">
+          ${checkCell}
           <td class="cell-toggle" onclick="event.stopPropagation()">
             <label class="switch" title="${r.disabled ? 'Disabled — click to enable' : 'Enabled — click to disable'}">
               <input type="checkbox" ${r.disabled ? '' : 'checked'} onchange="toggleRuleEnabled(${i})">
@@ -850,13 +884,83 @@
           </td>
         </tr>
         <tr class="rule-detail" id="rule-detail-${i}" style="display:none">
-          <td colspan="8"><div id="rule-detail-body-${i}" class="rule-detail-body">Loading…</div></td>
-        </tr>`).join('');
+          <td colspan="${colSpan}"><div id="rule-detail-body-${i}" class="rule-detail-body">Loading…</div></td>
+        </tr>`;
+    }).join('');
+  }
+
+  async function loadRules() {
+    try {
+      const rules = await fetch('/api/rules').then(r => r.json());
+      _rulesList = rules || [];
+      renderRulesTable();
       _rulesLoaded = true;
     } catch (e) {
       console.error('loadRules:', e);
     }
   }
+
+  // ── Export mode ────────────────────────────────────────────────────────────
+  function toggleExportMode() {
+    exportMode = !exportMode;
+    exportSelection.clear();
+
+    const thPick   = document.getElementById('th-export-pick');
+    const btnExp   = document.getElementById('btn-export');
+    const btnImp   = document.getElementById('btn-import');
+    const btnSel   = document.getElementById('btn-export-selected');
+    const btnAll   = document.getElementById('btn-export-all');
+    const btnCan   = document.getElementById('btn-export-cancel');
+    const btnClean = document.getElementById('btn-clean-all');
+    const btnAdd   = document.getElementById('btn-add-rule');
+
+    if (exportMode) {
+      thPick.style.display = '';
+      btnExp.style.display   = 'none';
+      btnImp.style.display   = 'none';
+      btnSel.style.display   = '';
+      btnAll.style.display   = '';
+      btnCan.style.display   = '';
+      btnClean.style.display = 'none';
+      btnAdd.style.display   = 'none';
+      _updateExportSelectedBtn();
+    } else {
+      thPick.style.display = 'none';
+      btnExp.style.display   = importExportEnabled ? '' : 'none';
+      btnImp.style.display   = importExportEnabled ? '' : 'none';
+      btnSel.style.display   = 'none';
+      btnAll.style.display   = 'none';
+      btnCan.style.display   = 'none';
+      btnClean.style.display = '';
+      btnAdd.style.display   = '';
+    }
+    renderRulesTable();
+  }
+
+  function toggleExportPick(id, checked) {
+    if (checked) exportSelection.add(id); else exportSelection.delete(id);
+    _updateExportSelectedBtn();
+  }
+
+  function _updateExportSelectedBtn() {
+    const btn = document.getElementById('btn-export-selected');
+    const n = exportSelection.size;
+    btn.textContent = `Export Selected (${n})`;
+    btn.disabled = n === 0;
+  }
+
+  function doExport(all) {
+    if (all) {
+      window.location.href = '/api/export';
+    } else {
+      const ids = Array.from(exportSelection);
+      window.location.href = '/api/export?rules=' + encodeURIComponent(ids.join(','));
+    }
+    if (exportMode) toggleExportMode();
+  }
+
+  // ── Import stub (Task 8) ───────────────────────────────────────────────────
+  function handleImportFile(input) { /* Task 8 */ input.value = ''; }
 
   // Flip a rule's enabled state via PUT (sends the full cached rule with
   // `disabled` toggled), then refresh the list.
@@ -1632,6 +1736,7 @@
   applyTheme(document.documentElement.dataset.theme || 'macos');
 
   // ── Init ───────────────────────────────────────────────────────────────────
+  loadHealthFlags();
   loadRules();
   connectMetrics();
   pollUnmatched(); // start polling immediately; also loads unmatched now
