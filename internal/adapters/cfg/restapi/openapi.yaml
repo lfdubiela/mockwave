@@ -26,6 +26,11 @@ paths:
                   status:
                     type: string
                     example: ok
+                  import_export:
+                    type: boolean
+                    description: >-
+                      Whether the import/export endpoints are enabled.
+                      Always false when the json-file store is in use.
 
   /api/rules:
     get:
@@ -231,6 +236,105 @@ paths:
         "204":
           description: Buffer cleared
 
+  /api/export:
+    get:
+      summary: Export rules and their simulations as a Config file
+      operationId: exportConfig
+      parameters:
+        - name: rules
+          in: query
+          required: false
+          description: >-
+            Comma-separated list of rule IDs to export. When omitted all rules
+            are exported. Returns 404 if any supplied ID does not exist.
+          schema:
+            type: string
+            example: "rule-1,rule-2"
+      responses:
+        "200":
+          description: >-
+            Config JSON ready to import. Response includes
+            Content-Disposition: attachment; filename="mockwave-export.json".
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Config"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /api/import/preview:
+    post:
+      summary: Dry-run import — detect conflicts without writing
+      operationId: importPreview
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Config"
+      responses:
+        "200":
+          description: Conflict report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImportPreviewReport"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /api/import:
+    post:
+      summary: Commit an import — write rules and simulations to the store
+      operationId: importConfig
+      parameters:
+        - name: override
+          in: query
+          required: false
+          description: >-
+            Comma-separated list of incoming rule IDs that should replace their
+            conflicting counterpart in the store. Conflicting rules whose ID is
+            not listed here are skipped.
+          schema:
+            type: string
+            example: "rule-1,rule-2"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Config"
+      responses:
+        "200":
+          description: Import result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImportReport"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
   /api/reload:
     post:
       summary: Trigger hot-reload from store
@@ -349,6 +453,78 @@ components:
         grpc_status:
           type: integer
 
+    Config:
+      type: object
+      description: >-
+        Top-level import/export envelope. Contains a list of rules and the
+        simulations they reference.
+      properties:
+        rules:
+          type: array
+          items:
+            $ref: "#/components/schemas/Rule"
+        simulations:
+          type: array
+          items:
+            $ref: "#/components/schemas/Simulation"
+
+    ConflictParty:
+      type: object
+      description: One side (incoming or existing) of an import conflict.
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+
+    ImportConflict:
+      type: object
+      description: >-
+        A single conflict detected during import preview.
+        reason "id": the incoming rule ID already exists in the store.
+        reason "match": match criteria equal an existing rule with a different ID.
+      required: [reason, incoming, existing]
+      properties:
+        reason:
+          type: string
+          enum: [id, match]
+        incoming:
+          $ref: "#/components/schemas/ConflictParty"
+        existing:
+          $ref: "#/components/schemas/ConflictParty"
+
+    ImportPreviewReport:
+      type: object
+      required: [importable, conflicts]
+      properties:
+        importable:
+          type: integer
+          description: Number of rules that can be imported without conflict.
+        conflicts:
+          type: array
+          items:
+            $ref: "#/components/schemas/ImportConflict"
+
+    ImportReport:
+      type: object
+      required: [imported, skipped, overridden]
+      properties:
+        imported:
+          type: array
+          description: IDs of rules that were newly written to the store.
+          items:
+            type: string
+        skipped:
+          type: array
+          description: IDs of rules that were skipped due to unresolved conflicts.
+          items:
+            type: string
+        overridden:
+          type: array
+          description: IDs of rules that replaced an existing conflicting rule.
+          items:
+            type: string
+
     RuleMetric:
       type: object
       properties:
@@ -395,8 +571,37 @@ components:
             properties:
               error:
                 type: string
+    Forbidden:
+      description: >-
+        Feature is disabled. Import/export is not available when the json-file
+        store is in use.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+    MethodNotAllowed:
+      description: HTTP method not allowed for this endpoint
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
     UnprocessableEntity:
       description: Validation error
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+    InternalServerError:
+      description: Unexpected server error
       content:
         application/json:
           schema:
