@@ -1784,13 +1784,19 @@
   // ── Close modal on backdrop click ─────────────────────────────────────────
   document.querySelectorAll('.modal-overlay').forEach(overlay => {
     overlay.addEventListener('click', e => {
-      if (e.target === overlay) overlay.classList.remove('open');
+      if (e.target === overlay) {
+        overlay.classList.remove('open');
+        if (overlay.id === 'import-modal') pendingImport = null;
+      }
     });
   });
 
   // ── Close modal on Escape ─────────────────────────────────────────────────
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') document.querySelectorAll('.modal-overlay.open').forEach(m => m.classList.remove('open'));
+    if (e.key === 'Escape') document.querySelectorAll('.modal-overlay.open').forEach(m => {
+      m.classList.remove('open');
+      if (m.id === 'import-modal') pendingImport = null;
+    });
   });
 
   // ── Theme switcher ─────────────────────────────────────────────────────────
