@@ -127,7 +127,7 @@
 
   /* Misc */
   .badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 9999px; font-size: 0.7rem; font-weight: 600; background: var(--accent-dim); color: var(--accent); border: 1px solid rgba(245,158,11,0.3); }
-  .count-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 1.4rem; height: 1.4rem; padding: 0 0.45rem; margin-right: 0.5rem; border-radius: 9999px; font-size: 0.7rem; font-weight: 700; line-height: 1; background: var(--error); color: #fff; vertical-align: middle; }
+  .count-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 1.5rem; height: 1.25rem; padding: 0 0.4rem; margin-right: 0.5rem; border-radius: 9999px; font-size: 0.68rem; font-weight: 700; line-height: 1; background: var(--accent-dim); color: var(--accent); vertical-align: middle; font-variant-numeric: tabular-nums; }
   .badge-muted { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 9999px; font-size: 0.66rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; background: var(--surface-2); color: var(--text-dim); border: 1px solid var(--border-hair); margin-left: 0.4rem; vertical-align: middle; }
 
   /* Enable/disable toggle switch */
@@ -1572,7 +1572,7 @@
 
       tbody.innerHTML = _unmatchedList.map((r, i) => `
         <tr>
-          <td style="color:var(--muted);font-size:0.75rem;white-space:nowrap">${(r.count > 1) ? `<span class="count-badge" title="${r.count} calls with this path + body">×${r.count}</span>` : ''}${new Date(r.at).toLocaleTimeString()}</td>
+          <td style="color:var(--muted);font-size:0.75rem;white-space:nowrap"><span class="count-badge" title="${r.count} call${r.count !== 1 ? 's' : ''} with this path + body">×${r.count > 99 ? '99+' : r.count}</span>${new Date(r.at).toLocaleTimeString()}</td>
           <td class="mono">${escapeHtml(r.protocol || 'http')}</td>
           <td><span class="method-badge method-${escapeHtml(r.method)}">${escapeHtml(r.method)}</span></td>
           <td class="mono">${escapeHtml(r.path)}</td>
