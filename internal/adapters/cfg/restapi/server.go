@@ -14,9 +14,20 @@ import (
 
 type OnReload func()
 
+// MuxOption customizes optional admin API behavior.
+type MuxOption func(*adminAPI)
+
+// WithImportExport enables the /api/export and /api/import endpoints.
+// They are intended for remote store backends; with the json-file store the
+// config file itself is already the import/export format, so the endpoints
+// stay disabled and return 403.
+func WithImportExport() MuxOption {
+	return func(a *adminAPI) { a.importExport = true }
+}
+
 // NewMux builds the admin HTTP mux.
 // collector, buffer, broker, and engine may be nil — those endpoints return empty responses.
-func NewMux(store store.DataStore, onReload OnReload, collector *metrics.Collector, buffer *unmatched.Buffer, broker *metrics.Broker, engine *scripting.Engine) *http.ServeMux {
+func NewMux(store store.DataStore, onReload OnReload, collector *metrics.Collector, buffer *unmatched.Buffer, broker *metrics.Broker, engine *scripting.Engine, opts ...MuxOption) *http.ServeMux {
 	mux := http.NewServeMux()
 	api := &adminAPI{
 		store:     store,
@@ -25,6 +36,9 @@ func NewMux(store store.DataStore, onReload OnReload, collector *metrics.Collect
 		buffer:    buffer,
 		broker:    broker,
 		engine:    engine,
+	}
+	for _, opt := range opts {
+		opt(api)
 	}
 	mux.HandleFunc("/api/health", api.health)
 	mux.HandleFunc("/api/rules", api.rules)
@@ -43,12 +57,13 @@ func NewMux(store store.DataStore, onReload OnReload, collector *metrics.Collect
 }
 
 type adminAPI struct {
-	store     store.DataStore
-	onReload  OnReload
-	collector *metrics.Collector  // may be nil
-	buffer    *unmatched.Buffer   // may be nil
-	broker    *metrics.Broker     // may be nil
-	engine    *scripting.Engine   // may be nil — eval endpoint returns 503
+	store        store.DataStore
+	onReload     OnReload
+	collector    *metrics.Collector // may be nil
+	buffer       *unmatched.Buffer  // may be nil
+	broker       *metrics.Broker    // may be nil
+	engine       *scripting.Engine  // may be nil — eval endpoint returns 503
+	importExport bool               // /api/export + /api/import enabled (remote stores only)
 }
 
 // duplicateMatchError returns a 409-ready, human-readable message if rule's
@@ -109,7 +124,7 @@ func (a *adminAPI) reload() {
 }
 
 func (a *adminAPI) health(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, 200, map[string]string{"status": "ok"})
+	writeJSON(w, 200, map[string]interface{}{"status": "ok", "import_export": a.importExport})
 }
 
 func (a *adminAPI) rules(w http.ResponseWriter, r *http.Request) {
