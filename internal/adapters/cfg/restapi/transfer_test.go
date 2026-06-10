@@ -136,7 +136,9 @@ func TestImportPreview_Validation422(t *testing.T) {
 		"dangling sim ref": {Rules: []domain.Rule{{ID: "rx", Match: domain.MatchCriteria{Path: "/x"},
 			Buckets: []domain.WeightedBucket{{Weight: 100, Action: domain.ActionSimulate, SimulationID: "nowhere"}}}}},
 		"internal dup id":    {Rules: []domain.Rule{validRule("dup", "/a"), validRule("dup", "/b")}},
-		"internal dup match": {Rules: []domain.Rule{validRule("a", "/same"), validRule("b", "/same")}},
+		"internal dup match":   {Rules: []domain.Rule{validRule("a", "/same"), validRule("b", "/same")}},
+		"internal dup sim id": {Rules: []domain.Rule{validRule("ok", "/fine")},
+			Simulations: []domain.Simulation{{ID: "s-dup", Protocol: "http"}, {ID: "s-dup", Protocol: "http"}}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			w := previewReq(t, mux, cfg)
@@ -165,6 +167,137 @@ func TestImportPreview_BadJSON400(t *testing.T) {
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/api/import/preview", strings.NewReader("{nope")))
 	assert.Equal(t, 400, w.Code)
+}
+
+func commitReq(t *testing.T, mux http.Handler, cfg domain.Config, query string) *httptest.ResponseRecorder {
+	t.Helper()
+	body, err := json.Marshal(cfg)
+	require.NoError(t, err)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/api/import"+query, bytes.NewReader(body)))
+	return w
+}
+
+type importReport struct {
+	Imported   []string `json:"imported"`
+	Skipped    []string `json:"skipped"`
+	Overridden []string `json:"overridden"`
+}
+
+func TestImportCommit_SkipWithoutOverride(t *testing.T) {
+	store := transferStore()
+	reloads := 0
+	mux := restapi.NewMux(store, func() { reloads++ }, nil, nil, nil, nil, restapi.WithImportExport())
+
+	simRule := domain.Rule{ID: "r1", Name: "Changed", Match: domain.MatchCriteria{Path: "/changed"},
+		Buckets: []domain.WeightedBucket{{Weight: 100, Action: domain.ActionSimulate, SimulationID: "s-changed"}}}
+	cfg := domain.Config{
+		Rules:       []domain.Rule{simRule, validRule("r-ok", "/fresh")},
+		Simulations: []domain.Simulation{{ID: "s-changed", Protocol: "http"}},
+	}
+	w := commitReq(t, mux, cfg, "")
+	require.Equal(t, 200, w.Code)
+	var rep importReport
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&rep))
+	assert.Equal(t, []string{"r-ok"}, rep.Imported)
+	assert.Equal(t, []string{"r1"}, rep.Skipped) // id conflict, no override
+	assert.Empty(t, rep.Overridden)
+	assert.Equal(t, 1, reloads)
+
+	// skipped rule untouched; its payload-only sim NOT written
+	for _, r := range store.rules {
+		if r.ID == "r1" {
+			assert.Equal(t, "/one", r.Match.Path)
+		}
+	}
+	sim, _ := store.GetSimulation("s-changed")
+	assert.Nil(t, sim)
+}
+
+func TestImportCommit_OverrideReplacesAndCascades(t *testing.T) {
+	store := transferStore() // r1 owns s1
+	mux := restapi.NewMux(store, func() {}, nil, nil, nil, nil, restapi.WithImportExport())
+
+	incoming := domain.Rule{ID: "r1", Name: "V2", Match: domain.MatchCriteria{Path: "/v2"},
+		Buckets: []domain.WeightedBucket{{Weight: 100, Action: domain.ActionSimulate, SimulationID: "s-v2"}}}
+	cfg := domain.Config{Rules: []domain.Rule{incoming},
+		Simulations: []domain.Simulation{{ID: "s-v2", Protocol: "http"}}}
+	w := commitReq(t, mux, cfg, "?override=r1")
+	require.Equal(t, 200, w.Code)
+	var rep importReport
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&rep))
+	assert.Equal(t, []string{"r1"}, rep.Overridden)
+	assert.Empty(t, rep.Skipped)
+
+	// old rule replaced, old owned sim s1 cascaded away, new sim present
+	require.Len(t, store.rules, 2)
+	for _, r := range store.rules {
+		if r.ID == "r1" {
+			assert.Equal(t, "/v2", r.Match.Path)
+		}
+	}
+	old, _ := store.GetSimulation("s1")
+	assert.Nil(t, old)
+	neu, _ := store.GetSimulation("s-v2")
+	require.NotNil(t, neu)
+}
+
+func TestImportCommit_MatchConflictOverrideRemovesExistingID(t *testing.T) {
+	store := transferStore()
+	mux := restapi.NewMux(store, func() {}, nil, nil, nil, nil, restapi.WithImportExport())
+	// r-new duplicates r2's match; override → r2 deleted, r-new saved
+	cfg := domain.Config{Rules: []domain.Rule{validRule("r-new", "/two")}}
+	w := commitReq(t, mux, cfg, "?override=r-new")
+	require.Equal(t, 200, w.Code)
+	ids := map[string]bool{}
+	for _, r := range store.rules {
+		ids[r.ID] = true
+	}
+	assert.True(t, ids["r-new"])
+	assert.False(t, ids["r2"])
+}
+
+func TestImportCommit_CleanPayloadNoConflicts(t *testing.T) {
+	store := transferStore()
+	mux := restapi.NewMux(store, func() {}, nil, nil, nil, nil, restapi.WithImportExport())
+	cfg := domain.Config{Rules: []domain.Rule{validRule("r-a", "/a"), validRule("r-b", "/b")}}
+	w := commitReq(t, mux, cfg, "")
+	require.Equal(t, 200, w.Code)
+	var rep importReport
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&rep))
+	assert.ElementsMatch(t, []string{"r-a", "r-b"}, rep.Imported)
+	assert.Len(t, store.rules, 4)
+}
+
+func TestImportCommit_Disabled403(t *testing.T) {
+	mux := restapi.NewMux(transferStore(), nil, nil, nil, nil, nil)
+	w := commitReq(t, mux, domain.Config{}, "")
+	assert.Equal(t, 403, w.Code)
+}
+
+func TestImportCommit_Validation422NothingWritten(t *testing.T) {
+	store := transferStore()
+	mux := restapi.NewMux(store, func() {}, nil, nil, nil, nil, restapi.WithImportExport())
+	cfg := domain.Config{Rules: []domain.Rule{validRule("ok", "/fine"), {ID: "bad"}}}
+	w := commitReq(t, mux, cfg, "")
+	assert.Equal(t, 422, w.Code)
+	assert.Len(t, store.rules, 2) // unchanged
+}
+
+func TestExportImport_RoundTrip(t *testing.T) {
+	src := transferStore()
+	srcMux := restapi.NewMux(src, nil, nil, nil, nil, nil, restapi.WithImportExport())
+	w := httptest.NewRecorder()
+	srcMux.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/export", nil))
+	require.Equal(t, 200, w.Code)
+
+	dst := &memStore{}
+	dstMux := restapi.NewMux(dst, func() {}, nil, nil, nil, nil, restapi.WithImportExport())
+	w2 := httptest.NewRecorder()
+	dstMux.ServeHTTP(w2, httptest.NewRequest(http.MethodPost, "/api/import", bytes.NewReader(w.Body.Bytes())))
+	require.Equal(t, 200, w2.Code)
+	assert.Len(t, dst.rules, 2)
+	assert.Len(t, dst.sims, 1) // s1 (s-orphan was never exported)
 }
 
 func TestHealth_ImportExportFlag(t *testing.T) {

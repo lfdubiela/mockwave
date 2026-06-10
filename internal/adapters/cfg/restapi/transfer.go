@@ -137,6 +137,9 @@ func (a *adminAPI) validateImportPayload(cfg domain.Config) (string, error) {
 		if s.ID == "" {
 			return "simulation with empty id", nil
 		}
+		if payloadSims[s.ID] {
+			return fmt.Sprintf("payload contains duplicate simulation id %q", s.ID), nil
+		}
 		payloadSims[s.ID] = true
 	}
 	seenIDs := make(map[string]bool, len(cfg.Rules))
@@ -195,6 +198,89 @@ func (a *adminAPI) decodeImportPayload(w http.ResponseWriter, r *http.Request) (
 		return cfg, nil, false
 	}
 	return cfg, stored, true
+}
+
+// importHandler is phase 2: commit. Conflicting rules are skipped unless their
+// incoming ID is listed in ?override=, in which case the existing counterpart
+// (and its owned simulations) is removed first. Payload sims are written only
+// for rules that are actually saved.
+func (a *adminAPI) importHandler(w http.ResponseWriter, r *http.Request) {
+	cfg, stored, ok := a.decodeImportPayload(w, r)
+	if !ok {
+		return
+	}
+	override := map[string]bool{}
+	for _, id := range strings.Split(r.URL.Query().Get("override"), ",") {
+		if id = strings.TrimSpace(id); id != "" {
+			override[id] = true
+		}
+	}
+	conflictByIncoming := map[string]importConflict{}
+	for _, c := range detectConflicts(stored, cfg.Rules) {
+		conflictByIncoming[c.Incoming.ID] = c
+	}
+	storedByID := make(map[string]domain.Rule, len(stored))
+	for _, ru := range stored {
+		storedByID[ru.ID] = ru
+	}
+	payloadSims := make(map[string]domain.Simulation, len(cfg.Simulations))
+	for _, s := range cfg.Simulations {
+		payloadSims[s.ID] = s
+	}
+
+	imported, skipped, overridden := []string{}, []string{}, []string{}
+	wrote := false
+
+	saveRuleWithSims := func(ru domain.Rule) bool {
+		for _, simID := range ruleSimIDs(ru) {
+			if sim, ok := payloadSims[simID]; ok {
+				if err := a.store.SaveSimulation(sim); err != nil {
+					writeError(w, 500, err.Error())
+					return false
+				}
+			}
+		}
+		if err := a.store.SaveRule(ru); err != nil {
+			writeError(w, 500, err.Error())
+			return false
+		}
+		wrote = true
+		return true
+	}
+
+	for _, in := range cfg.Rules {
+		c, conflicting := conflictByIncoming[in.ID]
+		switch {
+		case conflicting && !override[in.ID]:
+			skipped = append(skipped, in.ID)
+		case conflicting:
+			if ex, ok := storedByID[c.Existing.ID]; ok {
+				if err := a.store.DeleteRule(ex.ID); err != nil {
+					writeError(w, 500, err.Error())
+					return
+				}
+				a.deleteSimulations(ruleSimIDs(ex)) // cascade: rule owns its sims
+				wrote = true
+			}
+			if !saveRuleWithSims(in) {
+				return
+			}
+			overridden = append(overridden, in.ID)
+		default:
+			if !saveRuleWithSims(in) {
+				return
+			}
+			imported = append(imported, in.ID)
+		}
+	}
+	if wrote {
+		a.reload()
+	}
+	writeJSON(w, 200, map[string]interface{}{
+		"imported":   imported,
+		"skipped":    skipped,
+		"overridden": overridden,
+	})
 }
 
 // importPreviewHandler is phase 1: dry-run conflict report, no writes.
