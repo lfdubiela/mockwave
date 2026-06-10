@@ -85,6 +85,67 @@ func TestForwardStage_ForwardsWithQuery(t *testing.T) {
 	assert.Contains(t, gotQuery, "foo=bar")
 }
 
+func TestForwardStage_ForwardsRawQueryVerbatim(t *testing.T) {
+	// Regression: %-encoded query values (e.g. names=AUTORIZACAO%20,IOF%20INTERNACIONAL)
+	// were decoded into the map and re-joined without re-encoding, producing a
+	// malformed request line the upstream rejected with 400.
+	var gotQuery string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		w.WriteHeader(200)
+		_, _ = w.Write([]byte(`"ok"`))
+	}))
+	defer upstream.Close()
+
+	rawQuery := "status=ACTIVE&names=AUTORIZACAO%20,IOF%20INTERNACIONAL"
+	stage := httprest.NewForwardStage(nil)
+	pctx := &pipeline.PipelineContext{
+		ShouldForward: true,
+		Matched:       &domain.Rule{ID: "r1"},
+		ForwardURL:    upstream.URL,
+		Request: pipeline.NormalizedRequest{
+			Method:   "GET",
+			Path:     "/v1/programs/12334/parameters/basic",
+			RawQuery: rawQuery,
+			Query: map[string]string{
+				"status": "ACTIVE",
+				"names":  "AUTORIZACAO ,IOF INTERNACIONAL",
+			},
+		},
+	}
+	require.NoError(t, stage.Execute(context.Background(), pctx))
+	require.NotNil(t, pctx.Response)
+	assert.Equal(t, 200, pctx.Response.Status)
+	assert.Equal(t, rawQuery, gotQuery, "raw query must reach upstream verbatim")
+}
+
+func TestForwardStage_EncodesQueryMapWhenNoRawQuery(t *testing.T) {
+	// Non-HTTP adapters populate only the decoded map; values must be re-encoded.
+	var gotQuery string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		w.WriteHeader(200)
+		_, _ = w.Write([]byte(`"ok"`))
+	}))
+	defer upstream.Close()
+
+	stage := httprest.NewForwardStage(nil)
+	pctx := &pipeline.PipelineContext{
+		ShouldForward: true,
+		Matched:       &domain.Rule{ID: "r1"},
+		ForwardURL:    upstream.URL,
+		Request: pipeline.NormalizedRequest{
+			Method: "GET",
+			Path:   "/test",
+			Query:  map[string]string{"names": "A B,C"},
+		},
+	}
+	require.NoError(t, stage.Execute(context.Background(), pctx))
+	require.NotNil(t, pctx.Response)
+	assert.Equal(t, 200, pctx.Response.Status)
+	assert.Equal(t, "names=A+B%2CC", gotQuery)
+}
+
 func TestForwardStage_DelayDominatesWhenLongerThanUpstream(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)

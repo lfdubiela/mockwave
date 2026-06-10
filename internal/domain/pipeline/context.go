@@ -8,6 +8,7 @@ type NormalizedRequest struct {
 	Path     string
 	Headers  map[string]string
 	Query    map[string]string
+	RawQuery string // original percent-encoded query string, forwarded verbatim upstream
 	Body     []byte
 	PathSegs []string
 }

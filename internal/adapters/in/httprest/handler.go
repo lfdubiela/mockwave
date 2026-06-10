@@ -45,6 +45,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Path:     r.URL.Path,
 			Headers:  headers,
 			Query:    query,
+			RawQuery: r.URL.RawQuery,
 			Body:     body,
 			PathSegs: pathSegments(r.URL.Path),
 		},

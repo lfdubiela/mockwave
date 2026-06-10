@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -41,12 +42,16 @@ func (s *ForwardStage) Execute(_ context.Context, pctx *pipeline.PipelineContext
 	}
 
 	targetURL := strings.TrimRight(pctx.ForwardURL, "/") + pctx.Request.Path
-	if len(pctx.Request.Query) > 0 {
-		params := make([]string, 0, len(pctx.Request.Query))
+	if pctx.Request.RawQuery != "" {
+		// Forward the original percent-encoded query verbatim; the decoded map
+		// loses encoding, multi-value params, and order.
+		targetURL += "?" + pctx.Request.RawQuery
+	} else if len(pctx.Request.Query) > 0 {
+		params := url.Values{}
 		for k, v := range pctx.Request.Query {
-			params = append(params, k+"="+v)
+			params.Set(k, v)
 		}
-		targetURL += "?" + strings.Join(params, "&")
+		targetURL += "?" + params.Encode()
 	}
 	req, err := http.NewRequest(pctx.Request.Method, targetURL, io.NopCloser(strings.NewReader(string(pctx.Request.Body))))
 	if err != nil {
