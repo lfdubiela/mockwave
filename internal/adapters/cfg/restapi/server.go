@@ -53,6 +53,7 @@ func NewMux(store store.DataStore, onReload OnReload, collector *metrics.Collect
 	mux.HandleFunc("/api/metrics/history", api.metricsHistory)
 	mux.HandleFunc("/api/script/eval", api.scriptEval)
 	mux.HandleFunc("/api/export", api.exportHandler)
+	mux.HandleFunc("/api/import/preview", api.importPreviewHandler)
 	serveUI(mux)
 	return mux
 }

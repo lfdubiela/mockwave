@@ -1,6 +1,7 @@
 package restapi
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -82,4 +83,132 @@ func (a *adminAPI) exportHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Disposition", `attachment; filename="mockwave-export.json"`)
 	writeJSON(w, 200, cfg)
+}
+
+// conflictParty identifies one side of an import conflict for UI display.
+type conflictParty struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// importConflict is one incoming rule that would replace something existing.
+// Reason "id": incoming rule ID already exists in the store.
+// Reason "match": match criteria equal an existing rule with a different ID.
+type importConflict struct {
+	Reason   string        `json:"reason"`
+	Incoming conflictParty `json:"incoming"`
+	Existing conflictParty `json:"existing"`
+}
+
+func party(r domain.Rule) conflictParty {
+	name := r.Name
+	if name == "" {
+		name = r.ID
+	}
+	return conflictParty{ID: r.ID, Name: name}
+}
+
+// detectConflicts compares incoming rules against stored ones. Same ID wins
+// over equal match when both apply (identity is the more specific fact).
+func detectConflicts(stored, incoming []domain.Rule) []importConflict {
+	byID := make(map[string]domain.Rule, len(stored))
+	for _, r := range stored {
+		byID[r.ID] = r
+	}
+	var out []importConflict
+	for _, in := range incoming {
+		if ex, ok := byID[in.ID]; ok {
+			out = append(out, importConflict{Reason: "id", Incoming: party(in), Existing: party(ex)})
+			continue
+		}
+		if dup := domain.FindDuplicateRule(stored, in); dup != nil {
+			out = append(out, importConflict{Reason: "match", Incoming: party(in), Existing: party(*dup)})
+		}
+	}
+	return out
+}
+
+// validateImportPayload checks every incoming rule and cross-references sim
+// IDs against the payload and the store. Returns a non-empty message on the
+// first class of failure found; "" when the payload is acceptable.
+func (a *adminAPI) validateImportPayload(cfg domain.Config) (string, error) {
+	payloadSims := make(map[string]bool, len(cfg.Simulations))
+	for _, s := range cfg.Simulations {
+		if s.ID == "" {
+			return "simulation with empty id", nil
+		}
+		payloadSims[s.ID] = true
+	}
+	seenIDs := make(map[string]bool, len(cfg.Rules))
+	for i, r := range cfg.Rules {
+		if err := r.Validate(); err != nil {
+			return fmt.Sprintf("rule[%d] (%s): %v", i, r.ID, err), nil
+		}
+		if seenIDs[r.ID] {
+			return fmt.Sprintf("payload contains duplicate rule id %q", r.ID), nil
+		}
+		seenIDs[r.ID] = true
+		if dup := domain.FindDuplicateRule(cfg.Rules[:i], r); dup != nil {
+			return fmt.Sprintf("payload rules %q and %q have identical match criteria", dup.ID, r.ID), nil
+		}
+		for _, simID := range ruleSimIDs(r) {
+			if payloadSims[simID] {
+				continue
+			}
+			sim, err := a.store.GetSimulation(simID)
+			if err != nil {
+				return "", err
+			}
+			if sim == nil {
+				return fmt.Sprintf("rule %q references simulation %q which exists neither in the payload nor in the store", r.ID, simID), nil
+			}
+		}
+	}
+	return "", nil
+}
+
+// decodeImportPayload handles the shared gate + decode + validate prologue of
+// both import phases. Returns ok=false after writing the error response.
+func (a *adminAPI) decodeImportPayload(w http.ResponseWriter, r *http.Request) (domain.Config, []domain.Rule, bool) {
+	var cfg domain.Config
+	if !a.requireImportExport(w) {
+		return cfg, nil, false
+	}
+	if r.Method != http.MethodPost {
+		writeError(w, 405, "method not allowed")
+		return cfg, nil, false
+	}
+	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
+		writeError(w, 400, "invalid JSON: "+err.Error())
+		return cfg, nil, false
+	}
+	if msg, err := a.validateImportPayload(cfg); err != nil {
+		writeError(w, 500, err.Error())
+		return cfg, nil, false
+	} else if msg != "" {
+		writeError(w, 422, msg)
+		return cfg, nil, false
+	}
+	stored, err := a.store.GetRules()
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return cfg, nil, false
+	}
+	return cfg, stored, true
+}
+
+// importPreviewHandler is phase 1: dry-run conflict report, no writes.
+func (a *adminAPI) importPreviewHandler(w http.ResponseWriter, r *http.Request) {
+	cfg, stored, ok := a.decodeImportPayload(w, r)
+	if !ok {
+		return
+	}
+	conflicts := detectConflicts(stored, cfg.Rules)
+	if conflicts == nil {
+		conflicts = []importConflict{}
+	}
+	writeJSON(w, 200, map[string]interface{}{
+		"importable": len(cfg.Rules) - len(conflicts),
+		"conflicts":  conflicts,
+	})
 }
