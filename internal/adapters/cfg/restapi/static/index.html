@@ -250,6 +250,7 @@
 
   /* Import/export feature — hidden until health flag enables them */
   .ie-only { display: none; }
+  .ie-only.ie-visible { display: inline-flex; }
 </style>
 </head>
 <body>
@@ -832,7 +833,7 @@
       importExportEnabled = false;
     }
     document.querySelectorAll('.ie-only').forEach(el => {
-      el.style.display = importExportEnabled ? '' : 'none';
+      el.classList.toggle('ie-visible', importExportEnabled);
     });
   }
 
@@ -844,7 +845,7 @@
   let exportMode = false;
   const exportSelection = new Set();
 
-  function renderRulesTable() {
+  function renderRulesTable({ animate = false } = {}) {
     const rules = _rulesList;
     const tbody = document.getElementById('rules-tbody');
     const colSpan = exportMode ? 9 : 8;
@@ -861,7 +862,7 @@
            </td>`
         : '';
       return `
-        <tr class="rule-row ${_rulesLoaded ? 'row-new' : ''}${r.disabled ? ' rule-disabled' : ''}" onclick="toggleRuleDetail(${i})" title="Click to view buckets">
+        <tr class="rule-row ${animate ? 'row-new' : ''}${r.disabled ? ' rule-disabled' : ''}" onclick="toggleRuleDetail(${i})" title="Click to view buckets">
           ${checkCell}
           <td class="cell-toggle" onclick="event.stopPropagation()">
             <label class="switch" title="${r.disabled ? 'Disabled — click to enable' : 'Enabled — click to disable'}">
@@ -893,7 +894,7 @@
     try {
       const rules = await fetch('/api/rules').then(r => r.json());
       _rulesList = rules || [];
-      renderRulesTable();
+      renderRulesTable({ animate: true });
       _rulesLoaded = true;
     } catch (e) {
       console.error('loadRules:', e);
@@ -926,8 +927,8 @@
       _updateExportSelectedBtn();
     } else {
       thPick.style.display = 'none';
-      btnExp.style.display   = importExportEnabled ? '' : 'none';
-      btnImp.style.display   = importExportEnabled ? '' : 'none';
+      btnExp.classList.toggle('ie-visible', importExportEnabled);
+      btnImp.classList.toggle('ie-visible', importExportEnabled);
       btnSel.style.display   = 'none';
       btnAll.style.display   = 'none';
       btnCan.style.display   = 'none';
