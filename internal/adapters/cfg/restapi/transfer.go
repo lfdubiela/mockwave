@@ -266,7 +266,21 @@ func (a *adminAPI) importHandler(w http.ResponseWriter, r *http.Request) {
 					writeError(w, 500, err.Error())
 					return
 				}
-				a.deleteSimulations(ruleSimIDs(ex)) // cascade: rule owns its sims
+				// Cascade the old rule's sims, except those the incoming rule
+				// still references: the cascade runs before the incoming rule is
+				// saved, so the reference guard in deleteSimulations cannot see
+				// it yet and would delete a store-only sim it reuses.
+				reused := map[string]bool{}
+				for _, id := range ruleSimIDs(in) {
+					reused[id] = true
+				}
+				var cascade []string
+				for _, id := range ruleSimIDs(ex) {
+					if !reused[id] {
+						cascade = append(cascade, id)
+					}
+				}
+				a.deleteSimulations(cascade) // cascade: rule owns its sims
 				wrote = true
 			}
 			if !saveRuleWithSims(in) {

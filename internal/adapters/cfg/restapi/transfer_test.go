@@ -396,3 +396,35 @@ func TestImportCommit_OverridePreservesSharedSim(t *testing.T) {
 	neu, _ := store.GetSimulation("s-new")
 	require.NotNil(t, neu)
 }
+
+func TestImportCommit_OverrideKeepsStoreOnlySimReusedByIncoming(t *testing.T) {
+	// The incoming override of r1 keeps referencing "s-keep", which exists only
+	// in the store (not in the payload). The cascade of old r1 must not delete
+	// it, or the new r1 would dangle.
+	store := &memStore{
+		rules: []domain.Rule{
+			{ID: "r1", Name: "One", Match: domain.MatchCriteria{Path: "/one"},
+				Buckets: []domain.WeightedBucket{
+					{Weight: 50, Action: domain.ActionSimulate, SimulationID: "s-keep"},
+					{Weight: 50, Action: domain.ActionSimulate, SimulationID: "s-drop"},
+				}},
+		},
+		sims: []domain.Simulation{
+			{ID: "s-keep", Protocol: "http"},
+			{ID: "s-drop", Protocol: "http"},
+		},
+	}
+	mux := restapi.NewMux(store, func() {}, nil, nil, nil, nil, restapi.WithImportExport())
+
+	incoming := domain.Rule{
+		ID: "r1", Name: "V2", Match: domain.MatchCriteria{Path: "/v2"},
+		Buckets: []domain.WeightedBucket{{Weight: 100, Action: domain.ActionSimulate, SimulationID: "s-keep"}},
+	}
+	w := commitReq(t, mux, domain.Config{Rules: []domain.Rule{incoming}}, "?override=r1")
+	require.Equal(t, 200, w.Code)
+
+	kept, _ := store.GetSimulation("s-keep")
+	require.NotNil(t, kept, "store-only sim reused by the incoming rule must survive the cascade")
+	dropped, _ := store.GetSimulation("s-drop")
+	assert.Nil(t, dropped, "sim no longer referenced must be cascaded")
+}
