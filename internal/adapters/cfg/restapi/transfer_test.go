@@ -346,3 +346,53 @@ func TestHealth_ImportExportFlag(t *testing.T) {
 		})
 	}
 }
+
+// TestImportCommit_OverridePreservesSharedSim verifies that when the incoming
+// override rule replaces an existing rule, a sim that the existing rule shared
+// with ANOTHER stored rule is NOT cascade-deleted.
+func TestImportCommit_OverridePreservesSharedSim(t *testing.T) {
+	// r1 and r2 both reference "s-shared". Importing override=r1 replaces r1
+	// with a new version; s-shared must survive because r2 still uses it.
+	// s-own is referenced only by r1 → should be cascaded.
+	store := &memStore{
+		rules: []domain.Rule{
+			{ID: "r1", Name: "One", Match: domain.MatchCriteria{Path: "/one"},
+				Buckets: []domain.WeightedBucket{
+					{Weight: 50, Action: domain.ActionSimulate, SimulationID: "s-shared"},
+					{Weight: 50, Action: domain.ActionSimulate, SimulationID: "s-own"},
+				}},
+			{ID: "r2", Name: "Two", Match: domain.MatchCriteria{Path: "/two"},
+				Buckets: []domain.WeightedBucket{
+					{Weight: 100, Action: domain.ActionSimulate, SimulationID: "s-shared"},
+				}},
+		},
+		sims: []domain.Simulation{
+			{ID: "s-shared", Protocol: "http"},
+			{ID: "s-own", Protocol: "http"},
+		},
+	}
+	mux := restapi.NewMux(store, func() {}, nil, nil, nil, nil, restapi.WithImportExport())
+
+	incoming := domain.Rule{
+		ID: "r1", Name: "V2", Match: domain.MatchCriteria{Path: "/v2"},
+		Buckets: []domain.WeightedBucket{{Weight: 100, Action: domain.ActionSimulate, SimulationID: "s-new"}},
+	}
+	cfg := domain.Config{
+		Rules:       []domain.Rule{incoming},
+		Simulations: []domain.Simulation{{ID: "s-new", Protocol: "http"}},
+	}
+	w := commitReq(t, mux, cfg, "?override=r1")
+	require.Equal(t, 200, w.Code)
+
+	// s-shared still referenced by r2 → must survive
+	shared, _ := store.GetSimulation("s-shared")
+	require.NotNil(t, shared, "s-shared should be preserved: still referenced by r2")
+
+	// s-own was only referenced by old r1 → must be cascaded
+	own, _ := store.GetSimulation("s-own")
+	assert.Nil(t, own, "s-own should be cascaded: no longer referenced")
+
+	// new sim present
+	neu, _ := store.GetSimulation("s-new")
+	require.NotNil(t, neu)
+}

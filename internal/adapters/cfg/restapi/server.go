@@ -98,11 +98,27 @@ func ruleSimIDs(r domain.Rule) []string {
 	return ids
 }
 
-// deleteSimulations best-effort deletes the given simulation IDs. Not-found is
-// ignored so cascade cleanup is idempotent across backends.
+// deleteSimulations best-effort deletes the given simulation IDs, skipping any
+// that are still referenced by another rule's simulate buckets. GetRules is
+// called after the owning rule has already been removed from the store, so
+// referenced reflects only surviving rules. Not-found deletes are ignored so
+// cascade cleanup is idempotent across backends. On store error the cascade is
+// skipped entirely rather than risk over-deletion.
 func (a *adminAPI) deleteSimulations(ids []string) {
+	rules, err := a.store.GetRules()
+	if err != nil {
+		return // best-effort: skip cascade rather than risk over-deletion
+	}
+	referenced := map[string]bool{}
+	for _, r := range rules {
+		for _, id := range ruleSimIDs(r) {
+			referenced[id] = true
+		}
+	}
 	for _, id := range ids {
-		_ = a.store.DeleteSimulation(id)
+		if !referenced[id] {
+			_ = a.store.DeleteSimulation(id)
+		}
 	}
 }
 
