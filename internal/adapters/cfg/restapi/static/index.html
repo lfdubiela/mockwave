@@ -439,6 +439,30 @@
   </div>
 </div>
 
+<!-- Import conflict modal -->
+<div class="modal-overlay" id="import-modal">
+  <div class="modal" style="width:38rem">
+    <div class="modal-titlebar">
+      <div class="modal-lights"><span class="l-close"></span><span class="l-min"></span><span class="l-max"></span></div>
+      <h2>Import Conflicts</h2>
+    </div>
+    <div class="modal-body">
+      <p style="color:var(--muted);font-size:0.8rem;margin-bottom:1rem">
+        These incoming rules collide with existing ones. Check the rules you want to
+        <strong>override</strong> (replaces the existing rule and its simulations). Unchecked rules are skipped.
+      </p>
+      <table>
+        <thead><tr><th></th><th>Incoming</th><th>Existing</th><th>Reason</th></tr></thead>
+        <tbody id="import-conflicts-tbody"></tbody>
+      </table>
+      <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:1.25rem">
+        <button class="btn-ghost" type="button" onclick="closeImportModal()">Cancel</button>
+        <button class="btn-primary" type="button" onclick="commitImport()">Import</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
   // ── HTML escaping ──────────────────────────────────────────────────────────
   function escapeHtml(s) {
@@ -960,8 +984,60 @@
     if (exportMode) toggleExportMode();
   }
 
-  // ── Import stub (Task 8) ───────────────────────────────────────────────────
-  function handleImportFile(input) { /* Task 8 */ input.value = ''; }
+  // ── Import flow ────────────────────────────────────────────────────────────
+  let pendingImport = null; // { cfg }
+
+  async function handleImportFile(input) {
+    const file = input.files[0];
+    input.value = '';
+    if (!file) return;
+    let cfg;
+    try { cfg = JSON.parse(await file.text()); }
+    catch { alert('Not a valid JSON file.'); return; }
+    const res = await fetch('/api/import/preview', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cfg),
+    });
+    if (!res.ok) { alert('Import rejected: ' + await res.text()); return; }
+    const preview = await res.json();
+    pendingImport = { cfg };
+    if (preview.conflicts.length === 0) { await commitImport(); return; }
+    renderImportConflicts(preview.conflicts);
+    document.getElementById('import-modal').classList.add('open');
+  }
+
+  function renderImportConflicts(conflicts) {
+    const tbody = document.getElementById('import-conflicts-tbody');
+    tbody.innerHTML = conflicts.map(c => {
+      const reasonLabel = c.reason === 'id' ? 'same ID' : 'same match';
+      return `<tr>
+        <td><input type="checkbox" class="import-override" value="${escapeAttr(c.incoming.id)}"></td>
+        <td>${escapeHtml(c.incoming.name)} <span class="badge-muted">${escapeHtml(c.incoming.id)}</span></td>
+        <td>${escapeHtml(c.existing.name)} <span class="badge-muted">${escapeHtml(c.existing.id)}</span></td>
+        <td><span class="badge-muted">${escapeHtml(reasonLabel)}</span></td>
+      </tr>`;
+    }).join('');
+  }
+
+  function closeImportModal() {
+    document.getElementById('import-modal').classList.remove('open');
+    pendingImport = null;
+  }
+
+  async function commitImport() {
+    if (!pendingImport) return;
+    const override = Array.from(document.querySelectorAll('.import-override:checked')).map(cb => cb.value);
+    const q = override.length ? '?override=' + encodeURIComponent(override.join(',')) : '';
+    const cfg = pendingImport.cfg;
+    closeImportModal();
+    const res = await fetch('/api/import' + q, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cfg),
+    });
+    if (!res.ok) { alert('Import failed: ' + await res.text()); return; }
+    const rep = await res.json();
+    alert(`Import done — imported: ${rep.imported.length}, overridden: ${rep.overridden.length}, skipped: ${rep.skipped.length}`);
+    loadRules();
+  }
 
   // Flip a rule's enabled state via PUT (sends the full cached rule with
   // `disabled` toggled), then refresh the list.
