@@ -62,6 +62,7 @@ func startCmd() *cobra.Command {
 				AdminPort:      adminPort,
 				Store:          s,
 				ReloadInterval: reloadInterval,
+				ImportExport:   storeType != "json",
 			})
 			if err != nil {
 				return err

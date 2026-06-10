@@ -33,7 +33,16 @@ func (m *memStore) GetSimulation(id string) (*domain.Simulation, error) {
 	}
 	return nil, nil
 }
-func (m *memStore) SaveRule(r domain.Rule) error             { m.rules = append(m.rules, r); return nil }
+func (m *memStore) SaveRule(r domain.Rule) error {
+	for i, existing := range m.rules {
+		if existing.ID == r.ID {
+			m.rules[i] = r
+			return nil
+		}
+	}
+	m.rules = append(m.rules, r)
+	return nil
+}
 func (m *memStore) SaveSimulation(s domain.Simulation) error {
 	for i, existing := range m.sims {
 		if existing.ID == s.ID {
@@ -690,4 +699,65 @@ func TestAdminAPI_MetricsHistory_EmptyRules(t *testing.T) {
 	mux.ServeHTTP(w, req)
 	assert.Equal(t, 200, w.Code)
 	assert.JSONEq(t, `{"rules":[]}`, w.Body.String())
+}
+
+// --- cascade-delete reference-guard tests ---
+
+// TestAdminAPI_DeleteRule_SharedSimPreserved verifies that when a sim is
+// referenced by BOTH the deleted rule and a surviving rule, the sim is NOT
+// cascade-deleted.
+func TestAdminAPI_DeleteRule_SharedSimPreserved(t *testing.T) {
+	store := &memStore{
+		rules: []domain.Rule{
+			{ID: "r1", Match: domain.MatchCriteria{Path: "/a"}, Buckets: []domain.WeightedBucket{simBucket("shared")}},
+			{ID: "r2", Match: domain.MatchCriteria{Path: "/b"}, Buckets: []domain.WeightedBucket{simBucket("shared")}},
+		},
+		sims: []domain.Simulation{{ID: "shared"}},
+	}
+	mux := restapi.NewMux(store, nil, nil, nil, nil, nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/rules/r1", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	assert.Equal(t, 204, w.Code)
+	// r1 deleted, r2 still references "shared" → sim must survive
+	require.Len(t, store.sims, 1)
+	assert.Equal(t, "shared", store.sims[0].ID)
+}
+
+// TestAdminAPI_DeleteRule_OwnedSimDeleted verifies that a sim referenced ONLY
+// by the deleted rule is cascaded away (regression guard for basic case).
+func TestAdminAPI_DeleteRule_OwnedSimDeleted(t *testing.T) {
+	store := &memStore{
+		rules: []domain.Rule{
+			{ID: "r1", Match: domain.MatchCriteria{Path: "/a"}, Buckets: []domain.WeightedBucket{simBucket("s1")}},
+		},
+		sims: []domain.Simulation{{ID: "s1"}},
+	}
+	mux := restapi.NewMux(store, nil, nil, nil, nil, nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/rules/r1", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	assert.Equal(t, 204, w.Code)
+	assert.Len(t, store.sims, 0)
+}
+
+// TestAdminAPI_DeleteAllRules_SharedSimEventuallyDeleted verifies that a sim
+// shared across two rules is eventually cascaded when both rules are deleted
+// via bulk DELETE /api/rules — no leak.
+func TestAdminAPI_DeleteAllRules_SharedSimEventuallyDeleted(t *testing.T) {
+	store := &memStore{
+		rules: []domain.Rule{
+			{ID: "r1", Match: domain.MatchCriteria{Path: "/a"}, Buckets: []domain.WeightedBucket{simBucket("shared")}},
+			{ID: "r2", Match: domain.MatchCriteria{Path: "/b"}, Buckets: []domain.WeightedBucket{simBucket("shared")}},
+		},
+		sims: []domain.Simulation{{ID: "shared"}},
+	}
+	mux := restapi.NewMux(store, nil, nil, nil, nil, nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/rules", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	assert.Equal(t, 204, w.Code)
+	assert.Len(t, store.rules, 0)
+	// Both rules gone → shared sim must be deleted (no leak)
+	assert.Len(t, store.sims, 0)
 }

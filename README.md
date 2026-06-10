@@ -15,6 +15,7 @@
 - **Real-time admin UI** — browser dashboard at `localhost:9090` for rule/simulation CRUD, live metrics, and unmatched request capture
 - **Multiple store backends** — JSON file, DynamoDB, MongoDB, Azure Cosmos DB (MongoDB API)
 - **Hot reload** — update rules without restarting via the admin API
+- **Import/Export** — export rules + simulations to a runnable JSON config from the admin UI/API; two-phase import with conflict override (remote stores; with the JSON store the config file already plays this role)
 - **AI integration (MCP)** — `mockwave mcp` exposes a Model Context Protocol server so Claude Code can create rules, manage simulations, and auto-generate mocks from any OpenAPI 2.0/3.0 spec
 - **Embeddable library** — public `store.DataStore`, `observability.Logger/Tracer/MetricsRecorder` interfaces; bring your own backends
 

@@ -14,6 +14,10 @@ import (
 // and serves in a goroutine. Stores the *http.Server in s.adminSrv for Shutdown.
 // Returns an error if the port cannot be bound.
 func (s *Server) startAdmin() error {
+	var opts []restapi.MuxOption
+	if s.cfg.ImportExport {
+		opts = append(opts, restapi.WithImportExport())
+	}
 	mux := restapi.NewMux(
 		s.cfg.Store,
 		func() { _ = s.Rebuild() },
@@ -21,6 +25,7 @@ func (s *Server) startAdmin() error {
 		s.buffer,
 		s.broker,
 		s.engine,
+		opts...,
 	)
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", s.cfg.AdminPort))
 	if err != nil {
