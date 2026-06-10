@@ -58,6 +58,11 @@ type Config struct {
 	// (store.VersionedStore) backends. 0 resolves to 15s. Ignored for stores that
 	// do not implement store.VersionedStore (e.g. the JSON store).
 	ReloadInterval time.Duration
+
+	// ImportExport enables the admin /api/export and /api/import endpoints.
+	// Set true for remote store backends; leave false for the json-file store,
+	// whose config file is already the import/export format.
+	ImportExport bool
 }
 
 func (c Config) reloadInterval() time.Duration {

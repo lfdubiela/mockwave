@@ -228,6 +228,27 @@ func TestServer_ShutdownStopsAdmin(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestAdmin_ImportExportFlagWired(t *testing.T) {
+	port := freePort(t)
+	srv, err := server.New(server.Config{Store: newStubStore(), AdminPort: port, ImportExport: true})
+	require.NoError(t, err)
+	require.NotNil(t, srv)
+	t.Cleanup(func() { _ = srv.Shutdown(context.Background()) })
+
+	resp, err := http.Get(fmt.Sprintf("http://localhost:%d/api/health", port))
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var body map[string]interface{}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+	assert.Equal(t, true, body["import_export"])
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	assert.NoError(t, srv.Shutdown(ctx))
+}
+
 func TestServer_ShutdownNoopWhenAdminPortZero(t *testing.T) {
 	srv, err := server.New(server.Config{Store: newStubStore()})
 	require.NoError(t, err)
