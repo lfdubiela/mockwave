@@ -3,6 +3,7 @@ package restapi_test
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -298,6 +299,31 @@ func TestExportImport_RoundTrip(t *testing.T) {
 	require.Equal(t, 200, w2.Code)
 	assert.Len(t, dst.rules, 2)
 	assert.Len(t, dst.sims, 1) // s1 (s-orphan was never exported)
+}
+
+// failingStore wraps memStore and fails SaveRule after n successful saves.
+type failingStore struct {
+	*memStore
+	failAfter int
+	saves     int
+}
+
+func (f *failingStore) SaveRule(r domain.Rule) error {
+	if f.saves >= f.failAfter {
+		return fmt.Errorf("boom")
+	}
+	f.saves++
+	return f.memStore.SaveRule(r)
+}
+
+func TestImportCommit_PartialWriteStillReloads(t *testing.T) {
+	store := &failingStore{memStore: transferStore(), failAfter: 1}
+	reloads := 0
+	mux := restapi.NewMux(store, func() { reloads++ }, nil, nil, nil, nil, restapi.WithImportExport())
+	cfg := domain.Config{Rules: []domain.Rule{validRule("r-a", "/a"), validRule("r-b", "/b")}}
+	w := commitReq(t, mux, cfg, "")
+	assert.Equal(t, 500, w.Code)
+	assert.Equal(t, 1, reloads) // r-a was written; pipeline must reload despite the 500
 }
 
 func TestHealth_ImportExportFlag(t *testing.T) {

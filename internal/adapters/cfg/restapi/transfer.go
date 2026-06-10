@@ -230,6 +230,13 @@ func (a *adminAPI) importHandler(w http.ResponseWriter, r *http.Request) {
 
 	imported, skipped, overridden := []string{}, []string{}, []string{}
 	wrote := false
+	// Reload on every exit path: a mid-loop store error must not leave
+	// already-written rules invisible to the live pipeline.
+	defer func() {
+		if wrote {
+			a.reload()
+		}
+	}()
 
 	saveRuleWithSims := func(ru domain.Rule) bool {
 		for _, simID := range ruleSimIDs(ru) {
@@ -272,9 +279,6 @@ func (a *adminAPI) importHandler(w http.ResponseWriter, r *http.Request) {
 			}
 			imported = append(imported, in.ID)
 		}
-	}
-	if wrote {
-		a.reload()
 	}
 	writeJSON(w, 200, map[string]interface{}{
 		"imported":   imported,
