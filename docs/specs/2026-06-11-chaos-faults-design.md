@@ -39,13 +39,13 @@ New top-level entity **FaultProfile**, persisted via `store.DataStore` (same lif
   "description": "Simulates a database under pressure",
   "enabled": true,
   "faults": [
-    {"type": "jitter",       "probability": 1.0,  "params": {"baseDelayMs": 200, "jitterMs": 300}},
-    {"type": "error",        "probability": 0.3,  "params": {"statusCode": 503, "body": "{\"error\":\"unavailable\"}", "headers": {"Content-Type": "application/json"}}},
-    {"type": "hang",         "probability": 0.05, "params": {"maxMs": 30000}},
+    {"type": "jitter",       "probability": 1.0,  "params": {"base_delay_ms": 200, "jitter_ms": 300}},
+    {"type": "error",        "probability": 0.3,  "params": {"status_code": 503, "body": "{\"error\":\"unavailable\"}", "headers": {"Content-Type": "application/json"}}},
+    {"type": "hang",         "probability": 0.05, "params": {"max_ms": 30000}},
     {"type": "reset",        "probability": 0.05},
     {"type": "halfResponse", "probability": 0.0,  "params": {"fraction": 0.5}},
-    {"type": "slowBody",     "probability": 0.0,  "params": {"bytesPerSec": 1024}},
-    {"type": "retryStorm",   "probability": 1.0,  "params": {"failFirst": 3, "statusCode": 503, "keyBy": "path", "windowSec": 60}}
+    {"type": "slowBody",     "probability": 0.0,  "params": {"bytes_per_sec": 1024}},
+    {"type": "retryStorm",   "probability": 1.0,  "params": {"fail_first": 3, "status_code": 503, "key_by": "path", "window_sec": 60}}
   ]
 }
 ```

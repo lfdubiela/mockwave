@@ -165,9 +165,9 @@ const (
 // FaultParams holds type-specific fault parameters. One flat struct keeps the
 // JSON shape simple; Validate enforces which fields each type requires.
 type FaultParams struct {
-	BaseDelayMs int               `json:"baseDelayMs,omitempty"` // jitter: fixed delay added to every affected request
-	JitterMs    int               `json:"jitterMs,omitempty"`    // jitter: random extra delay in [0, JitterMs)
-	StatusCode  int               `json:"statusCode,omitempty"`  // error: HTTP status to return
+	BaseDelayMs int               `json:"base_delay_ms,omitempty"` // jitter: fixed delay added to every affected request
+	JitterMs    int               `json:"jitter_ms,omitempty"`    // jitter: random extra delay in [0, JitterMs)
+	StatusCode  int               `json:"status_code,omitempty"`  // error: HTTP status to return
 	Body        string            `json:"body,omitempty"`        // error: response body (raw string)
 	Headers     map[string]string `json:"headers,omitempty"`     // error: response headers
 }
@@ -176,7 +176,7 @@ type FaultParams struct {
 type Fault struct {
 	Type        string      `json:"type"`
 	Probability float64     `json:"probability"` // [0,1], rolled per request
-	Params      FaultParams `json:"params,omitempty"`
+	Params      FaultParams `json:"params"`
 }
 
 func (f Fault) Validate() error {
@@ -185,6 +185,9 @@ func (f Fault) Validate() error {
 	}
 	switch f.Type {
 	case FaultJitter:
+		if f.Params.BaseDelayMs < 0 || f.Params.JitterMs < 0 {
+			return fmt.Errorf("jitter fault delay params must be >= 0")
+		}
 		if f.Params.BaseDelayMs <= 0 && f.Params.JitterMs <= 0 {
 			return fmt.Errorf("jitter fault requires baseDelayMs or jitterMs > 0")
 		}

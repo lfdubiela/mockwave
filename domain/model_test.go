@@ -84,6 +84,8 @@ func TestFaultProfileValidate(t *testing.T) {
 		{"probability below 0", func(p *FaultProfile) { p.Faults[0].Probability = -0.1 }},
 		{"probability above 1", func(p *FaultProfile) { p.Faults[0].Probability = 1.1 }},
 		{"jitter without delay params", func(p *FaultProfile) { p.Faults[0].Params.JitterMs = 0; p.Faults[0].Params.BaseDelayMs = 0 }},
+		{"negative base delay", func(p *FaultProfile) { p.Faults[0].Params.BaseDelayMs = -100 }},
+		{"negative jitter", func(p *FaultProfile) { p.Faults[0].Params.BaseDelayMs = 200; p.Faults[0].Params.JitterMs = -50 }},
 		{"error without status", func(p *FaultProfile) { p.Faults[1].Params.StatusCode = 0 }},
 	}
 	for _, tc := range cases {
