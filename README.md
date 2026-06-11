@@ -723,11 +723,22 @@ Example — 20% of `/payments/**` traffic gets a 503, the rest reaches the real 
 ### Fault profiles
 
 A fault profile is a named, reusable set of failure modes you attach to rule
-buckets. Two fault types are supported, each rolled independently per request
-against its `probability`:
+buckets. Each fault is rolled independently per request against its
+`probability`. Two response-level fault types affect the HTTP response:
 
 - `jitter` — adds `base_delay_ms` plus a random extra delay in `[0, jitter_ms)`
 - `error` — short-circuits the request with the configured status/body/headers
+
+Four connection-level fault types manipulate the raw socket instead of
+returning a normal response:
+
+- `hang` — blackhole: blocks up to `max_ms` then closes without any response
+- `reset` — TCP RST, simulating a dead upstream that abruptly drops the connection
+- `halfResponse` — writes only `fraction` (0–1) of the body then closes, producing a truncated response
+- `slowBody` — bandwidth throttle: streams the body at `bytes_per_sec` (a modifier; combines with a non-terminal outcome)
+
+Connection-level faults are supported on the HTTP-based protocols only
+(REST/GraphQL/SOAP); gRPC connection-fault semantics are on the roadmap.
 
 ```json
 {
@@ -738,6 +749,23 @@ against its `probability`:
     "faults": [
       {"type": "jitter", "probability": 0.5, "params": {"base_delay_ms": 200, "jitter_ms": 300}},
       {"type": "error", "probability": 0.1, "params": {"status_code": 503, "body": "{\"error\":\"injected\"}"}}
+    ]
+  }]
+}
+```
+
+A connection-level example combining a bandwidth throttle with intermittent
+resets — list `slowBody` first so it applies alongside the terminal `reset`:
+
+```json
+{
+  "fault_profiles": [{
+    "id": "flaky-network",
+    "name": "Flaky network",
+    "enabled": true,
+    "faults": [
+      {"type": "slowBody", "probability": 1, "params": {"bytes_per_sec": 2048}},
+      {"type": "reset", "probability": 0.2}
     ]
   }]
 }
