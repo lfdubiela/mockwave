@@ -19,6 +19,7 @@ var (
 	_ store.DataStore      = (*Store)(nil)
 	_ store.VersionedStore = (*Store)(nil)
 	_ store.FaultStore     = (*Store)(nil)
+	_ store.ScenarioStore  = (*Store)(nil)
 )
 
 // versionItemID is the reserved rules-table key holding the config-version
@@ -277,6 +278,79 @@ func (s *Store) DeleteFaultProfile(id string) error {
 		Key:       map[string]types.AttributeValue{"id": &types.AttributeValueMemberS{Value: id}},
 	})
 	if err := wrapErr(err, "delete fault profile %q", id); err != nil {
+		return err
+	}
+	return s.bumpVersion()
+}
+
+func (s *Store) ListScenarios() ([]domain.Scenario, error) {
+	out, err := s.client.Scan(context.Background(), &dynamodb.ScanInput{
+		TableName: aws.String(s.scenariosTable),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("dynamodb: scan scenarios: %w", err)
+	}
+	scenarios := make([]domain.Scenario, 0, len(out.Items))
+	for _, item := range out.Items {
+		dataAttr, ok := item["data"].(*types.AttributeValueMemberS)
+		if !ok {
+			continue
+		}
+		var sc domain.Scenario
+		if err := json.Unmarshal([]byte(dataAttr.Value), &sc); err != nil {
+			return nil, fmt.Errorf("dynamodb: unmarshal scenario: %w", err)
+		}
+		scenarios = append(scenarios, sc)
+	}
+	return scenarios, nil
+}
+
+func (s *Store) GetScenario(id string) (*domain.Scenario, error) {
+	out, err := s.client.GetItem(context.Background(), &dynamodb.GetItemInput{
+		TableName: aws.String(s.scenariosTable),
+		Key:       map[string]types.AttributeValue{"id": &types.AttributeValueMemberS{Value: id}},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("dynamodb: get scenario %q: %w", id, err)
+	}
+	if out.Item == nil {
+		return nil, nil
+	}
+	dataAttr, ok := out.Item["data"].(*types.AttributeValueMemberS)
+	if !ok {
+		return nil, nil
+	}
+	var sc domain.Scenario
+	if err := json.Unmarshal([]byte(dataAttr.Value), &sc); err != nil {
+		return nil, fmt.Errorf("dynamodb: unmarshal scenario: %w", err)
+	}
+	return &sc, nil
+}
+
+func (s *Store) SaveScenario(sc domain.Scenario) error {
+	data, err := json.Marshal(sc)
+	if err != nil {
+		return fmt.Errorf("dynamodb: marshal scenario: %w", err)
+	}
+	_, err = s.client.PutItem(context.Background(), &dynamodb.PutItemInput{
+		TableName: aws.String(s.scenariosTable),
+		Item: map[string]types.AttributeValue{
+			"id":   &types.AttributeValueMemberS{Value: sc.ID},
+			"data": &types.AttributeValueMemberS{Value: string(data)},
+		},
+	})
+	if err := wrapErr(err, "put scenario %q", sc.ID); err != nil {
+		return err
+	}
+	return s.bumpVersion()
+}
+
+func (s *Store) DeleteScenario(id string) error {
+	_, err := s.client.DeleteItem(context.Background(), &dynamodb.DeleteItemInput{
+		TableName: aws.String(s.scenariosTable),
+		Key:       map[string]types.AttributeValue{"id": &types.AttributeValueMemberS{Value: id}},
+	})
+	if err := wrapErr(err, "delete scenario %q", id); err != nil {
 		return err
 	}
 	return s.bumpVersion()

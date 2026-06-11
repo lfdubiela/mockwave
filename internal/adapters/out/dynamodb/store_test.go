@@ -247,3 +247,45 @@ func TestStore_FaultProfileCRUD(t *testing.T) {
 	require.NoError(t, s.DeleteFaultProfile("fp1"))
 	assert.Equal(t, "faults", aws.ToString(client.delItems[len(client.delItems)-1].TableName))
 }
+
+func TestStore_ScenarioCRUD(t *testing.T) {
+	client := &mockDynamo{
+		getOut:  map[string]*dynamodb.GetItemOutput{},
+		scanOut: map[string]*dynamodb.ScanOutput{},
+	}
+	s := dynamostore.NewStoreFromClient(client, dynamostore.Config{
+		RulesTable: "rules", SimsTable: "sims",
+		FaultsTable: "faults", ScenariosTable: "scenarios",
+	})
+	sc := domain.Scenario{ID: "sc1", Name: "n", RuleIDs: []string{"r1"},
+		Phases: []domain.ScenarioPhase{{DurationSec: 10, FaultProfileID: "p"}}}
+
+	require.NoError(t, s.SaveScenario(sc))
+	require.Len(t, client.putItems, 1)
+	assert.Equal(t, "scenarios", aws.ToString(client.putItems[0].TableName))
+
+	data, _ := json.Marshal(sc)
+	client.getOut["scenarios"] = &dynamodb.GetItemOutput{Item: map[string]types.AttributeValue{
+		"id":   &types.AttributeValueMemberS{Value: "sc1"},
+		"data": &types.AttributeValueMemberS{Value: string(data)},
+	}}
+	got, err := s.GetScenario("sc1")
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Equal(t, "n", got.Name)
+
+	client.getOut["scenarios"] = &dynamodb.GetItemOutput{Item: nil}
+	got, err = s.GetScenario("missing")
+	require.NoError(t, err)
+	assert.Nil(t, got)
+
+	client.scanOut["scenarios"] = &dynamodb.ScanOutput{Items: []map[string]types.AttributeValue{
+		{"id": &types.AttributeValueMemberS{Value: "sc1"}, "data": &types.AttributeValueMemberS{Value: string(data)}},
+	}}
+	list, err := s.ListScenarios()
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+
+	require.NoError(t, s.DeleteScenario("sc1"))
+	assert.Equal(t, "scenarios", aws.ToString(client.delItems[len(client.delItems)-1].TableName))
+}
