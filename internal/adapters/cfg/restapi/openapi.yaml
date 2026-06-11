@@ -477,6 +477,134 @@ paths:
         "501":
           $ref: "#/components/responses/NotImplemented"
 
+  /api/scenarios:
+    get:
+      summary: List chaos scenarios
+      operationId: listScenarios
+      responses:
+        "200":
+          description: Scenarios
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Scenario"
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+    post:
+      summary: Create a scenario
+      operationId: createScenario
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Scenario"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Scenario"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+
+  /api/scenarios/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: Get a scenario
+      operationId: getScenario
+      responses:
+        "200":
+          description: Scenario
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Scenario"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+    put:
+      summary: Update a scenario
+      operationId: updateScenario
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Scenario"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Scenario"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+    delete:
+      summary: Delete a scenario
+      operationId: deleteScenario
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+
+  /api/scenarios/{id}/start:
+    post:
+      summary: Start a scenario
+      operationId: startScenario
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "202":
+          description: Scenario started
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+
+  /api/scenarios/{id}/stop:
+    post:
+      summary: Stop the active scenario
+      operationId: stopScenario
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Scenario stopped
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+
   /api/reload:
     post:
       summary: Trigger hot-reload from store
@@ -766,6 +894,55 @@ components:
         halted:
           type: boolean
           description: Whether the global fault-injection kill switch is engaged.
+        active_scenario:
+          nullable: true
+          description: Summary of the running scenario, or null if none is active.
+          allOf:
+            - $ref: "#/components/schemas/ActiveScenario"
+
+    ScenarioPhase:
+      type: object
+      required: [duration_sec]
+      properties:
+        duration_sec:
+          type: integer
+          description: Phase duration in seconds (must be > 0).
+        fault_profile_id:
+          type: string
+          description: Fault profile applied during the phase; empty means a recovery phase (no faults).
+
+    Scenario:
+      type: object
+      description: A timed sequence of fault profiles applied to a set of rules.
+      required: [id, rule_ids, phases]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        rule_ids:
+          type: array
+          items:
+            type: string
+        phases:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/ScenarioPhase"
+
+    ActiveScenario:
+      type: object
+      properties:
+        scenario_id:
+          type: string
+        scenario_name:
+          type: string
+        phase_index:
+          type: integer
+        phase_count:
+          type: integer
+        phase_profile_id:
+          type: string
 
     RuleMetric:
       type: object

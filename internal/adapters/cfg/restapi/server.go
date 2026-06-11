@@ -32,6 +32,12 @@ func WithKillSwitch(ks *chaos.KillSwitch) MuxOption {
 	return func(a *adminAPI) { a.killSwitch = ks }
 }
 
+// WithScenarioControl enables the scenario start/stop endpoints and the
+// active-scenario field in chaos status. Without it those return 501 / null.
+func WithScenarioControl(sc ScenarioControl) MuxOption {
+	return func(a *adminAPI) { a.scenarioControl = sc }
+}
+
 // NewMux builds the admin HTTP mux.
 // collector, buffer, broker, and engine may be nil — those endpoints return empty responses.
 func NewMux(store store.DataStore, onReload OnReload, collector *metrics.Collector, buffer *unmatched.Buffer, broker *metrics.Broker, engine *scripting.Engine, opts ...MuxOption) *http.ServeMux {
@@ -67,19 +73,22 @@ func NewMux(store store.DataStore, onReload OnReload, collector *metrics.Collect
 	mux.HandleFunc("/api/chaos/halt", api.chaosHalt)
 	mux.HandleFunc("/api/chaos/resume", api.chaosResume)
 	mux.HandleFunc("/api/chaos/status", api.chaosStatus)
+	mux.HandleFunc("/api/scenarios", api.scenarios)
+	mux.HandleFunc("/api/scenarios/", api.scenarioByID)
 	serveUI(mux)
 	return mux
 }
 
 type adminAPI struct {
-	store        store.DataStore
-	onReload     OnReload
-	collector    *metrics.Collector // may be nil
-	buffer       *unmatched.Buffer  // may be nil
-	broker       *metrics.Broker    // may be nil
-	engine       *scripting.Engine  // may be nil — eval endpoint returns 503
-	importExport bool               // /api/export + /api/import enabled (remote stores only)
-	killSwitch   *chaos.KillSwitch  // may be nil — chaos endpoints return 501
+	store           store.DataStore
+	onReload        OnReload
+	collector       *metrics.Collector // may be nil
+	buffer          *unmatched.Buffer  // may be nil
+	broker          *metrics.Broker    // may be nil
+	engine          *scripting.Engine  // may be nil — eval endpoint returns 503
+	importExport    bool               // /api/export + /api/import enabled (remote stores only)
+	killSwitch      *chaos.KillSwitch  // may be nil — chaos endpoints return 501
+	scenarioControl ScenarioControl    // may be nil — scenario start/stop return 501
 }
 
 // duplicateMatchError returns a 409-ready, human-readable message if rule's
@@ -653,6 +662,10 @@ func (a *adminAPI) chaosHalt(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.killSwitch.Halt()
+	// Halt also aborts any running scenario so it does not silently resume.
+	if a.scenarioControl != nil {
+		a.scenarioControl.Stop()
+	}
 	w.WriteHeader(204)
 }
 
@@ -668,7 +681,14 @@ func (a *adminAPI) chaosStatus(w http.ResponseWriter, r *http.Request) {
 	if !a.chaosControl(w, r, http.MethodGet) {
 		return
 	}
-	writeJSON(w, 200, map[string]bool{"halted": a.killSwitch.Halted()})
+	var active any
+	if a.scenarioControl != nil {
+		active = a.scenarioControl.ActiveStatus()
+	}
+	writeJSON(w, 200, map[string]any{
+		"halted":          a.killSwitch.Halted(),
+		"active_scenario": active,
+	})
 }
 
 func idFromPath(path, prefix string) string {
