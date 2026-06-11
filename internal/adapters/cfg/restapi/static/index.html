@@ -1900,9 +1900,15 @@
       } else if (res.ok) {
         faultsSupported = true;
         _faultProfiles = (await res.json()) || [];
+      } else {
+        // Other HTTP errors (4xx, 5xx, etc.): show error row, keep faultsSupported as-is
+        _faultProfiles = []; // clear any stale data
+        _faultProfiles._loadError = `Failed to load fault profiles: ${res.status} ${res.statusText}`;
       }
     } catch (e) {
-      console.error('loadFaultProfiles:', e);
+      // Network error
+      _faultProfiles = [];
+      _faultProfiles._loadError = `Failed to load fault profiles: ${e.message}`;
     }
     renderFaultsTable();
   }
@@ -1919,6 +1925,13 @@
     section.style.display = '';
     notice.style.display = 'none';
     const tbody = document.getElementById('faults-tbody');
+
+    // Check for load error
+    if (_faultProfiles._loadError) {
+      tbody.innerHTML = `<tr><td colspan="5" style="color:var(--error);padding:0.8rem">${escapeHtml(_faultProfiles._loadError)}</td></tr>`;
+      return;
+    }
+
     if (_faultProfiles.length === 0) {
       tbody.innerHTML = '<tr><td colspan="5" class="empty">No fault profiles. Click "+ Add Profile" to create one.</td></tr>';
       return;
@@ -1985,7 +1998,18 @@
       renderChaosStatus(true);
     } catch (e) {
       console.error('loadChaosStatus:', e);
+      renderChaosStatusUnavailable();
     }
+  }
+
+  function renderChaosStatusUnavailable() {
+    const text = document.getElementById('chaos-status-text');
+    const btn = document.getElementById('btn-chaos-toggle');
+    const badge = document.getElementById('chaos-halted-badge');
+    if (badge) badge.classList.remove('on');
+    if (!text || !btn) return;
+    text.textContent = 'Chaos status unavailable';
+    btn.style.display = 'none';
   }
 
   async function toggleChaosHalt(btnEl) {
@@ -2003,7 +2027,12 @@
     } finally {
       btnEl.disabled = false;
     }
-    await loadChaosStatus();
+    try {
+      await loadChaosStatus();
+    } catch (e) {
+      console.error('loadChaosStatus failed after toggle:', e);
+      btnEl.textContent = orig;
+    }
   }
 
   // ── Fault profile editor ────────────────────────────────────────────────────
