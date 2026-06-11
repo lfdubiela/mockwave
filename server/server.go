@@ -188,6 +188,9 @@ func (s *Server) MetricsRecorder() observability.MetricsRecorder { return s.cfg.
 // KillSwitch returns the global chaos kill switch for this server.
 func (s *Server) KillSwitch() *chaos.KillSwitch { return s.killSwitch }
 
+// Store returns the data store backing this server.
+func (s *Server) Store() store.DataStore { return s.cfg.Store }
+
 // Scenario returns the server's scenario controller.
 func (s *Server) Scenario() *chaos.ScenarioController { return s.scenario }
 

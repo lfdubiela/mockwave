@@ -90,25 +90,64 @@ func (a *adminAPI) exportHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	// Auto-collect the fault profiles the exported rules' buckets reference
-	// (same policy as simulations). Stores without the FaultStore capability
-	// cannot hold profiles, so there is nothing to collect there.
-	if fs, ok := a.store.(store.FaultStore); ok {
-		seenProfiles := map[string]bool{}
+	// Auto-collect scenarios that fully belong to the exported rule set: a
+	// scenario is included only when EVERY one of its rule_ids is among the
+	// exported rules. A scenario spanning a rule left behind would dangle on
+	// import, so it is omitted rather than exported partially. Only stores with
+	// the ScenarioStore capability can hold scenarios. Done before fault-profile
+	// collection so the profiles a scenario phase references are picked up too.
+	if ss, ok := a.store.(store.ScenarioStore); ok {
+		exportedRuleIDs := make(map[string]bool, len(rules))
 		for _, ru := range rules {
-			for _, id := range ruleFaultIDs(ru) {
-				if seenProfiles[id] {
-					continue
+			exportedRuleIDs[ru.ID] = true
+		}
+		scenarios, err := ss.ListScenarios()
+		if err != nil {
+			writeError(w, 500, err.Error())
+			return
+		}
+		for _, sc := range scenarios {
+			allIn := true
+			for _, rid := range sc.RuleIDs {
+				if !exportedRuleIDs[rid] {
+					allIn = false
+					break
 				}
-				seenProfiles[id] = true
-				p, err := fs.GetFaultProfile(id)
-				if err != nil {
-					writeError(w, 500, err.Error())
-					return
+			}
+			if allIn {
+				cfg.Scenarios = append(cfg.Scenarios, sc)
+			}
+		}
+	}
+	// Auto-collect the fault profiles referenced by exported rules' buckets AND
+	// by exported scenarios' phases (same policy as simulations). Stores without
+	// the FaultStore capability cannot hold profiles, so there is nothing to
+	// collect there.
+	if fs, ok := a.store.(store.FaultStore); ok {
+		var profileIDs []string
+		for _, ru := range rules {
+			profileIDs = append(profileIDs, ruleFaultIDs(ru)...)
+		}
+		for _, sc := range cfg.Scenarios {
+			for _, ph := range sc.Phases {
+				if ph.FaultProfileID != "" {
+					profileIDs = append(profileIDs, ph.FaultProfileID)
 				}
-				if p != nil {
-					cfg.FaultProfiles = append(cfg.FaultProfiles, *p)
-				}
+			}
+		}
+		seenProfiles := map[string]bool{}
+		for _, id := range profileIDs {
+			if seenProfiles[id] {
+				continue
+			}
+			seenProfiles[id] = true
+			p, err := fs.GetFaultProfile(id)
+			if err != nil {
+				writeError(w, 500, err.Error())
+				return
+			}
+			if p != nil {
+				cfg.FaultProfiles = append(cfg.FaultProfiles, *p)
 			}
 		}
 	}
@@ -158,6 +197,35 @@ func (a *adminAPI) detectProfileConflicts(cfg domain.Config) ([]importConflict, 
 		}
 		if ex != nil {
 			out = append(out, importConflict{Reason: "id", Incoming: profileParty(p), Existing: profileParty(*ex)})
+		}
+	}
+	return out, nil
+}
+
+func scenarioParty(s domain.Scenario) conflictParty {
+	name := s.Name
+	if name == "" {
+		name = s.ID
+	}
+	return conflictParty{ID: s.ID, Name: name}
+}
+
+// detectScenarioConflicts lists incoming scenarios whose ID already exists in
+// the store. Scenarios conflict by ID only; on commit they are upserted, so
+// these conflicts are informational (mirrors detectProfileConflicts).
+func (a *adminAPI) detectScenarioConflicts(cfg domain.Config) ([]importConflict, error) {
+	ss, ok := a.store.(store.ScenarioStore)
+	if !ok {
+		return nil, nil
+	}
+	var out []importConflict
+	for _, s := range cfg.Scenarios {
+		ex, err := ss.GetScenario(s.ID)
+		if err != nil {
+			return nil, err
+		}
+		if ex != nil {
+			out = append(out, importConflict{Reason: "id", Incoming: scenarioParty(s), Existing: scenarioParty(*ex)})
 		}
 	}
 	return out, nil
@@ -259,7 +327,86 @@ func (a *adminAPI) validateImportPayload(cfg domain.Config) (string, error) {
 			}
 		}
 	}
+	if msg, err := a.validateScenarioImport(cfg, payloadProfiles); err != nil {
+		return "", err
+	} else if msg != "" {
+		return msg, nil
+	}
 	return "", nil
+}
+
+// validateScenarioImport checks incoming scenarios: the store must support
+// scenarios, each scenario must be valid, IDs unique within the payload, and
+// every rule_id / non-empty phase fault_profile_id must resolve in the payload
+// or the store. Returns a non-empty message on the first failure.
+func (a *adminAPI) validateScenarioImport(cfg domain.Config, payloadProfiles map[string]bool) (string, error) {
+	if len(cfg.Scenarios) == 0 {
+		return "", nil
+	}
+	if _, ok := a.store.(store.ScenarioStore); !ok {
+		return "payload contains scenarios but the store does not support them", nil
+	}
+	fs, hasFaultStore := a.store.(store.FaultStore)
+	// payload rule IDs resolve scenario rule_ids without a store round-trip.
+	payloadRules := make(map[string]bool, len(cfg.Rules))
+	for _, r := range cfg.Rules {
+		payloadRules[r.ID] = true
+	}
+	seen := make(map[string]bool, len(cfg.Scenarios))
+	for _, s := range cfg.Scenarios {
+		if err := s.Validate(); err != nil {
+			return fmt.Sprintf("scenario %q: %v", s.ID, err), nil
+		}
+		if seen[s.ID] {
+			return fmt.Sprintf("payload contains duplicate scenario id %q", s.ID), nil
+		}
+		seen[s.ID] = true
+		for _, rid := range s.RuleIDs {
+			if payloadRules[rid] {
+				continue
+			}
+			ru, err := a.findStoredRule(rid)
+			if err != nil {
+				return "", err
+			}
+			if ru == nil {
+				return fmt.Sprintf("scenario %q references rule %q which exists neither in the payload nor in the store", s.ID, rid), nil
+			}
+		}
+		for _, p := range s.Phases {
+			if p.FaultProfileID == "" {
+				continue
+			}
+			if payloadProfiles[p.FaultProfileID] {
+				continue
+			}
+			if !hasFaultStore {
+				return fmt.Sprintf("scenario %q references fault profile %q but the store does not support fault profiles", s.ID, p.FaultProfileID), nil
+			}
+			prof, err := fs.GetFaultProfile(p.FaultProfileID)
+			if err != nil {
+				return "", err
+			}
+			if prof == nil {
+				return fmt.Sprintf("scenario %q references fault profile %q which exists neither in the payload nor in the store", s.ID, p.FaultProfileID), nil
+			}
+		}
+	}
+	return "", nil
+}
+
+// findStoredRule returns the stored rule with the given ID, or nil when absent.
+func (a *adminAPI) findStoredRule(id string) (*domain.Rule, error) {
+	rules, err := a.store.GetRules()
+	if err != nil {
+		return nil, err
+	}
+	for i := range rules {
+		if rules[i].ID == id {
+			return &rules[i], nil
+		}
+	}
+	return nil, nil
 }
 
 // decodeImportPayload handles the shared gate + decode + validate prologue of
@@ -404,10 +551,29 @@ func (a *adminAPI) importHandler(w http.ResponseWriter, r *http.Request) {
 			imported = append(imported, in.ID)
 		}
 	}
+	// Upsert ALL payload scenarios. Unlike fault profiles (which attach to a
+	// rule's bucket and are written only when that rule is saved), scenarios are
+	// independent top-level entities; their rule_ids were already validated to
+	// resolve in the payload-or-store, so they are not gated by per-rule
+	// import decisions. validateScenarioImport guaranteed the ScenarioStore
+	// capability whenever the payload carries scenarios.
+	var scenariosImported []string
+	if len(cfg.Scenarios) > 0 {
+		ss, _ := a.store.(store.ScenarioStore)
+		for _, sc := range cfg.Scenarios {
+			if err := ss.SaveScenario(sc); err != nil {
+				writeError(w, 500, err.Error())
+				return
+			}
+			wrote = true
+			scenariosImported = append(scenariosImported, sc.ID)
+		}
+	}
 	writeJSON(w, 200, map[string]interface{}{
-		"imported":   imported,
-		"skipped":    skipped,
-		"overridden": overridden,
+		"imported":           imported,
+		"skipped":            skipped,
+		"overridden":         overridden,
+		"scenarios_imported": scenariosImported,
 	})
 }
 
@@ -429,9 +595,18 @@ func (a *adminAPI) importPreviewHandler(w http.ResponseWriter, r *http.Request) 
 	if profileConflicts == nil {
 		profileConflicts = []importConflict{}
 	}
+	scenarioConflicts, err := a.detectScenarioConflicts(cfg)
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	if scenarioConflicts == nil {
+		scenarioConflicts = []importConflict{}
+	}
 	writeJSON(w, 200, map[string]interface{}{
 		"importable":              len(cfg.Rules) - len(conflicts),
 		"conflicts":               conflicts,
 		"fault_profile_conflicts": profileConflicts,
+		"scenario_conflicts":      scenarioConflicts,
 	})
 }

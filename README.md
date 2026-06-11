@@ -836,6 +836,57 @@ mockwave chaos resume   # POST /api/chaos/resume — resume injection
 mockwave chaos status   # GET  /api/chaos/status — current state
 ```
 
+### Scenarios
+
+A **scenario** runs a timed sequence of fault phases against a set of target
+rules — useful for drills like "degrade the payments API for 5 minutes, then
+recover". Each phase applies one fault profile to every targeted rule for a
+fixed duration, then the runner advances to the next phase. A phase with an
+empty `fault_profile_id` is a **recovery phase**: the targeted rules run with no
+injected faults.
+
+While a scenario is active, its current phase profile *overrides* the bucket's
+own `fault_profile_id` for any targeted rule (an in-memory overlay — stored
+rules are never mutated). Key properties:
+
+- **At most one scenario runs at a time.** Starting a second returns `409`.
+- **The kill switch aborts the active scenario** (halting also stops the run so
+  it does not silently resume on `resume`).
+- **Run state is per-process and in-memory.** Restarting mockwave clears any
+  active run; scenarios themselves are persisted, their live execution is not.
+
+A scenario is a persisted entity, available when the store supports the optional
+`ScenarioStore` capability (the json-file store does; endpoints return `501`
+otherwise).
+
+```json
+{
+  "id": "payments-drill",
+  "name": "Payments degradation drill",
+  "rule_ids": ["pay-charge", "pay-refund"],
+  "phases": [
+    { "duration_sec": 300, "fault_profile_id": "mild-latency" },
+    { "duration_sec": 120, "fault_profile_id": "errors-503" },
+    { "duration_sec": 60,  "fault_profile_id": "" }
+  ]
+}
+```
+
+CRUD lives at `/api/scenarios`; start/stop and live phase are exposed via:
+
+```bash
+mockwave scenario list           # GET  /api/scenarios
+mockwave scenario start <id>     # POST /api/scenarios/<id>/start  → 202
+mockwave scenario stop  <id>     # POST /api/scenarios/<id>/stop   → 204
+```
+
+`GET /api/chaos/status` reports the active scenario (or `null`) alongside the
+kill-switch state:
+
+```json
+{ "halted": false, "active_scenario": { "scenario_id": "payments-drill", "phase_index": 1, "phase_count": 3, "phase_profile_id": "errors-503" } }
+```
+
 ### Import/export
 
 `/api/export` includes the fault profiles referenced by the exported rules'
@@ -843,6 +894,17 @@ buckets, and `/api/import` upserts incoming profiles alongside the rules that
 reference them. Rules referencing a profile that exists neither in the payload
 nor in the store are rejected with `422`. Fault profiles in an import payload
 are only saved when referenced by an imported rule (same policy as simulations).
+
+Scenarios participate too: `/api/export` includes a scenario only when **every**
+one of its `rule_ids` is in the exported rule set (a scenario spanning a rule
+left behind would dangle, so it is omitted), and any fault profile its phases
+reference is auto-collected. `/api/import` upserts **all** payload scenarios
+(they are independent top-level entities, not gated by per-rule import
+decisions, unlike fault profiles), after validating that every `rule_id` and
+non-empty phase `fault_profile_id` resolves in the payload or the store (`422`
+otherwise; also `422` if the payload carries scenarios but the store lacks the
+`ScenarioStore` capability). Import preview reports scenario ID conflicts in a
+`scenario_conflicts` array.
 
 ---
 

@@ -77,10 +77,24 @@ type FaultStore interface {
     SaveFaultProfile(p domain.FaultProfile) error
     DeleteFaultProfile(id string) error
 }
+
+// ScenarioStore persists chaos scenarios (see "Scenarios" under "Chaos Testing"
+// in the README). Same contract style as FaultStore: GetScenario returns
+// (nil, nil) when the scenario does not exist. Stores without this capability
+// make the /api/scenarios endpoints (and start/stop) return 501, and import
+// payloads carrying scenarios are rejected with 422. Note that live scenario
+// run state is held in-process, not in the store — only the scenario
+// definitions are persisted here.
+type ScenarioStore interface {
+    ListScenarios() ([]domain.Scenario, error)
+    GetScenario(id string) (*domain.Scenario, error)
+    SaveScenario(s domain.Scenario) error
+    DeleteScenario(id string) error
+}
 ```
 
 Of the built-in backends, only the `json` file store implements `FaultStore`
-today; `dynamodb` and `mongo` implement `VersionedStore`.
+and `ScenarioStore` today; `dynamodb` and `mongo` implement `VersionedStore`.
 
 ### Example — Redis store
 

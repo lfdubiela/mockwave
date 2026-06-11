@@ -583,6 +583,157 @@ func TestImportCommit_SkippedRuleProfileNotWritten(t *testing.T) {
 	assert.NotEqual(t, "should-not-land", p1.Name)
 }
 
+// --- scenario import/export (Task 10) ---
+
+func transferScenarioStore() *scenarioMemStore {
+	s := &scenarioMemStore{}
+	s.memStore = memStore{
+		rules: []domain.Rule{
+			{ID: "r1", Name: "One", Match: domain.MatchCriteria{Path: "/one"},
+				Buckets: []domain.WeightedBucket{{Weight: 100, Action: domain.ActionSimulate, SimulationID: "s1"}}},
+			{ID: "r2", Name: "Two", Match: domain.MatchCriteria{Path: "/two"},
+				Buckets: []domain.WeightedBucket{{Weight: 100, Action: domain.ActionForward, ForwardURL: "http://up"}}},
+		},
+		sims: []domain.Simulation{{ID: "s1", Protocol: "http"}},
+	}
+	s.profiles = []domain.FaultProfile{validProfile("p1")}
+	s.scenarios = []domain.Scenario{
+		// sc-r1 targets only r1 → exported with subset r1.
+		{ID: "sc-r1", Name: "drill r1", RuleIDs: []string{"r1"},
+			Phases: []domain.ScenarioPhase{{DurationSec: 5, FaultProfileID: "p1"}}},
+		// sc-both targets r1+r2 → only exported when both rules are.
+		{ID: "sc-both", Name: "drill both", RuleIDs: []string{"r1", "r2"},
+			Phases: []domain.ScenarioPhase{{DurationSec: 5}}},
+	}
+	return s
+}
+
+func TestExport_IncludesFullyContainedScenarios(t *testing.T) {
+	mux := restapi.NewMux(transferScenarioStore(), nil, nil, nil, nil, nil, restapi.WithImportExport())
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/export", nil))
+	require.Equal(t, 200, w.Code)
+	var cfg domain.Config
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&cfg))
+	// all rules exported → both scenarios fully contained
+	require.Len(t, cfg.Scenarios, 2)
+}
+
+func TestExport_SubsetExcludesPartiallyContainedScenarios(t *testing.T) {
+	mux := restapi.NewMux(transferScenarioStore(), nil, nil, nil, nil, nil, restapi.WithImportExport())
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/export?rules=r1", nil))
+	require.Equal(t, 200, w.Code)
+	var cfg domain.Config
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&cfg))
+	// only r1 exported → sc-r1 included, sc-both (spans r2) excluded
+	require.Len(t, cfg.Scenarios, 1)
+	assert.Equal(t, "sc-r1", cfg.Scenarios[0].ID)
+}
+
+func validImportScenario(id string, ruleIDs []string, profileID string) domain.Scenario {
+	return domain.Scenario{ID: id, Name: id, RuleIDs: ruleIDs,
+		Phases: []domain.ScenarioPhase{{DurationSec: 5, FaultProfileID: profileID}}}
+}
+
+func TestImportPreview_ScenarioIDConflict(t *testing.T) {
+	mux := restapi.NewMux(transferScenarioStore(), nil, nil, nil, nil, nil, restapi.WithImportExport())
+	cfg := domain.Config{Scenarios: []domain.Scenario{validImportScenario("sc-r1", []string{"r1"}, "p1")}}
+	w := previewReq(t, mux, cfg)
+	require.Equal(t, 200, w.Code)
+	var resp struct {
+		ScenarioConflicts []struct {
+			Reason   string `json:"reason"`
+			Incoming struct{ ID, Name string }
+			Existing struct{ ID, Name string }
+		} `json:"scenario_conflicts"`
+	}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	require.Len(t, resp.ScenarioConflicts, 1)
+	assert.Equal(t, "id", resp.ScenarioConflicts[0].Reason)
+	assert.Equal(t, "sc-r1", resp.ScenarioConflicts[0].Incoming.ID)
+	assert.Equal(t, "sc-r1", resp.ScenarioConflicts[0].Existing.ID)
+}
+
+func TestImportPreview_ScenarioValidation422(t *testing.T) {
+	store := transferScenarioStore()
+	mux := restapi.NewMux(store, nil, nil, nil, nil, nil, restapi.WithImportExport())
+	bad := validImportScenario("sc-bad", []string{"r1"}, "p1")
+	bad.Phases = nil // invalid: scenario needs at least one phase
+	for name, cfg := range map[string]domain.Config{
+		"invalid scenario":      {Scenarios: []domain.Scenario{bad}},
+		"duplicate scenario id": {Scenarios: []domain.Scenario{validImportScenario("dup", []string{"r1"}, "p1"), validImportScenario("dup", []string{"r1"}, "p1")}},
+		"dangling rule ref":     {Scenarios: []domain.Scenario{validImportScenario("sc-x", []string{"nowhere"}, "p1")}},
+		"dangling profile ref":  {Scenarios: []domain.Scenario{validImportScenario("sc-y", []string{"r1"}, "nowhere")}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			w := previewReq(t, mux, cfg)
+			assert.Equal(t, 422, w.Code)
+		})
+	}
+}
+
+func TestImportPreview_ScenarioRefsResolveInPayload(t *testing.T) {
+	// scenario references a rule and profile defined in the same payload — valid
+	store := transferScenarioStore()
+	mux := restapi.NewMux(store, nil, nil, nil, nil, nil, restapi.WithImportExport())
+	cfg := domain.Config{
+		Rules:         []domain.Rule{faultyRule("r-new", "/new", "p-new")},
+		FaultProfiles: []domain.FaultProfile{validProfile("p-new")},
+		Scenarios:     []domain.Scenario{validImportScenario("sc-new", []string{"r-new"}, "p-new")},
+	}
+	w := previewReq(t, mux, cfg)
+	assert.Equal(t, 200, w.Code, w.Body.String())
+}
+
+func TestImport_ScenariosUnsupportedStore422(t *testing.T) {
+	// plain memStore has no ScenarioStore capability
+	mux := restapi.NewMux(transferStore(), nil, nil, nil, nil, nil, restapi.WithImportExport())
+	cfg := domain.Config{Scenarios: []domain.Scenario{validImportScenario("sc", []string{"r1"}, "")}}
+	w := commitReq(t, mux, cfg, "")
+	assert.Equal(t, 422, w.Code)
+	assert.Contains(t, w.Body.String(), "does not support")
+}
+
+func TestImportCommit_UpsertsScenarios(t *testing.T) {
+	store := transferScenarioStore()
+	mux := restapi.NewMux(store, func() {}, nil, nil, nil, nil, restapi.WithImportExport())
+	updated := validImportScenario("sc-r1", []string{"r1"}, "p1")
+	updated.Name = "updated"
+	cfg := domain.Config{Scenarios: []domain.Scenario{
+		updated,                                          // upserts existing sc-r1
+		validImportScenario("sc-fresh", []string{"r1"}, "p1"), // inserts new
+	}}
+	w := commitReq(t, mux, cfg, "")
+	require.Equal(t, 200, w.Code, w.Body.String())
+	var rep struct {
+		ScenariosImported []string `json:"scenarios_imported"`
+	}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&rep))
+	assert.ElementsMatch(t, []string{"sc-r1", "sc-fresh"}, rep.ScenariosImported)
+
+	got, _ := store.GetScenario("sc-r1")
+	require.NotNil(t, got)
+	assert.Equal(t, "updated", got.Name)
+	fresh, _ := store.GetScenario("sc-fresh")
+	require.NotNil(t, fresh)
+}
+
+func TestExportImport_RoundTripWithScenarios(t *testing.T) {
+	src := transferScenarioStore()
+	srcMux := restapi.NewMux(src, nil, nil, nil, nil, nil, restapi.WithImportExport())
+	w := httptest.NewRecorder()
+	srcMux.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/export", nil))
+	require.Equal(t, 200, w.Code)
+
+	dst := &scenarioMemStore{}
+	dstMux := restapi.NewMux(dst, func() {}, nil, nil, nil, nil, restapi.WithImportExport())
+	w2 := httptest.NewRecorder()
+	dstMux.ServeHTTP(w2, httptest.NewRequest(http.MethodPost, "/api/import", bytes.NewReader(w.Body.Bytes())))
+	require.Equal(t, 200, w2.Code, w2.Body.String())
+	assert.Len(t, dst.scenarios, 2)
+}
+
 func TestExportImport_RoundTripWithProfiles(t *testing.T) {
 	src := transferFaultStore()
 	srcMux := restapi.NewMux(src, nil, nil, nil, nil, nil, restapi.WithImportExport())
