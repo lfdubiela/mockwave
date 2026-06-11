@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mockwave/mockwave/internal/adapters/in/connfault"
 	"github.com/mockwave/mockwave/internal/domain/pipeline"
 )
 
@@ -64,6 +65,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(time.Duration(d) * time.Millisecond)
 	}
 
+	// Connection-level terminal faults bypass the normal response path.
+	if pctx.ConnFault != "" {
+		connfault.Handle(w, pctx)
+		return
+	}
 	if pctx.FaultShortCircuit {
 		writeFaultResponse(w, resp)
 		return
@@ -81,6 +87,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/xml; charset=utf-8")
 	w.WriteHeader(status)
+	if pctx.SlowBodyBytesPerSec > 0 {
+		connfault.ThrottledWrite(w, []byte(envelope), pctx.SlowBodyBytesPerSec)
+		return
+	}
 	_, _ = w.Write([]byte(envelope))
 }
 

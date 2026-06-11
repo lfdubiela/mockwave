@@ -3,6 +3,7 @@ package soap_test
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -157,4 +158,42 @@ func TestSOAPHandler_FaultDelayApplied(t *testing.T) {
 	h.ServeHTTP(w, req)
 	assert.GreaterOrEqual(t, time.Since(start), 50*time.Millisecond)
 	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestSOAP_ResetFault(t *testing.T) {
+	exec := &mockExec{
+		fn: func(_ context.Context, pctx *pipeline.PipelineContext) error {
+			pctx.FaultShortCircuit = true
+			pctx.ConnFault = "reset"
+			pctx.Response = &pipeline.MockResponse{Status: 200, Body: sampleEnvelope}
+			return nil
+		},
+	}
+	h := soapadapter.NewHandler(exec)
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+	resp, err := http.Post(srv.URL+"/service", "text/xml", strings.NewReader(`<soap:Envelope/>`))
+	if err == nil {
+		defer resp.Body.Close()
+		if _, rerr := io.ReadAll(resp.Body); rerr == nil && resp.StatusCode == http.StatusOK {
+			t.Fatal("expected connection error from reset, got full 200 response")
+		}
+	}
+}
+
+func TestSOAP_SlowBodyThrottled(t *testing.T) {
+	exec := &mockExec{
+		fn: func(_ context.Context, pctx *pipeline.PipelineContext) error {
+			pctx.SlowBodyBytesPerSec = 256
+			pctx.Response = &pipeline.MockResponse{Status: 200, Body: sampleEnvelope}
+			return nil
+		},
+	}
+	h := soapadapter.NewHandler(exec)
+	req := httptest.NewRequest(http.MethodPost, "/service", strings.NewReader(`<soap:Envelope/>`))
+	req.Header.Set("Content-Type", "text/xml")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, sampleEnvelope, w.Body.String())
 }

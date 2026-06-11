@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -212,4 +213,44 @@ func TestGraphQLHandler_FaultShortCircuitStringBody(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 	assert.Contains(t, w.Header().Get("Content-Type"), "text/plain")
 	assert.Equal(t, "boom", w.Body.String())
+}
+
+func TestGraphQL_ResetFault(t *testing.T) {
+	exec := &mockExec{
+		fn: func(_ context.Context, pctx *pipeline.PipelineContext) error {
+			pctx.FaultShortCircuit = true
+			pctx.ConnFault = "reset"
+			pctx.Response = &pipeline.MockResponse{Status: 200, Body: map[string]interface{}{"ok": true}}
+			return nil
+		},
+	}
+	h := graphqladapter.NewHandler(exec)
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+	resp, err := http.Post(srv.URL+"/graphql", "application/json", strings.NewReader(`{"query":"{x}"}`))
+	if err == nil {
+		// Relaxed assertion: a reset must not yield a normal full 200 JSON response.
+		defer resp.Body.Close()
+		if _, rerr := io.ReadAll(resp.Body); rerr == nil && resp.StatusCode == http.StatusOK {
+			t.Fatal("expected connection error from reset, got full 200 response")
+		}
+	}
+}
+
+func TestGraphQL_SlowBodyThrottled(t *testing.T) {
+	exec := &mockExec{
+		fn: func(_ context.Context, pctx *pipeline.PipelineContext) error {
+			pctx.SlowBodyBytesPerSec = 256
+			pctx.Response = &pipeline.MockResponse{Status: 200, Body: map[string]interface{}{"users": []int{1, 2, 3}}}
+			return nil
+		},
+	}
+	h := graphqladapter.NewHandler(exec)
+	req := httptest.NewRequest(http.MethodPost, "/graphql", strings.NewReader(`{"query":"{ users { id } }"}`))
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+	var resp map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Contains(t, resp, "data")
 }
