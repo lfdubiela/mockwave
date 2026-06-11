@@ -61,6 +61,32 @@ func (s *FaultStage) Execute(_ context.Context, pctx *pipeline.PipelineContext) 
 			pctx.ShouldForward = false
 			pctx.SimulationID = ""
 			return nil // first terminal fault wins
+		case domain.FaultSlowBody:
+			pctx.SlowBodyBytesPerSec = f.Params.BytesPerSec
+			pctx.FaultType = "slowBody"
+		case domain.FaultHang:
+			pctx.ConnFault = "hang"
+			pctx.ConnFaultMaxMs = f.Params.MaxMs
+			pctx.FaultShortCircuit = true
+			pctx.FaultType = "hang"
+			pctx.ShouldForward = false
+			pctx.SimulationID = ""
+			return nil
+		case domain.FaultReset:
+			pctx.ConnFault = "reset"
+			pctx.FaultShortCircuit = true
+			pctx.FaultType = "reset"
+			pctx.ShouldForward = false
+			pctx.SimulationID = ""
+			return nil
+		case domain.FaultHalfResponse:
+			pctx.ConnFault = "halfResponse"
+			pctx.ConnFaultFraction = f.Params.Fraction
+			pctx.FaultShortCircuit = true
+			pctx.FaultType = "halfResponse"
+			pctx.ShouldForward = false
+			pctx.SimulationID = ""
+			return nil
 		}
 	}
 	return nil

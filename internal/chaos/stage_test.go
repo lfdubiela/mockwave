@@ -110,6 +110,63 @@ func TestNoProfileIsNoop(t *testing.T) {
 	}
 }
 
+func TestHangFaultShortCircuits(t *testing.T) {
+	stage := chaos.NewFaultStage(profile(domain.Fault{
+		Type: domain.FaultHang, Probability: 1, Params: domain.FaultParams{MaxMs: 5000},
+	}), chaos.NewKillSwitch())
+	pctx := pctxWithProfile()
+	_ = stage.Execute(context.Background(), pctx)
+	if !pctx.FaultShortCircuit || pctx.ConnFault != "hang" || pctx.ConnFaultMaxMs != 5000 {
+		t.Fatalf("expected hang directive, got %+v", pctx)
+	}
+}
+
+func TestResetFaultShortCircuits(t *testing.T) {
+	stage := chaos.NewFaultStage(profile(domain.Fault{Type: domain.FaultReset, Probability: 1}), chaos.NewKillSwitch())
+	pctx := pctxWithProfile()
+	_ = stage.Execute(context.Background(), pctx)
+	if !pctx.FaultShortCircuit || pctx.ConnFault != "reset" {
+		t.Fatalf("expected reset directive, got %+v", pctx)
+	}
+}
+
+func TestHalfResponseFaultShortCircuits(t *testing.T) {
+	stage := chaos.NewFaultStage(profile(domain.Fault{
+		Type: domain.FaultHalfResponse, Probability: 1, Params: domain.FaultParams{Fraction: 0.5},
+	}), chaos.NewKillSwitch())
+	pctx := pctxWithProfile()
+	_ = stage.Execute(context.Background(), pctx)
+	if !pctx.FaultShortCircuit || pctx.ConnFault != "halfResponse" || pctx.ConnFaultFraction != 0.5 {
+		t.Fatalf("expected halfResponse directive, got %+v", pctx)
+	}
+}
+
+func TestSlowBodyFaultIsModifier(t *testing.T) {
+	stage := chaos.NewFaultStage(profile(domain.Fault{
+		Type: domain.FaultSlowBody, Probability: 1, Params: domain.FaultParams{BytesPerSec: 2048},
+	}), chaos.NewKillSwitch())
+	pctx := pctxWithProfile()
+	_ = stage.Execute(context.Background(), pctx)
+	if pctx.FaultShortCircuit {
+		t.Fatal("slowBody must not short-circuit")
+	}
+	if pctx.SlowBodyBytesPerSec != 2048 {
+		t.Fatalf("expected throttle 2048, got %d", pctx.SlowBodyBytesPerSec)
+	}
+}
+
+func TestSlowBodyCombinesWithError(t *testing.T) {
+	stage := chaos.NewFaultStage(profile(
+		domain.Fault{Type: domain.FaultSlowBody, Probability: 1, Params: domain.FaultParams{BytesPerSec: 512}},
+		domain.Fault{Type: domain.FaultError, Probability: 1, Params: domain.FaultParams{StatusCode: 503}},
+	), chaos.NewKillSwitch())
+	pctx := pctxWithProfile()
+	_ = stage.Execute(context.Background(), pctx)
+	if pctx.SlowBodyBytesPerSec != 512 || !pctx.FaultShortCircuit || pctx.Response.Status != 503 {
+		t.Fatalf("expected slowBody + error, got throttle=%d sc=%v", pctx.SlowBodyBytesPerSec, pctx.FaultShortCircuit)
+	}
+}
+
 func TestErrorBodyParsedAsJSON(t *testing.T) {
 	stage := chaos.NewFaultStage(profile(domain.Fault{
 		Type: domain.FaultError, Probability: 1,
