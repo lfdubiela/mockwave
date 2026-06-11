@@ -218,9 +218,8 @@ func TestGraphQLHandler_FaultShortCircuitStringBody(t *testing.T) {
 func TestGraphQL_ResetFault(t *testing.T) {
 	exec := &mockExec{
 		fn: func(_ context.Context, pctx *pipeline.PipelineContext) error {
-			pctx.FaultShortCircuit = true
+			// Mirror the real FaultStage: a reset conn fault leaves Response nil.
 			pctx.ConnFault = "reset"
-			pctx.Response = &pipeline.MockResponse{Status: 200, Body: map[string]interface{}{"ok": true}}
 			return nil
 		},
 	}
@@ -229,12 +228,42 @@ func TestGraphQL_ResetFault(t *testing.T) {
 	defer srv.Close()
 	resp, err := http.Post(srv.URL+"/graphql", "application/json", strings.NewReader(`{"query":"{x}"}`))
 	if err == nil {
-		// Relaxed assertion: a reset must not yield a normal full 200 JSON response.
+		// Relaxed assertion: a reset must not yield a normal full 200 JSON response,
+		// and must not produce the 500 "no response" error from the nil-Response guard.
 		defer resp.Body.Close()
+		if resp.StatusCode == http.StatusInternalServerError {
+			t.Fatal("reset must not hit the nil-Response guard (500)")
+		}
 		if _, rerr := io.ReadAll(resp.Body); rerr == nil && resp.StatusCode == http.StatusOK {
 			t.Fatal("expected connection error from reset, got full 200 response")
 		}
 	}
+}
+
+func TestGraphQL_HangFault(t *testing.T) {
+	exec := &mockExec{
+		fn: func(_ context.Context, pctx *pipeline.PipelineContext) error {
+			// Real FaultStage leaves Response nil for a hang conn fault.
+			pctx.ConnFault = "hang"
+			pctx.ConnFaultMaxMs = 200
+			return nil
+		},
+	}
+	h := graphqladapter.NewHandler(exec)
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+	client := &http.Client{Timeout: 5 * time.Second}
+	start := time.Now()
+	resp, err := client.Post(srv.URL+"/graphql", "application/json", strings.NewReader(`{"query":"{x}"}`))
+	elapsed := time.Since(start)
+	if err == nil {
+		defer resp.Body.Close()
+		_, _ = io.ReadAll(resp.Body)
+		if resp.StatusCode == http.StatusInternalServerError {
+			t.Fatal("hang must not hit the nil-Response guard (500)")
+		}
+	}
+	assert.GreaterOrEqual(t, elapsed, 180*time.Millisecond, "hang must block ~max_ms before closing")
 }
 
 func TestGraphQL_SlowBodyThrottled(t *testing.T) {

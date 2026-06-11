@@ -70,6 +70,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
+	// Connection-level terminal faults bypass the normal response path. The
+	// FaultStage leaves Response nil for hang/reset faults, so this must run
+	// before the nil-Response guard below.
+	if pctx.ConnFault != "" {
+		connfault.Handle(w, pctx)
+		return
+	}
 	if pctx.Response == nil {
 		writeError(w, http.StatusInternalServerError, "pipeline produced no response")
 		return
@@ -78,11 +85,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	resp := pctx.Response
 	if d := resp.DelayMs + pctx.FaultDelayMs; d > 0 {
 		time.Sleep(time.Duration(d) * time.Millisecond)
-	}
-	// Connection-level terminal faults bypass the normal response path.
-	if pctx.ConnFault != "" {
-		connfault.Handle(w, pctx)
-		return
 	}
 	if pctx.FaultShortCircuit {
 		writeFaultResponse(w, resp)

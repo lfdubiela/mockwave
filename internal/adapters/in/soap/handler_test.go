@@ -163,9 +163,8 @@ func TestSOAPHandler_FaultDelayApplied(t *testing.T) {
 func TestSOAP_ResetFault(t *testing.T) {
 	exec := &mockExec{
 		fn: func(_ context.Context, pctx *pipeline.PipelineContext) error {
-			pctx.FaultShortCircuit = true
+			// Mirror the real FaultStage: a reset conn fault leaves Response nil.
 			pctx.ConnFault = "reset"
-			pctx.Response = &pipeline.MockResponse{Status: 200, Body: sampleEnvelope}
 			return nil
 		},
 	}
@@ -175,10 +174,39 @@ func TestSOAP_ResetFault(t *testing.T) {
 	resp, err := http.Post(srv.URL+"/service", "text/xml", strings.NewReader(`<soap:Envelope/>`))
 	if err == nil {
 		defer resp.Body.Close()
+		if resp.StatusCode == http.StatusInternalServerError {
+			t.Fatal("reset must not hit the nil-Response guard (500)")
+		}
 		if _, rerr := io.ReadAll(resp.Body); rerr == nil && resp.StatusCode == http.StatusOK {
 			t.Fatal("expected connection error from reset, got full 200 response")
 		}
 	}
+}
+
+func TestSOAP_HangFault(t *testing.T) {
+	exec := &mockExec{
+		fn: func(_ context.Context, pctx *pipeline.PipelineContext) error {
+			// Real FaultStage leaves Response nil for a hang conn fault.
+			pctx.ConnFault = "hang"
+			pctx.ConnFaultMaxMs = 200
+			return nil
+		},
+	}
+	h := soapadapter.NewHandler(exec)
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+	client := &http.Client{Timeout: 5 * time.Second}
+	start := time.Now()
+	resp, err := client.Post(srv.URL+"/service", "text/xml", strings.NewReader(`<soap:Envelope/>`))
+	elapsed := time.Since(start)
+	if err == nil {
+		defer resp.Body.Close()
+		_, _ = io.ReadAll(resp.Body)
+		if resp.StatusCode == http.StatusInternalServerError {
+			t.Fatal("hang must not hit the nil-Response guard (500)")
+		}
+	}
+	assert.GreaterOrEqual(t, elapsed, 180*time.Millisecond, "hang must block ~max_ms before closing")
 }
 
 func TestSOAP_SlowBodyThrottled(t *testing.T) {
