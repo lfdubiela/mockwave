@@ -16,11 +16,15 @@ import (
 var (
 	_ store.DataStore      = (*Store)(nil)
 	_ store.VersionedStore = (*Store)(nil)
+	_ store.FaultStore     = (*Store)(nil)
+	_ store.ScenarioStore  = (*Store)(nil)
 )
 
 const (
 	colRules       = "rules"
 	colSims        = "simulations"
+	colFaults      = "fault_profiles"
+	colScenarios   = "scenarios"
 	connectTimeout = 10 * time.Second
 	// versionDocID is the reserved rules-collection _id holding the config-version
 	// marker; excluded from GetRules.
@@ -39,10 +43,24 @@ type simDoc struct {
 	Data domain.Simulation `bson:"data"`
 }
 
+// faultDoc is the MongoDB document shape for a FaultProfile.
+type faultDoc struct {
+	ID   string              `bson:"_id"`
+	Data domain.FaultProfile `bson:"data"`
+}
+
+// scenarioDoc is the MongoDB document shape for a Scenario.
+type scenarioDoc struct {
+	ID   string          `bson:"_id"`
+	Data domain.Scenario `bson:"data"`
+}
+
 // Store is a DataStore backed by MongoDB.
 type Store struct {
-	rules *mongo.Collection
-	sims  *mongo.Collection
+	rules     *mongo.Collection
+	sims      *mongo.Collection
+	faults    *mongo.Collection
+	scenarios *mongo.Collection
 }
 
 // NewStore creates a Store connected to the given MongoDB URI and database.
@@ -65,8 +83,10 @@ func NewStore(uri, dbName string) (*Store, error) {
 func NewStoreFromClient(client *mongo.Client, dbName string) *Store {
 	db := client.Database(dbName)
 	return &Store{
-		rules: db.Collection(colRules),
-		sims:  db.Collection(colSims),
+		rules:     db.Collection(colRules),
+		sims:      db.Collection(colSims),
+		faults:    db.Collection(colFaults),
+		scenarios: db.Collection(colScenarios),
 	}
 }
 
@@ -158,6 +178,114 @@ func (s *Store) DeleteSimulation(id string) error {
 	ctx := context.Background()
 	if _, err := s.sims.DeleteOne(ctx, bson.D{{Key: "_id", Value: id}}); err != nil {
 		return fmt.Errorf("mongodb: delete simulation %q: %w", id, err)
+	}
+	return s.bumpVersion()
+}
+
+func (s *Store) ListFaultProfiles() ([]domain.FaultProfile, error) {
+	ctx := context.Background()
+	cur, err := s.faults.Find(ctx, bson.D{})
+	if err != nil {
+		return nil, fmt.Errorf("mongodb: find fault profiles: %w", err)
+	}
+	defer cur.Close(ctx)
+	var docs []faultDoc
+	if err := cur.All(ctx, &docs); err != nil {
+		return nil, fmt.Errorf("mongodb: decode fault profiles: %w", err)
+	}
+	out := make([]domain.FaultProfile, len(docs))
+	for i, d := range docs {
+		out[i] = d.Data
+	}
+	return out, nil
+}
+
+func (s *Store) GetFaultProfile(id string) (*domain.FaultProfile, error) {
+	ctx := context.Background()
+	cur, err := s.faults.Find(ctx, bson.D{{Key: "_id", Value: id}})
+	if err != nil {
+		return nil, fmt.Errorf("mongodb: find fault profile %q: %w", id, err)
+	}
+	defer cur.Close(ctx)
+	var docs []faultDoc
+	if err := cur.All(ctx, &docs); err != nil {
+		return nil, fmt.Errorf("mongodb: decode fault profile: %w", err)
+	}
+	if len(docs) == 0 {
+		return nil, nil // not found
+	}
+	p := docs[0].Data
+	return &p, nil
+}
+
+func (s *Store) SaveFaultProfile(p domain.FaultProfile) error {
+	ctx := context.Background()
+	filter := bson.D{{Key: "_id", Value: p.ID}}
+	update := bson.D{{Key: "$set", Value: bson.D{{Key: "data", Value: p}}}}
+	if _, err := s.faults.UpdateOne(ctx, filter, update, options.Update().SetUpsert(true)); err != nil {
+		return fmt.Errorf("mongodb: upsert fault profile %q: %w", p.ID, err)
+	}
+	return s.bumpVersion()
+}
+
+func (s *Store) DeleteFaultProfile(id string) error {
+	ctx := context.Background()
+	if _, err := s.faults.DeleteOne(ctx, bson.D{{Key: "_id", Value: id}}); err != nil {
+		return fmt.Errorf("mongodb: delete fault profile %q: %w", id, err)
+	}
+	return s.bumpVersion()
+}
+
+func (s *Store) ListScenarios() ([]domain.Scenario, error) {
+	ctx := context.Background()
+	cur, err := s.scenarios.Find(ctx, bson.D{})
+	if err != nil {
+		return nil, fmt.Errorf("mongodb: find scenarios: %w", err)
+	}
+	defer cur.Close(ctx)
+	var docs []scenarioDoc
+	if err := cur.All(ctx, &docs); err != nil {
+		return nil, fmt.Errorf("mongodb: decode scenarios: %w", err)
+	}
+	out := make([]domain.Scenario, len(docs))
+	for i, d := range docs {
+		out[i] = d.Data
+	}
+	return out, nil
+}
+
+func (s *Store) GetScenario(id string) (*domain.Scenario, error) {
+	ctx := context.Background()
+	cur, err := s.scenarios.Find(ctx, bson.D{{Key: "_id", Value: id}})
+	if err != nil {
+		return nil, fmt.Errorf("mongodb: find scenario %q: %w", id, err)
+	}
+	defer cur.Close(ctx)
+	var docs []scenarioDoc
+	if err := cur.All(ctx, &docs); err != nil {
+		return nil, fmt.Errorf("mongodb: decode scenario: %w", err)
+	}
+	if len(docs) == 0 {
+		return nil, nil // not found
+	}
+	sc := docs[0].Data
+	return &sc, nil
+}
+
+func (s *Store) SaveScenario(sc domain.Scenario) error {
+	ctx := context.Background()
+	filter := bson.D{{Key: "_id", Value: sc.ID}}
+	update := bson.D{{Key: "$set", Value: bson.D{{Key: "data", Value: sc}}}}
+	if _, err := s.scenarios.UpdateOne(ctx, filter, update, options.Update().SetUpsert(true)); err != nil {
+		return fmt.Errorf("mongodb: upsert scenario %q: %w", sc.ID, err)
+	}
+	return s.bumpVersion()
+}
+
+func (s *Store) DeleteScenario(id string) error {
+	ctx := context.Background()
+	if _, err := s.scenarios.DeleteOne(ctx, bson.D{{Key: "_id", Value: id}}); err != nil {
+		return fmt.Errorf("mongodb: delete scenario %q: %w", id, err)
 	}
 	return s.bumpVersion()
 }
