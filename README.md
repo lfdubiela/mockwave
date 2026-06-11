@@ -720,6 +720,74 @@ Example — 20% of `/payments/**` traffic gets a 503, the rest reaches the real 
 }
 ```
 
+### Fault profiles
+
+A fault profile is a named, reusable set of failure modes you attach to rule
+buckets. Two fault types are supported, each rolled independently per request
+against its `probability`:
+
+- `jitter` — adds `base_delay_ms` plus a random extra delay in `[0, jitter_ms)`
+- `error` — short-circuits the request with the configured status/body/headers
+
+```json
+{
+  "fault_profiles": [{
+    "id": "flaky-payments",
+    "name": "Flaky payments",
+    "enabled": true,
+    "faults": [
+      {"type": "jitter", "probability": 0.5, "params": {"base_delay_ms": 200, "jitter_ms": 300}},
+      {"type": "error", "probability": 0.1, "params": {"status_code": 503, "body": "{\"error\":\"injected\"}"}}
+    ]
+  }]
+}
+```
+
+Attach a profile to any bucket via `fault_profile_id`:
+
+```json
+{"weight": 100, "action": "simulate", "simulation_id": "payments-ok", "fault_profile_id": "flaky-payments"}
+```
+
+Profiles are persisted by the store. Today only the `json` file store supports
+them (`fault_profiles` in the config file); the fault profile endpoints return
+`501` for stores without support.
+
+### Managing profiles (API + CLI)
+
+CRUD lives at `/api/faults` on the admin port:
+
+```bash
+# CLI (uses --admin-url, default http://localhost:9090)
+mockwave fault list
+mockwave fault get flaky-payments
+mockwave fault create -f profile.json
+mockwave fault delete flaky-payments
+
+# Raw API
+curl -X POST localhost:9090/api/faults -d @profile.json
+```
+
+Deleting a profile still referenced by a rule bucket returns `409`.
+
+### Kill switch
+
+A global kill switch instantly suppresses all fault injection without touching
+any rule or profile — handy when an experiment goes sideways:
+
+```bash
+mockwave chaos halt     # POST /api/chaos/halt   — stop injecting faults
+mockwave chaos resume   # POST /api/chaos/resume — resume injection
+mockwave chaos status   # GET  /api/chaos/status — current state
+```
+
+### Import/export
+
+`/api/export` includes the fault profiles referenced by the exported rules'
+buckets, and `/api/import` upserts incoming profiles alongside the rules that
+reference them. Rules referencing a profile that exists neither in the payload
+nor in the store are rejected with `422`.
+
 ---
 
 ## Extending Mockwave

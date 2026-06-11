@@ -49,6 +49,39 @@ type DataStore interface {
 
 `GetSimulation` must return `(nil, nil)` — not an error — when the simulation does not exist. Returning an error for a missing ID is a contract violation.
 
+### Optional capabilities
+
+Beyond `DataStore`, a store can opt into extra behavior by implementing
+additional interfaces. Mockwave type-asserts for them at runtime; stores that
+don't implement them simply don't get the feature.
+
+```go
+// store/store.go
+
+// VersionedStore enables the periodic version-poll reloader. Mockwave reads
+// ConfigVersion cheaply each tick and reloads the pipeline only when the
+// value changed. Return a marker that increases on every rule/simulation
+// write; 0 when no marker exists yet.
+type VersionedStore interface {
+    ConfigVersion() (int64, error)
+}
+
+// FaultStore persists chaos fault profiles (see "Chaos Testing" in the
+// README). Same contract style as DataStore: GetFaultProfile returns
+// (nil, nil) when the profile does not exist. Stores without this capability
+// make the /api/faults endpoints return 501, and rules referencing
+// fault_profile_id are rejected by the admin API.
+type FaultStore interface {
+    ListFaultProfiles() ([]domain.FaultProfile, error)
+    GetFaultProfile(id string) (*domain.FaultProfile, error)
+    SaveFaultProfile(p domain.FaultProfile) error
+    DeleteFaultProfile(id string) error
+}
+```
+
+Of the built-in backends, only the `json` file store implements `FaultStore`
+today; `dynamodb` and `mongo` implement `VersionedStore`.
+
 ### Example — Redis store
 
 ```go
