@@ -167,6 +167,55 @@ func TestSlowBodyCombinesWithError(t *testing.T) {
 	}
 }
 
+func TestRetryStormFailsFirstThenPasses(t *testing.T) {
+	stage := chaos.NewFaultStage(profile(domain.Fault{
+		Type: domain.FaultRetryStorm, Probability: 1,
+		Params: domain.FaultParams{FailFirst: 2, StatusCode: 503, KeyBy: "path", WindowSec: 60},
+	}), chaos.NewKillSwitch())
+	mk := func() *pipeline.PipelineContext {
+		return &pipeline.PipelineContext{Matched: &domain.Rule{ID: "r"}, FaultProfileID: "p",
+			Request: pipeline.NormalizedRequest{Path: "/orders"}}
+	}
+	for i := 0; i < 2; i++ {
+		pctx := mk()
+		_ = stage.Execute(context.Background(), pctx)
+		if !pctx.FaultShortCircuit || pctx.Response.Status != 503 {
+			t.Fatalf("request %d should fail with 503", i)
+		}
+	}
+	pctx := mk()
+	_ = stage.Execute(context.Background(), pctx)
+	if pctx.FaultShortCircuit {
+		t.Fatal("third request should pass through")
+	}
+}
+
+func TestRetryStormKeyByHeader(t *testing.T) {
+	stage := chaos.NewFaultStage(profile(domain.Fault{
+		Type: domain.FaultRetryStorm, Probability: 1,
+		Params: domain.FaultParams{FailFirst: 1, StatusCode: 500, KeyBy: "header:x-request-id", WindowSec: 60},
+	}), chaos.NewKillSwitch())
+	mk := func(id string) *pipeline.PipelineContext {
+		return &pipeline.PipelineContext{Matched: &domain.Rule{ID: "r"}, FaultProfileID: "p",
+			Request: pipeline.NormalizedRequest{Path: "/x", Headers: map[string]string{"x-request-id": id}}}
+	}
+	p1 := mk("req-1")
+	_ = stage.Execute(context.Background(), p1)
+	if !p1.FaultShortCircuit {
+		t.Fatal("first req-1 should fail")
+	}
+	p2 := mk("req-2")
+	_ = stage.Execute(context.Background(), p2)
+	if !p2.FaultShortCircuit {
+		t.Fatal("first req-2 should fail (independent key)")
+	}
+	p1b := mk("req-1")
+	_ = stage.Execute(context.Background(), p1b)
+	if p1b.FaultShortCircuit {
+		t.Fatal("second req-1 should pass")
+	}
+}
+
 func TestErrorBodyParsedAsJSON(t *testing.T) {
 	stage := chaos.NewFaultStage(profile(domain.Fault{
 		Type: domain.FaultError, Probability: 1,

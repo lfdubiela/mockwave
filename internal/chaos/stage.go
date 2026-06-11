@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"math/rand"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/mockwave/mockwave/domain"
 	"github.com/mockwave/mockwave/internal/domain/pipeline"
@@ -18,6 +20,7 @@ type FaultStage struct {
 	ks       *KillSwitch
 	mu       sync.Mutex
 	rng      *rand.Rand
+	retry    *retryCounter
 }
 
 func NewFaultStage(profiles map[string]domain.FaultProfile, ks *KillSwitch) *FaultStage {
@@ -25,6 +28,7 @@ func NewFaultStage(profiles map[string]domain.FaultProfile, ks *KillSwitch) *Fau
 		profiles: profiles,
 		ks:       ks,
 		rng:      rand.New(rand.NewSource(rand.Int63())),
+		retry:    newRetryCounter(time.Now),
 	}
 }
 
@@ -87,6 +91,17 @@ func (s *FaultStage) Execute(_ context.Context, pctx *pipeline.PipelineContext) 
 			pctx.ShouldForward = false
 			pctx.SimulationID = ""
 			return nil
+		case domain.FaultRetryStorm:
+			key := retryKey(pctx, f.Params.KeyBy)
+			if !s.retry.shouldFail(key, f.Params.FailFirst, f.Params.WindowSec) {
+				continue
+			}
+			pctx.Response = &pipeline.MockResponse{Status: f.Params.StatusCode}
+			pctx.FaultShortCircuit = true
+			pctx.FaultType = "retryStorm"
+			pctx.ShouldForward = false
+			pctx.SimulationID = ""
+			return nil
 		}
 	}
 	return nil
@@ -122,4 +137,17 @@ func parseBody(b string) interface{} {
 		return v
 	}
 	return b
+}
+
+// retryKey derives the retry-storm bucket key from the request per the fault's
+// key_by setting. Header names are lower-cased to match the adapter's
+// normalized header map.
+func retryKey(pctx *pipeline.PipelineContext, keyBy string) string {
+	if keyBy == "path" {
+		return "path:" + pctx.Request.Path
+	}
+	if name, ok := strings.CutPrefix(keyBy, "header:"); ok {
+		return "hdr:" + name + ":" + pctx.Request.Headers[strings.ToLower(name)]
+	}
+	return "path:" + pctx.Request.Path
 }
