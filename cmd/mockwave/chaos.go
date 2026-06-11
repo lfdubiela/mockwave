@@ -7,9 +7,13 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 )
+
+// adminHTTP bounds CLI calls so a hung admin server cannot hang the command.
+var adminHTTP = &http.Client{Timeout: 30 * time.Second}
 
 // adminDo issues a request against the mockwave admin API.
 func adminDo(base, method, path string, body io.Reader) (*http.Response, error) {
@@ -20,7 +24,7 @@ func adminDo(base, method, path string, body io.Reader) (*http.Response, error) 
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	return http.DefaultClient.Do(req)
+	return adminHTTP.Do(req)
 }
 
 // checkStatus returns an error including status code and body when the
