@@ -228,3 +228,50 @@ func TestErrorBodyParsedAsJSON(t *testing.T) {
 		t.Fatalf("expected parsed JSON body, got %T %v", pctx.Response.Body, pctx.Response.Body)
 	}
 }
+
+func TestFaultStage_ScenarioOverlayOverridesBucketProfile(t *testing.T) {
+	ctrl := chaos.NewScenarioController()
+	profiles := map[string]domain.FaultProfile{
+		"bucket-prof": {ID: "bucket-prof", Enabled: true, Faults: []domain.Fault{
+			{Type: domain.FaultError, Probability: 1, Params: domain.FaultParams{StatusCode: 500}}}},
+		"phase-prof": {ID: "phase-prof", Enabled: true, Faults: []domain.Fault{
+			{Type: domain.FaultError, Probability: 1, Params: domain.FaultParams{StatusCode: 503}}}},
+	}
+	stage := chaos.NewFaultStageWithScenario(profiles, chaos.NewKillSwitch(), ctrl)
+	ctrl.SetActive(&chaos.ActiveRun{RuleIDs: map[string]bool{"r1": true}, PhaseProfileID: "phase-prof"})
+	pctx := &pipeline.PipelineContext{Matched: &domain.Rule{ID: "r1"}, FaultProfileID: "bucket-prof"}
+	_ = stage.Execute(context.Background(), pctx)
+	if pctx.Response.Status != 503 {
+		t.Fatalf("scenario phase profile should win, got %d", pctx.Response.Status)
+	}
+}
+
+func TestFaultStage_ScenarioRecoveryPhaseSuppressesFaults(t *testing.T) {
+	ctrl := chaos.NewScenarioController()
+	profiles := map[string]domain.FaultProfile{
+		"bucket-prof": {ID: "bucket-prof", Enabled: true, Faults: []domain.Fault{
+			{Type: domain.FaultError, Probability: 1, Params: domain.FaultParams{StatusCode: 500}}}},
+	}
+	stage := chaos.NewFaultStageWithScenario(profiles, chaos.NewKillSwitch(), ctrl)
+	ctrl.SetActive(&chaos.ActiveRun{RuleIDs: map[string]bool{"r1": true}, PhaseProfileID: ""})
+	pctx := &pipeline.PipelineContext{Matched: &domain.Rule{ID: "r1"}, FaultProfileID: "bucket-prof"}
+	_ = stage.Execute(context.Background(), pctx)
+	if pctx.FaultShortCircuit {
+		t.Fatal("recovery phase must suppress the bucket's own fault")
+	}
+}
+
+func TestFaultStage_UntargetedRuleKeepsBucketProfile(t *testing.T) {
+	ctrl := chaos.NewScenarioController()
+	profiles := map[string]domain.FaultProfile{
+		"bucket-prof": {ID: "bucket-prof", Enabled: true, Faults: []domain.Fault{
+			{Type: domain.FaultError, Probability: 1, Params: domain.FaultParams{StatusCode: 500}}}},
+	}
+	stage := chaos.NewFaultStageWithScenario(profiles, chaos.NewKillSwitch(), ctrl)
+	ctrl.SetActive(&chaos.ActiveRun{RuleIDs: map[string]bool{"other": true}, PhaseProfileID: "x"})
+	pctx := &pipeline.PipelineContext{Matched: &domain.Rule{ID: "r1"}, FaultProfileID: "bucket-prof"}
+	_ = stage.Execute(context.Background(), pctx)
+	if pctx.Response == nil || pctx.Response.Status != 500 {
+		t.Fatal("untargeted rule keeps its own bucket profile")
+	}
+}

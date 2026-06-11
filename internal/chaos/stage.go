@@ -18,15 +18,21 @@ import (
 type FaultStage struct {
 	profiles map[string]domain.FaultProfile
 	ks       *KillSwitch
+	scenario *ScenarioController
 	mu       sync.Mutex
 	rng      *rand.Rand
 	retry    *retryCounter
 }
 
 func NewFaultStage(profiles map[string]domain.FaultProfile, ks *KillSwitch) *FaultStage {
+	return NewFaultStageWithScenario(profiles, ks, nil)
+}
+
+func NewFaultStageWithScenario(profiles map[string]domain.FaultProfile, ks *KillSwitch, sc *ScenarioController) *FaultStage {
 	return &FaultStage{
 		profiles: profiles,
 		ks:       ks,
+		scenario: sc,
 		rng:      rand.New(rand.NewSource(rand.Int63())),
 		retry:    newRetryCounter(time.Now),
 	}
@@ -35,10 +41,19 @@ func NewFaultStage(profiles map[string]domain.FaultProfile, ks *KillSwitch) *Fau
 func (s *FaultStage) Name() string { return "fault" }
 
 func (s *FaultStage) Execute(_ context.Context, pctx *pipeline.PipelineContext) error {
-	if pctx.FaultProfileID == "" || s.ks.Halted() {
+	if s.ks.Halted() {
 		return nil
 	}
-	p, ok := s.profiles[pctx.FaultProfileID]
+	effectiveProfileID := pctx.FaultProfileID
+	if s.scenario != nil {
+		if phaseProfileID, overridden := s.scenario.Overlay(matchedRuleID(pctx)); overridden {
+			effectiveProfileID = phaseProfileID
+		}
+	}
+	if effectiveProfileID == "" {
+		return nil
+	}
+	p, ok := s.profiles[effectiveProfileID]
 	if !ok || !p.Enabled {
 		return nil
 	}
@@ -150,4 +165,11 @@ func retryKey(pctx *pipeline.PipelineContext, keyBy string) string {
 		return "hdr:" + name + ":" + pctx.Request.Headers[strings.ToLower(name)]
 	}
 	return "path:" + pctx.Request.Path
+}
+
+func matchedRuleID(pctx *pipeline.PipelineContext) string {
+	if pctx.Matched == nil {
+		return ""
+	}
+	return pctx.Matched.ID
 }
