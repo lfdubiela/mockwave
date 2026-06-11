@@ -54,6 +54,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
+	// Connection-level terminal faults bypass the normal response path.
+	if pctx.ConnFault != "" {
+		handleConnFault(w, pctx)
+		return
+	}
 	if pctx.Response == nil {
 		writeError(w, http.StatusInternalServerError, "pipeline produced no response")
 		return
@@ -70,7 +75,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(resp.Status)
 	if resp.Body != nil {
-		_ = json.NewEncoder(w).Encode(resp.Body)
+		if pctx.SlowBodyBytesPerSec > 0 {
+			throttledWrite(w, bodyBytes(resp.Body), pctx.SlowBodyBytesPerSec)
+		} else {
+			_ = json.NewEncoder(w).Encode(resp.Body)
+		}
 	}
 }
 
