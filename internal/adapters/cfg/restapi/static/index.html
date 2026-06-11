@@ -251,6 +251,10 @@
   /* Import/export feature — hidden until health flag enables them */
   .ie-only { display: none; }
   .ie-only.ie-visible { display: inline-flex; }
+
+  /* Chaos halted badge — shown in the nav whenever the kill switch is engaged */
+  .chaos-badge { display: none; padding: 0.2rem 0.6rem; border-radius: 9999px; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.05em; background: rgba(255,69,58,0.15); color: var(--error); border: 1px solid rgba(255,69,58,0.4); animation: pulse 2s infinite; }
+  .chaos-badge.on { display: inline-block; }
 </style>
 </head>
 <body>
@@ -260,7 +264,9 @@
   <div class="nav-tabs">
     <div class="tab active" data-tab="dashboard">Dashboard <span id="unmatched-badge" style="display:none;background:var(--error);color:#fff;border-radius:9999px;padding:0.05rem 0.45rem;font-size:0.65rem;margin-left:0.35rem;vertical-align:middle"></span></div>
     <div class="tab" data-tab="rules">Rules</div>
+    <div class="tab" data-tab="chaos">Chaos</div>
   </div>
+  <span class="chaos-badge" id="chaos-halted-badge" style="margin-left:0.6rem">CHAOS HALTED</span>
   <div class="nav-spacer"></div>
   <div class="theme-switch" id="theme-switch">
     <div class="theme-opt" data-theme-opt="macos">macOS</div>
@@ -350,6 +356,27 @@
   </table>
 </div>
 
+<!-- Chaos (kill switch + fault profiles) -->
+<div class="tab-content" id="tab-chaos">
+  <div id="chaos-kill-bar" style="display:flex;align-items:center;gap:0.75rem;background:var(--surface);border:1px solid var(--border);border-radius:0.5rem;padding:0.75rem 1rem;margin-bottom:1.5rem">
+    <strong style="font-size:0.85rem">Kill Switch</strong>
+    <span id="chaos-status-text" style="color:var(--muted);font-size:0.8rem">Loading…</span>
+    <div style="flex:1"></div>
+    <button id="btn-chaos-toggle" class="btn-danger" style="display:none" onclick="toggleChaosHalt(this)">Halt Chaos</button>
+  </div>
+  <div id="faults-unsupported" class="empty" style="display:none">Fault profiles not supported by this store.</div>
+  <div id="faults-section">
+    <div class="section-header">
+      <h2>Fault Profiles</h2>
+      <button class="btn-primary" id="btn-add-fault-profile" onclick="openFaultModal()">+ Add Profile</button>
+    </div>
+    <table>
+      <thead><tr><th>ID</th><th>Name</th><th>Enabled</th><th>Faults</th><th></th></tr></thead>
+      <tbody id="faults-tbody"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
   </div><!-- /main-content -->
 
   <!-- Persistent rail — per-rule hit distribution -->
@@ -435,6 +462,51 @@
       <button class="btn-ghost" type="button" onclick="closeRuleModal()">Cancel</button>
       <button class="btn-primary" id="btn-save-rule" data-idle-label="Save Rule" type="button" onclick="saveRule()">Save Rule</button>
     </div>
+    </div>
+  </div>
+</div>
+
+<!-- Fault profile modal -->
+<div class="modal-overlay" id="fault-modal">
+  <div class="modal" style="width:44rem">
+    <div class="modal-titlebar">
+      <div class="modal-lights"><span class="l-close"></span><span class="l-min"></span><span class="l-max"></span></div>
+      <h2 id="fault-modal-title">Add Fault Profile</h2>
+    </div>
+    <div class="modal-body">
+      <div class="sg-label">General</div>
+      <div class="settings-group">
+        <div class="sg-row">
+          <label for="f-id">Profile ID *</label>
+          <div class="sg-ctl"><input id="f-id" placeholder="latency-spike"></div>
+        </div>
+        <div class="sg-row">
+          <label for="f-name">Name</label>
+          <div class="sg-ctl"><input id="f-name" placeholder="Latency spike"></div>
+        </div>
+        <div class="sg-row">
+          <label for="f-desc">Description</label>
+          <div class="sg-ctl"><input id="f-desc" placeholder="Adds jitter to 50% of responses"></div>
+        </div>
+        <div class="sg-row">
+          <label for="f-enabled">Enabled</label>
+          <div class="sg-ctl">
+            <label class="switch"><input type="checkbox" id="f-enabled" checked><span class="track"></span></label>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-divider" style="display:flex;justify-content:space-between;align-items:center">
+        <span>Faults</span>
+        <button class="btn-sm btn-ghost" type="button" onclick="addFault()">+ Add Fault</button>
+      </div>
+      <div id="fault-rows-container"></div>
+      <div id="fault-form-error" style="display:none;color:var(--error);font-size:0.8rem;margin-top:0.5rem"></div>
+
+      <div class="form-actions">
+        <button class="btn-ghost" type="button" onclick="closeFaultModal()">Cancel</button>
+        <button class="btn-primary" id="btn-save-fault" data-idle-label="Save Profile" type="button" onclick="saveFaultProfile()">Save Profile</button>
+      </div>
     </div>
   </div>
 </div>
@@ -544,7 +616,8 @@
       bodyType: 'json',
       fwdDelayMs: 0,
       fwdURL: '',
-      existingSimID: null
+      existingSimID: null,
+      faultProfileID: ''
     };
   }
 
@@ -660,8 +733,30 @@
             <textarea rows="5" oninput="_buckets[${i}].simBody=this.value">${escapeHtml(b.simBody || '')}</textarea>
           `}
         </div>` : ''}
+        ${faultsSupported ? `
+        <div class="form-row">
+          <div class="form-group" style="flex:0 0 16rem">
+            <label>Fault profile</label>
+            <select onchange="_buckets[${i}].faultProfileID=this.value">
+              ${faultProfileOptions(b.faultProfileID)}
+            </select>
+          </div>
+        </div>` : ''}
       </div>`).join('');
     updateWeightSum();
+  }
+
+  // Options for the per-bucket fault profile select. Keeps an unknown (e.g.
+  // deleted) referenced ID selectable so editing doesn't silently drop it.
+  function faultProfileOptions(selected) {
+    let opts = '<option value="">none</option>';
+    let found = !selected;
+    for (const p of _faultProfiles) {
+      if (p.id === selected) found = true;
+      opts += `<option value="${escapeAttr(p.id)}" ${p.id === selected ? 'selected' : ''}>${escapeHtml(p.name || p.id)}</option>`;
+    }
+    if (!found) opts += `<option value="${escapeAttr(selected)}" selected>${escapeHtml(selected)} (unknown)</option>`;
+    return opts;
   }
 
   // ── Script editor ────────────────────────────────────────────────────────────
@@ -745,6 +840,7 @@
       tab.classList.add('active');
       document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
       if (tab.dataset.tab === 'rules') loadRules();
+      if (tab.dataset.tab === 'chaos') { loadChaosStatus(); loadFaultProfiles(); }
       if (tab.dataset.tab === 'dashboard') {
         document.getElementById('unmatched-badge').style.display = 'none';
       }
@@ -1141,7 +1237,8 @@
   let _editingRuleID = null;
   let _copyMode = false;
 
-  function openRuleModal(prefill) {
+  async function openRuleModal(prefill) {
+    await loadFaultProfiles();
     _editingRuleID = null;
     _copyMode = false;
     // Rule ID is an auto-generated uuid, hidden from the user (the Name
@@ -1167,6 +1264,7 @@
   }
 
   async function editRule(r) {
+    await loadFaultProfiles();
     _editingRuleID = r.id;
     _copyMode = false;
     document.getElementById('r-id-group').style.display = 'none';
@@ -1185,7 +1283,7 @@
     // Reconstruct _buckets — fetch simulation data for each simulate bucket
     const rawBuckets = r.buckets || [{ weight: 100, action: 'simulate', simulation_id: '' }];
     _buckets = await Promise.all(rawBuckets.map(async b => {
-      const bucket = { ...defaultBucket(), weight: b.weight || 100, action: b.action || 'simulate', fwdDelayMs: b.delay_ms || 0, fwdURL: b.forward_url || '' };
+      const bucket = { ...defaultBucket(), weight: b.weight || 100, action: b.action || 'simulate', fwdDelayMs: b.delay_ms || 0, fwdURL: b.forward_url || '', faultProfileID: b.fault_profile_id || '' };
       if (b.action === 'simulate' && b.simulation_id) {
         bucket.existingSimID = b.simulation_id;
         try {
@@ -1217,6 +1315,7 @@
   }
 
   async function copyRule(r) {
+    await loadFaultProfiles();
     // A copy is a brand-new rule: no _editingRuleID, so save POSTs.
     _editingRuleID = null;
     _copyMode = true;
@@ -1238,7 +1337,7 @@
       // Copy never sets existingSimID — every simulate bucket is saved as a
       // fresh simulation (new ID) so the source rule's simulations are never
       // touched. Load the source sim's fields to pre-fill the editor.
-      const bucket = { ...defaultBucket(), weight: b.weight || 100, action: b.action || 'simulate', fwdDelayMs: b.delay_ms || 0, fwdURL: b.forward_url || '' };
+      const bucket = { ...defaultBucket(), weight: b.weight || 100, action: b.action || 'simulate', fwdDelayMs: b.delay_ms || 0, fwdURL: b.forward_url || '', faultProfileID: b.fault_profile_id || '' };
       if (b.action === 'simulate' && b.simulation_id) {
         try {
           const res = await fetch('/api/simulations/' + encodeURIComponent(b.simulation_id));
@@ -1318,7 +1417,9 @@
 
       for (const b of _buckets) {
         if (b.action === 'forward') {
-          resolvedBuckets.push({ weight: b.weight, action: 'forward', delay_ms: b.fwdDelayMs || 0, forward_url: (b.fwdURL || '').trim() });
+          const fb = { weight: b.weight, action: 'forward', delay_ms: b.fwdDelayMs || 0, forward_url: (b.fwdURL || '').trim() };
+          if (b.faultProfileID) fb.fault_profile_id = b.faultProfileID;
+          resolvedBuckets.push(fb);
           continue;
         }
         // Existing sim (editing) — PUT to update in place
@@ -1346,7 +1447,9 @@
             if (btn) setButtonState(btn, 'error', 'Save Rule', msg.error);
             return;
           }
-          resolvedBuckets.push({ weight: b.weight, action: 'simulate', simulation_id: b.existingSimID });
+          const sb = { weight: b.weight, action: 'simulate', simulation_id: b.existingSimID };
+          if (b.faultProfileID) sb.fault_profile_id = b.faultProfileID;
+          resolvedBuckets.push(sb);
           continue;
         }
         // New simulate bucket — create simulation
@@ -1375,7 +1478,9 @@
           alert('Error creating simulation: ' + msg.error);
           return;
         }
-        resolvedBuckets.push({ weight: b.weight, action: 'simulate', simulation_id: simID });
+        const nb = { weight: b.weight, action: 'simulate', simulation_id: simID };
+        if (b.faultProfileID) nb.fault_profile_id = b.faultProfileID;
+        resolvedBuckets.push(nb);
       }
 
       const rule = {
@@ -1781,6 +1886,311 @@
     loadUnmatched();
   }
 
+  // ── Chaos: kill switch + fault profiles ─────────────────────────────────────
+  let _faultProfiles = [];
+  let faultsSupported = false; // GET /api/faults returned 501?
+  let _chaosHalted = false;
+
+  async function loadFaultProfiles() {
+    try {
+      const res = await fetch('/api/faults');
+      if (res.status === 501) {
+        faultsSupported = false;
+        _faultProfiles = [];
+      } else if (res.ok) {
+        faultsSupported = true;
+        _faultProfiles = (await res.json()) || [];
+      }
+    } catch (e) {
+      console.error('loadFaultProfiles:', e);
+    }
+    renderFaultsTable();
+  }
+
+  function renderFaultsTable() {
+    const section = document.getElementById('faults-section');
+    const notice = document.getElementById('faults-unsupported');
+    if (!section || !notice) return;
+    if (!faultsSupported) {
+      section.style.display = 'none';
+      notice.style.display = 'block';
+      return;
+    }
+    section.style.display = '';
+    notice.style.display = 'none';
+    const tbody = document.getElementById('faults-tbody');
+    if (_faultProfiles.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" class="empty">No fault profiles. Click "+ Add Profile" to create one.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = _faultProfiles.map((p, i) => `
+      <tr>
+        <td><span class="badge">${escapeHtml(p.id)}</span></td>
+        <td>${p.name ? escapeHtml(p.name) : '<span style="color:var(--muted)">—</span>'}</td>
+        <td>${p.enabled ? '<span style="color:var(--success)">yes</span>' : '<span class="badge-muted" style="margin-left:0">disabled</span>'}</td>
+        <td style="color:var(--muted);font-size:0.8rem">${(p.faults || []).length} fault${(p.faults || []).length !== 1 ? 's' : ''}</td>
+        <td style="white-space:nowrap">
+          <div style="display:flex;gap:0.4rem;justify-content:flex-end">
+            <button class="btn-sm btn-primary" onclick="editFaultProfileByIdx(${i})">Edit</button>
+            <button class="btn-sm btn-danger" onclick="deleteFaultProfile('${escapeAttr(p.id)}', this)">Delete</button>
+          </div>
+        </td>
+      </tr>`).join('');
+  }
+
+  async function deleteFaultProfile(id, btnEl) {
+    if (!confirm(`Delete fault profile "${id}"? This cannot be undone.`)) return;
+    const orig = btnEl ? btnEl.textContent : '';
+    if (btnEl) { btnEl.disabled = true; btnEl.textContent = '…'; }
+    try {
+      const res = await fetch('/api/faults/' + encodeURIComponent(id), { method: 'DELETE' });
+      if (!res.ok) {
+        const msg = await res.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(msg.error || res.statusText);
+      }
+      await loadFaultProfiles();
+    } catch (e) {
+      if (btnEl) { btnEl.disabled = false; btnEl.textContent = orig; }
+      alert('Delete failed: ' + e.message);
+    }
+  }
+
+  // ── Kill switch ─────────────────────────────────────────────────────────────
+  function renderChaosStatus(available) {
+    const text = document.getElementById('chaos-status-text');
+    const btn = document.getElementById('btn-chaos-toggle');
+    const badge = document.getElementById('chaos-halted-badge');
+    if (badge) badge.classList.toggle('on', available && _chaosHalted);
+    if (!text || !btn) return;
+    if (!available) {
+      text.textContent = 'Chaos control not available on this server.';
+      btn.style.display = 'none';
+      return;
+    }
+    text.innerHTML = _chaosHalted
+      ? '<span class="chaos-badge on" style="animation:none">CHAOS HALTED</span> All fault injection is suspended.'
+      : 'Chaos is active — fault profiles attached to rules are injected.';
+    btn.style.display = '';
+    btn.textContent = _chaosHalted ? 'Resume Chaos' : 'Halt Chaos';
+    btn.className = _chaosHalted ? 'btn-primary' : 'btn-danger';
+  }
+
+  async function loadChaosStatus() {
+    try {
+      const res = await fetch('/api/chaos/status');
+      if (res.status === 501) { renderChaosStatus(false); return; }
+      if (!res.ok) throw new Error(await res.text());
+      const d = await res.json();
+      _chaosHalted = !!d.halted;
+      renderChaosStatus(true);
+    } catch (e) {
+      console.error('loadChaosStatus:', e);
+    }
+  }
+
+  async function toggleChaosHalt(btnEl) {
+    const orig = btnEl.textContent;
+    btnEl.disabled = true; btnEl.textContent = '…';
+    try {
+      const res = await fetch('/api/chaos/' + (_chaosHalted ? 'resume' : 'halt'), { method: 'POST' });
+      if (!res.ok) {
+        const msg = await res.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(msg.error || res.statusText);
+      }
+    } catch (e) {
+      alert('Chaos toggle failed: ' + e.message);
+      btnEl.textContent = orig;
+    } finally {
+      btnEl.disabled = false;
+    }
+    await loadChaosStatus();
+  }
+
+  // ── Fault profile editor ────────────────────────────────────────────────────
+  let _faults = []; // editor rows
+  let _editingFaultID = null;
+
+  function defaultFault() {
+    return {
+      type: 'jitter', probability: 0.5,
+      baseDelayMs: 100, jitterMs: 50,
+      statusCode: 503, body: '{\n  "error": "injected fault"\n}',
+      headers: [] // [{key, value}]
+    };
+  }
+
+  function addFault() { _faults.push(defaultFault()); renderFaults(); }
+  function removeFault(i) { _faults.splice(i, 1); renderFaults(); }
+
+  function renderFaults() {
+    const c = document.getElementById('fault-rows-container');
+    if (!c) return;
+    if (_faults.length === 0) {
+      c.innerHTML = '<p class="empty" style="padding:1rem">No faults. Click "+ Add Fault".</p>';
+      return;
+    }
+    c.innerHTML = _faults.map((f, i) => `
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:0.375rem;padding:1rem;margin-bottom:0.75rem">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem">
+          <span style="color:var(--muted);font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em">Fault ${i + 1}</span>
+          ${_faults.length > 1 ? `<button class="btn-sm btn-danger" type="button" onclick="removeFault(${i})">Remove</button>` : ''}
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="flex:0 0 8rem">
+            <label>Type</label>
+            <select onchange="_faults[${i}].type=this.value;renderFaults()">
+              <option value="jitter" ${f.type === 'jitter' ? 'selected' : ''}>Jitter</option>
+              <option value="error" ${f.type === 'error' ? 'selected' : ''}>Error</option>
+            </select>
+          </div>
+          <div class="form-group" style="flex:0 0 8rem">
+            <label>Probability (0–1)</label>
+            <input type="number" min="0" max="1" step="0.05" value="${f.probability}"
+              oninput="_faults[${i}].probability=parseFloat(this.value)">
+          </div>
+          ${f.type === 'jitter' ? `
+          <div class="form-group" style="flex:0 0 8rem">
+            <label>Base delay (ms)</label>
+            <input type="number" min="0" value="${f.baseDelayMs}" oninput="_faults[${i}].baseDelayMs=parseInt(this.value)||0">
+          </div>
+          <div class="form-group" style="flex:0 0 8rem">
+            <label>Jitter (ms)</label>
+            <input type="number" min="0" value="${f.jitterMs}" oninput="_faults[${i}].jitterMs=parseInt(this.value)||0">
+          </div>` : `
+          <div class="form-group" style="flex:0 0 8rem">
+            <label>Status code</label>
+            <input type="number" min="100" max="599" value="${f.statusCode}" oninput="_faults[${i}].statusCode=parseInt(this.value)||503">
+          </div>`}
+        </div>
+        ${f.type === 'error' ? `
+        <div class="form-group">
+          <label>Body</label>
+          <textarea rows="3" oninput="_faults[${i}].body=this.value">${escapeHtml(f.body || '')}</textarea>
+        </div>
+        <div class="sg-label" style="margin-top:0.5rem">Headers</div>
+        <div class="settings-group" id="fault-headers-${i}"></div>` : ''}
+      </div>`).join('');
+    _faults.forEach((f, i) => { if (f.type === 'error') renderFaultHeaders(i); });
+  }
+
+  function renderFaultHeaders(i) {
+    const c = document.getElementById('fault-headers-' + i);
+    if (!c) return;
+    const hdrs = _faults[i].headers;
+    const rows = hdrs.length === 0
+      ? '<div class="sg-empty">No headers on the injected error response</div>'
+      : hdrs.map((h, j) => `
+        <div class="sg-kv">
+          <input value="${escapeAttr(h.key)}" placeholder="X-Fault" oninput="_faults[${i}].headers[${j}].key=this.value">
+          <input value="${escapeAttr(h.value)}" placeholder="value" oninput="_faults[${i}].headers[${j}].value=this.value">
+          <button class="sg-remove" type="button" title="Remove" onclick="removeFaultHeader(${i}, ${j})">×</button>
+        </div>`).join('');
+    c.innerHTML = rows + `<div class="sg-add" onclick="addFaultHeader(${i})">+ Add header</div>`;
+  }
+
+  function addFaultHeader(i) { _faults[i].headers.push({ key: '', value: '' }); renderFaultHeaders(i); }
+  function removeFaultHeader(i, j) { _faults[i].headers.splice(j, 1); renderFaultHeaders(i); }
+
+  function showFaultError(msg) {
+    const el = document.getElementById('fault-form-error');
+    if (!el) return;
+    el.textContent = msg ? '✗ ' + msg : '';
+    el.style.display = msg ? 'block' : 'none';
+  }
+
+  function openFaultModal() {
+    _editingFaultID = null;
+    document.getElementById('fault-modal-title').textContent = 'Add Fault Profile';
+    const idInput = document.getElementById('f-id');
+    idInput.disabled = false;
+    idInput.value = '';
+    document.getElementById('f-name').value = '';
+    document.getElementById('f-desc').value = '';
+    document.getElementById('f-enabled').checked = true;
+    _faults = [defaultFault()];
+    renderFaults();
+    showFaultError('');
+    document.getElementById('fault-modal').classList.add('open');
+    idInput.focus();
+  }
+
+  function editFaultProfileByIdx(i) {
+    const p = _faultProfiles[i];
+    if (!p) return;
+    _editingFaultID = p.id;
+    document.getElementById('fault-modal-title').textContent = 'Edit Fault Profile';
+    const idInput = document.getElementById('f-id');
+    idInput.value = p.id;
+    idInput.disabled = true; // ID is immutable when editing
+    document.getElementById('f-name').value = p.name || '';
+    document.getElementById('f-desc').value = p.description || '';
+    document.getElementById('f-enabled').checked = !!p.enabled;
+    _faults = (p.faults || []).map(f => {
+      const row = defaultFault();
+      row.type = f.type === 'error' ? 'error' : 'jitter';
+      row.probability = typeof f.probability === 'number' ? f.probability : 0.5;
+      const params = f.params || {};
+      if (row.type === 'jitter') {
+        row.baseDelayMs = params.base_delay_ms || 0;
+        row.jitterMs = params.jitter_ms || 0;
+      } else {
+        row.statusCode = params.status_code || 503;
+        row.body = params.body || '';
+        row.headers = objectToKV(params.headers);
+      }
+      return row;
+    });
+    renderFaults();
+    showFaultError('');
+    document.getElementById('fault-modal').classList.add('open');
+  }
+
+  function closeFaultModal() {
+    document.getElementById('fault-modal').classList.remove('open');
+  }
+
+  async function saveFaultProfile() {
+    const btn = document.getElementById('btn-save-fault');
+    if (btn) setButtonState(btn, 'loading', 'Saving…');
+    showFaultError('');
+    try {
+      const id = document.getElementById('f-id').value.trim();
+      if (!id) {
+        if (btn) setButtonState(btn, 'idle', 'Save Profile');
+        showFaultError('Profile ID is required.');
+        return;
+      }
+      const profile = {
+        id,
+        name: document.getElementById('f-name').value.trim(),
+        description: document.getElementById('f-desc').value.trim(),
+        enabled: document.getElementById('f-enabled').checked,
+        faults: _faults.map(f => f.type === 'jitter'
+          ? { type: 'jitter', probability: isNaN(f.probability) ? 0 : f.probability,
+              params: { base_delay_ms: f.baseDelayMs || 0, jitter_ms: f.jitterMs || 0 } }
+          : { type: 'error', probability: isNaN(f.probability) ? 0 : f.probability,
+              params: { status_code: f.statusCode || 503, body: f.body || '', headers: kvToObject(f.headers) } })
+      };
+      const method = _editingFaultID ? 'PUT' : 'POST';
+      const url = _editingFaultID ? '/api/faults/' + encodeURIComponent(_editingFaultID) : '/api/faults';
+      const res = await fetch(url, {
+        method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(profile)
+      });
+      if (!res.ok) {
+        const msg = await res.json().catch(() => ({ error: 'Unknown server error' }));
+        if (btn) setButtonState(btn, 'error', 'Save Profile', msg.error);
+        showFaultError(msg.error || 'Unknown server error');
+        return;
+      }
+      if (btn) setButtonState(btn, 'success', 'Saved');
+      closeFaultModal();
+      loadFaultProfiles();
+    } catch (e) {
+      if (btn) setButtonState(btn, 'error', 'Save Profile', e.message);
+      showFaultError(e.message);
+    }
+  }
+
   // ── Close modal on backdrop click ─────────────────────────────────────────
   document.querySelectorAll('.modal-overlay').forEach(overlay => {
     overlay.addEventListener('click', e => {
@@ -1821,6 +2231,8 @@
   // ── Init ───────────────────────────────────────────────────────────────────
   loadHealthFlags();
   loadRules();
+  loadChaosStatus();    // also drives the nav "CHAOS HALTED" badge
+  loadFaultProfiles();
   connectMetrics();
   pollUnmatched(); // start polling immediately; also loads unmatched now
 </script>
