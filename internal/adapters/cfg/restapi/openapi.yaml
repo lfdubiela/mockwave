@@ -712,6 +712,17 @@ components:
           type: integer
           minimum: 0
           description: "slowBody: throttle the response body to this many bytes per second"
+        fail_first:
+          type: integer
+          minimum: 1
+          description: "retryStorm: number of initial requests per key to fail before letting them through"
+        key_by:
+          type: string
+          description: "retryStorm: bucket key, either \"path\" or \"header:<Name>\""
+        window_sec:
+          type: integer
+          minimum: 1
+          description: "retryStorm: sliding window TTL in seconds after which a key's counter resets"
 
     Fault:
       type: object
@@ -720,7 +731,7 @@ components:
       properties:
         type:
           type: string
-          enum: [jitter, error, hang, reset, halfResponse, slowBody]
+          enum: [jitter, error, hang, reset, halfResponse, slowBody, retryStorm]
         probability:
           type: number
           minimum: 0

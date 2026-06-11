@@ -740,6 +740,33 @@ returning a normal response:
 Connection-level faults are supported on the HTTP-based protocols only
 (REST/GraphQL/SOAP); gRPC connection-fault semantics are on the roadmap.
 
+One stateful fault type validates client resilience over a sequence of requests:
+
+- `retryStorm` — fails the first `fail_first` requests for a given key with
+  `status_code`, then lets requests through. This exercises a client's retry
+  backoff and idempotency handling: a well-behaved client should recover once
+  the upstream stops failing. `key_by` selects the bucket key — `path` groups
+  by request path, or `header:<Name>` (e.g. `header:X-Request-Id`) groups by a
+  header value, so each distinct value gets its own independent counter. Each
+  key's counter resets after `window_sec` seconds of sliding-window inactivity.
+
+> Counters are per-process and reset on restart. Behind a load balancer with
+> multiple mockwave instances the `fail_first` budget multiplies by the number
+> of instances, since each instance keeps its own counters.
+
+```json
+{
+  "fault_profiles": [{
+    "id": "retry-storm",
+    "name": "Retry storm",
+    "enabled": true,
+    "faults": [
+      {"type": "retryStorm", "probability": 1, "params": {"fail_first": 2, "status_code": 503, "key_by": "path", "window_sec": 60}}
+    ]
+  }]
+}
+```
+
 ```json
 {
   "fault_profiles": [{

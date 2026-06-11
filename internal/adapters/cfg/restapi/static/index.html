@@ -2046,7 +2046,8 @@
       baseDelayMs: 100, jitterMs: 50,
       statusCode: 503, body: '{\n  "error": "injected fault"\n}',
       headers: [], // [{key, value}]
-      maxMs: 5000, fraction: 0.5, bytesPerSec: 1024
+      maxMs: 5000, fraction: 0.5, bytesPerSec: 1024,
+      failFirst: 2, keyBy: 'path', windowSec: 60
     };
   }
 
@@ -2076,6 +2077,7 @@
               <option value="reset" ${f.type === 'reset' ? 'selected' : ''}>Reset</option>
               <option value="halfResponse" ${f.type === 'halfResponse' ? 'selected' : ''}>Half Response</option>
               <option value="slowBody" ${f.type === 'slowBody' ? 'selected' : ''}>Slow Body</option>
+              <option value="retryStorm" ${f.type === 'retryStorm' ? 'selected' : ''}>Retry Storm</option>
             </select>
           </div>
           <div class="form-group" style="flex:0 0 8rem">
@@ -2107,6 +2109,22 @@
           <div class="form-group" style="flex:0 0 8rem">
             <label>Bytes / sec</label>
             <input type="number" min="0" value="${f.bytesPerSec}" oninput="_faults[${i}].bytesPerSec=parseInt(this.value)||0">
+          </div>` : f.type === 'retryStorm' ? `
+          <div class="form-group" style="flex:0 0 7rem">
+            <label>Fail first</label>
+            <input type="number" min="1" value="${f.failFirst}" oninput="_faults[${i}].failFirst=parseInt(this.value)||0">
+          </div>
+          <div class="form-group" style="flex:0 0 7rem">
+            <label>Status code</label>
+            <input type="number" min="100" max="599" value="${f.statusCode}" oninput="_faults[${i}].statusCode=parseInt(this.value)||503">
+          </div>
+          <div class="form-group" style="flex:1 1 12rem">
+            <label>Key by</label>
+            <input type="text" value="${escapeHtml(f.keyBy || '')}" placeholder="path or header:X-Request-Id" oninput="_faults[${i}].keyBy=this.value">
+          </div>
+          <div class="form-group" style="flex:0 0 7rem">
+            <label>Window (sec)</label>
+            <input type="number" min="1" value="${f.windowSec}" oninput="_faults[${i}].windowSec=parseInt(this.value)||0">
           </div>` : `
           <div class="form-group" style="flex:1">
             <span style="color:var(--muted);font-size:0.8rem">No parameters — connection is reset immediately.</span>
@@ -2177,7 +2195,7 @@
     document.getElementById('f-enabled').checked = !!p.enabled;
     _faults = (p.faults || []).map(f => {
       const row = defaultFault();
-      const known = ['jitter', 'error', 'hang', 'reset', 'halfResponse', 'slowBody'];
+      const known = ['jitter', 'error', 'hang', 'reset', 'halfResponse', 'slowBody', 'retryStorm'];
       row.type = known.includes(f.type) ? f.type : 'jitter';
       row.probability = typeof f.probability === 'number' ? f.probability : 0.5;
       const params = f.params || {};
@@ -2194,6 +2212,11 @@
         row.fraction = typeof params.fraction === 'number' ? params.fraction : 0.5;
       } else if (row.type === 'slowBody') {
         row.bytesPerSec = params.bytes_per_sec || 0;
+      } else if (row.type === 'retryStorm') {
+        row.failFirst = params.fail_first || 0;
+        row.statusCode = params.status_code || 503;
+        row.keyBy = params.key_by || 'path';
+        row.windowSec = params.window_sec || 0;
       }
       return row;
     });
@@ -2240,6 +2263,9 @@
                 params: { fraction: isNaN(f.fraction) ? 0.5 : f.fraction } };
             case 'slowBody':
               return { type: 'slowBody', probability: prob, params: { bytes_per_sec: f.bytesPerSec || 0 } };
+            case 'retryStorm':
+              return { type: 'retryStorm', probability: prob,
+                params: { fail_first: f.failFirst || 0, status_code: f.statusCode || 503, key_by: f.keyBy || 'path', window_sec: f.windowSec || 0 } };
             default:
               return { type: f.type, probability: prob, params: {} };
           }
