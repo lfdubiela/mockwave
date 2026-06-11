@@ -2,10 +2,12 @@ package soap
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/mockwave/mockwave/internal/domain/pipeline"
 )
@@ -58,6 +60,15 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := pctx.Response
+	if d := resp.DelayMs + pctx.FaultDelayMs; d > 0 {
+		time.Sleep(time.Duration(d) * time.Millisecond)
+	}
+
+	if pctx.FaultShortCircuit {
+		writeFaultResponse(w, resp)
+		return
+	}
+
 	envelope, _ := resp.Body.(string)
 	if envelope == "" {
 		writeFault(w, http.StatusInternalServerError, "Server", "simulation has no soap_envelope")
@@ -71,6 +82,30 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/xml; charset=utf-8")
 	w.WriteHeader(status)
 	_, _ = w.Write([]byte(envelope))
+}
+
+// writeFaultResponse writes an injected chaos fault response directly,
+// preserving the injected status instead of demanding a SOAP envelope.
+func writeFaultResponse(w http.ResponseWriter, resp *pipeline.MockResponse) {
+	for k, v := range resp.Headers {
+		w.Header().Set(k, v)
+	}
+	if w.Header().Get("Content-Type") == "" {
+		w.Header().Set("Content-Type", "application/json")
+	}
+	status := resp.Status
+	if status == 0 {
+		status = http.StatusOK
+	}
+	w.WriteHeader(status)
+	if resp.Body == nil {
+		return
+	}
+	if s, ok := resp.Body.(string); ok {
+		_, _ = w.Write([]byte(s))
+		return
+	}
+	_ = json.NewEncoder(w).Encode(resp.Body)
 }
 
 func writeFault(w http.ResponseWriter, status int, code, message string) {

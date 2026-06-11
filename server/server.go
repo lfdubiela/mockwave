@@ -214,6 +214,21 @@ func (s *Server) rebuild() error {
 		for _, p := range profiles {
 			profMap[p.ID] = p
 		}
+	} else {
+		for _, r := range rules {
+			referenced := false
+			for _, b := range r.Buckets {
+				if b.FaultProfileID != "" {
+					referenced = true
+					break
+				}
+			}
+			if referenced {
+				s.cfg.Logger.Warn(context.Background(),
+					"rules reference fault profiles but store does not support them",
+					observability.F("rule_id", r.ID))
+			}
+		}
 	}
 	faultStage := chaos.NewFaultStage(profMap, s.killSwitch)
 	p := pipeline.New(matchStage, routeStage, faultStage, simStage, scriptStage, fwdStage)

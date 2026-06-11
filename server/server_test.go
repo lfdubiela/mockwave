@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -117,10 +118,10 @@ func (s *stubStoreWithData) GetSimulation(id string) (*domain.Simulation, error)
 func (s *stubStoreWithData) ListSimulations() ([]domain.Simulation, error) {
 	return []domain.Simulation{{ID: "s1", Protocol: "http", Response: domain.HTTPResponse{Status: 200}}}, nil
 }
-func (s *stubStoreWithData) SaveRule(r domain.Rule) error                  { return nil }
-func (s *stubStoreWithData) SaveSimulation(sim domain.Simulation) error    { return nil }
-func (s *stubStoreWithData) DeleteRule(id string) error                    { return nil }
-func (s *stubStoreWithData) DeleteSimulation(id string) error              { return nil }
+func (s *stubStoreWithData) SaveRule(r domain.Rule) error               { return nil }
+func (s *stubStoreWithData) SaveSimulation(sim domain.Simulation) error { return nil }
+func (s *stubStoreWithData) DeleteRule(id string) error                 { return nil }
+func (s *stubStoreWithData) DeleteSimulation(id string) error           { return nil }
 
 func TestServer_HTTPHandler_ServesRequest(t *testing.T) {
 	srv, err := server.New(server.Config{Store: &stubStoreWithData{}})
@@ -304,4 +305,72 @@ func TestServer_FaultStage_ErrorAndKillSwitch(t *testing.T) {
 	assert.Equal(t, 200, do(), "halted kill switch should bypass faults")
 	srv.KillSwitch().Resume()
 	assert.Equal(t, 503, do(), "resumed kill switch should re-enable faults")
+}
+
+func TestServer_FaultProfileReload(t *testing.T) {
+	st := newFileStore(t, domain.Config{
+		Rules: []domain.Rule{{
+			ID:    "r1",
+			Match: domain.MatchCriteria{Protocol: "http", Method: "GET", Path: "/ping"},
+			Buckets: []domain.WeightedBucket{{
+				Weight: 100, Action: domain.ActionSimulate, SimulationID: "ok", FaultProfileID: "p",
+			}},
+		}},
+		Simulations: []domain.Simulation{{ID: "ok", Protocol: "http", Response: domain.HTTPResponse{Status: 200}}},
+		FaultProfiles: []domain.FaultProfile{{
+			ID: "p", Name: "p", Enabled: true,
+			Faults: []domain.Fault{{Type: domain.FaultError, Probability: 1, Params: domain.FaultParams{StatusCode: 503}}},
+		}},
+	})
+	srv, err := server.New(server.Config{Store: st})
+	require.NoError(t, err)
+	h := srv.HTTPHandler()
+
+	do := func() int {
+		req := httptest.NewRequest(http.MethodGet, "/ping", nil)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		return w.Code
+	}
+
+	require.Equal(t, 503, do(), "enabled profile should fault")
+
+	require.NoError(t, st.SaveFaultProfile(domain.FaultProfile{
+		ID: "p", Name: "p", Enabled: false,
+		Faults: []domain.Fault{{Type: domain.FaultError, Probability: 1, Params: domain.FaultParams{StatusCode: 503}}},
+	}))
+	require.NoError(t, srv.Rebuild())
+	assert.Equal(t, 200, do(), "disabled profile after rebuild should not fault")
+}
+
+func TestServer_DanglingFaultProfileRef(t *testing.T) {
+	st := jsonfile.NewMemStore(domain.Config{
+		Rules: []domain.Rule{{
+			ID:    "r1",
+			Match: domain.MatchCriteria{Protocol: "http", Method: "GET", Path: "/ping"},
+			Buckets: []domain.WeightedBucket{{
+				Weight: 100, Action: domain.ActionSimulate, SimulationID: "ok", FaultProfileID: "missing",
+			}},
+		}},
+		Simulations: []domain.Simulation{{ID: "ok", Protocol: "http", Response: domain.HTTPResponse{Status: 200}}},
+	})
+	srv, err := server.New(server.Config{Store: st})
+	require.NoError(t, err)
+	h := srv.HTTPHandler()
+
+	req := httptest.NewRequest(http.MethodGet, "/ping", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	assert.Equal(t, 200, w.Code, "dangling fault profile reference should not fault")
+}
+
+func newFileStore(t *testing.T, cfg domain.Config) *jsonfile.Store {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "config.json")
+	data, err := json.Marshal(cfg)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(path, data, 0o600))
+	st, err := jsonfile.NewStore(path)
+	require.NoError(t, err)
+	return st
 }

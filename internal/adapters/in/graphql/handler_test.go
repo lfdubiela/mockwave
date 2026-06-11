@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -145,4 +146,22 @@ func TestExtractOperationName(t *testing.T) {
 			assert.Equal(t, c.expected, graphqladapter.ExtractOperationName(c.query))
 		})
 	}
+}
+
+func TestGraphQLHandler_FaultDelayApplied(t *testing.T) {
+	exec := &mockExec{
+		fn: func(_ context.Context, pctx *pipeline.PipelineContext) error {
+			pctx.FaultDelayMs = 30
+			pctx.Response = &pipeline.MockResponse{Status: 200, DelayMs: 20, Body: map[string]interface{}{"ok": true}}
+			return nil
+		},
+	}
+	h := graphqladapter.NewHandler(exec)
+	body := `{"query":"{ users { id } }"}`
+	req := httptest.NewRequest(http.MethodPost, "/graphql", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	start := time.Now()
+	h.ServeHTTP(w, req)
+	assert.GreaterOrEqual(t, time.Since(start), 50*time.Millisecond)
+	assert.Equal(t, http.StatusOK, w.Code)
 }

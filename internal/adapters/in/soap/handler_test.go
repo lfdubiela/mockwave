@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 
@@ -97,4 +98,63 @@ func TestSOAPHandler_EmptySoapEnvelope(t *testing.T) {
 	h.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 	assert.Contains(t, w.Body.String(), "soap:Fault")
+}
+
+func TestSOAPHandler_FaultShortCircuitJSONBody(t *testing.T) {
+	exec := &mockExec{
+		fn: func(_ context.Context, pctx *pipeline.PipelineContext) error {
+			pctx.FaultShortCircuit = true
+			pctx.Response = &pipeline.MockResponse{
+				Status: 503,
+				Body:   map[string]interface{}{"error": "injected fault"},
+			}
+			return nil
+		},
+	}
+	h := soapadapter.NewHandler(exec)
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`<soap:Envelope/>`))
+	req.Header.Set("SOAPAction", "GetUser")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+	assert.Contains(t, w.Header().Get("Content-Type"), "application/json")
+	assert.Contains(t, w.Body.String(), "injected fault")
+}
+
+func TestSOAPHandler_FaultShortCircuitStringBody(t *testing.T) {
+	exec := &mockExec{
+		fn: func(_ context.Context, pctx *pipeline.PipelineContext) error {
+			pctx.FaultShortCircuit = true
+			pctx.Response = &pipeline.MockResponse{
+				Status:  500,
+				Headers: map[string]string{"Content-Type": "text/xml"},
+				Body:    "<fault/>",
+			}
+			return nil
+		},
+	}
+	h := soapadapter.NewHandler(exec)
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`<soap:Envelope/>`))
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	assert.Contains(t, w.Header().Get("Content-Type"), "text/xml")
+	assert.Equal(t, "<fault/>", w.Body.String())
+}
+
+func TestSOAPHandler_FaultDelayApplied(t *testing.T) {
+	exec := &mockExec{
+		fn: func(_ context.Context, pctx *pipeline.PipelineContext) error {
+			pctx.FaultDelayMs = 30
+			pctx.Response = &pipeline.MockResponse{Status: 200, DelayMs: 20, Body: sampleEnvelope}
+			return nil
+		},
+	}
+	h := soapadapter.NewHandler(exec)
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`<soap:Envelope/>`))
+	w := httptest.NewRecorder()
+	start := time.Now()
+	h.ServeHTTP(w, req)
+	assert.GreaterOrEqual(t, time.Since(start), 50*time.Millisecond)
+	assert.Equal(t, http.StatusOK, w.Code)
 }

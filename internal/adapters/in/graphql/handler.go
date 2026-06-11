@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/mockwave/mockwave/internal/domain/pipeline"
 )
@@ -74,6 +75,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := pctx.Response
+	if d := resp.DelayMs + pctx.FaultDelayMs; d > 0 {
+		time.Sleep(time.Duration(d) * time.Millisecond)
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(resp.Status)
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
