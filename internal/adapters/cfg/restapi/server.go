@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/mockwave/mockwave/domain"
+	"github.com/mockwave/mockwave/internal/chaos"
 	"github.com/mockwave/mockwave/internal/metrics"
 	"github.com/mockwave/mockwave/internal/scripting"
 	"github.com/mockwave/mockwave/internal/unmatched"
@@ -23,6 +24,12 @@ type MuxOption func(*adminAPI)
 // stay disabled and return 403.
 func WithImportExport() MuxOption {
 	return func(a *adminAPI) { a.importExport = true }
+}
+
+// WithKillSwitch enables the /api/chaos/* endpoints, controlling the given
+// global fault kill switch. Without it those endpoints return 501.
+func WithKillSwitch(ks *chaos.KillSwitch) MuxOption {
+	return func(a *adminAPI) { a.killSwitch = ks }
 }
 
 // NewMux builds the admin HTTP mux.
@@ -55,6 +62,11 @@ func NewMux(store store.DataStore, onReload OnReload, collector *metrics.Collect
 	mux.HandleFunc("/api/export", api.exportHandler)
 	mux.HandleFunc("/api/import/preview", api.importPreviewHandler)
 	mux.HandleFunc("/api/import", api.importHandler)
+	mux.HandleFunc("/api/faults", api.faults)
+	mux.HandleFunc("/api/faults/", api.faultByID)
+	mux.HandleFunc("/api/chaos/halt", api.chaosHalt)
+	mux.HandleFunc("/api/chaos/resume", api.chaosResume)
+	mux.HandleFunc("/api/chaos/status", api.chaosStatus)
 	serveUI(mux)
 	return mux
 }
@@ -67,6 +79,7 @@ type adminAPI struct {
 	broker       *metrics.Broker    // may be nil
 	engine       *scripting.Engine  // may be nil — eval endpoint returns 503
 	importExport bool               // /api/export + /api/import enabled (remote stores only)
+	killSwitch   *chaos.KillSwitch  // may be nil — chaos endpoints return 501
 }
 
 // duplicateMatchError returns a 409-ready, human-readable message if rule's
@@ -476,6 +489,186 @@ func (a *adminAPI) metricsHistory(w http.ResponseWriter, r *http.Request) {
 		rules = []metrics.RuleSeries{}
 	}
 	writeJSON(w, 200, map[string]interface{}{"rules": rules})
+}
+
+// faultStore returns the store's FaultStore capability, writing a 501 and
+// returning false when the backend does not support fault profiles.
+func (a *adminAPI) faultStore(w http.ResponseWriter) (store.FaultStore, bool) {
+	fs, ok := a.store.(store.FaultStore)
+	if !ok {
+		writeError(w, 501, "store does not support fault profiles")
+		return nil, false
+	}
+	return fs, true
+}
+
+func (a *adminAPI) faults(w http.ResponseWriter, r *http.Request) {
+	fs, ok := a.faultStore(w)
+	if !ok {
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		profiles, err := fs.ListFaultProfiles()
+		if err != nil {
+			writeError(w, 500, err.Error())
+			return
+		}
+		if profiles == nil {
+			profiles = []domain.FaultProfile{}
+		}
+		writeJSON(w, 200, profiles)
+	case http.MethodPost:
+		var p domain.FaultProfile
+		if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+			writeError(w, 400, "invalid JSON: "+err.Error())
+			return
+		}
+		if err := p.Validate(); err != nil {
+			writeError(w, 422, err.Error())
+			return
+		}
+		existing, err := fs.GetFaultProfile(p.ID)
+		if err != nil {
+			writeError(w, 500, err.Error())
+			return
+		}
+		if existing != nil {
+			writeError(w, 409, fmt.Sprintf("fault profile %q already exists", p.ID))
+			return
+		}
+		if err := fs.SaveFaultProfile(p); err != nil {
+			writeError(w, 500, err.Error())
+			return
+		}
+		a.reload()
+		writeJSON(w, 201, p)
+	default:
+		writeError(w, 405, "method not allowed")
+	}
+}
+
+func (a *adminAPI) faultByID(w http.ResponseWriter, r *http.Request) {
+	fs, ok := a.faultStore(w)
+	if !ok {
+		return
+	}
+	id := idFromPath(r.URL.Path, "/api/faults/")
+	switch r.Method {
+	case http.MethodGet:
+		p, err := fs.GetFaultProfile(id)
+		if err != nil {
+			writeError(w, 500, err.Error())
+			return
+		}
+		if p == nil {
+			writeError(w, 404, "fault profile not found: "+id)
+			return
+		}
+		writeJSON(w, 200, p)
+	case http.MethodPut:
+		var p domain.FaultProfile
+		if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+			writeError(w, 400, "invalid JSON: "+err.Error())
+			return
+		}
+		if p.ID != "" && p.ID != id {
+			writeError(w, 422, fmt.Sprintf("body id %q does not match path id %q", p.ID, id))
+			return
+		}
+		p.ID = id
+		if err := p.Validate(); err != nil {
+			writeError(w, 422, err.Error())
+			return
+		}
+		existing, err := fs.GetFaultProfile(id)
+		if err != nil {
+			writeError(w, 500, err.Error())
+			return
+		}
+		if existing == nil {
+			writeError(w, 404, "fault profile not found: "+id)
+			return
+		}
+		if err := fs.SaveFaultProfile(p); err != nil {
+			writeError(w, 500, err.Error())
+			return
+		}
+		a.reload()
+		writeJSON(w, 200, p)
+	case http.MethodDelete:
+		existing, err := fs.GetFaultProfile(id)
+		if err != nil {
+			writeError(w, 500, err.Error())
+			return
+		}
+		if existing == nil {
+			writeError(w, 404, "fault profile not found: "+id)
+			return
+		}
+		// Reference guard: refuse to delete a profile still attached to a rule bucket.
+		rules, err := a.store.GetRules()
+		if err != nil {
+			writeError(w, 500, err.Error())
+			return
+		}
+		for _, rule := range rules {
+			for _, b := range rule.Buckets {
+				if b.FaultProfileID == id {
+					label := rule.Name
+					if label == "" {
+						label = rule.ID
+					}
+					writeError(w, 409, fmt.Sprintf("fault profile %q is referenced by rule %q", id, label))
+					return
+				}
+			}
+		}
+		if err := fs.DeleteFaultProfile(id); err != nil {
+			writeError(w, 500, err.Error())
+			return
+		}
+		a.reload()
+		w.WriteHeader(204)
+	default:
+		writeError(w, 405, "method not allowed")
+	}
+}
+
+// chaosControl gates a chaos endpoint on method + configured kill switch.
+func (a *adminAPI) chaosControl(w http.ResponseWriter, r *http.Request, method string) bool {
+	if r.Method != method {
+		writeError(w, 405, "method not allowed")
+		return false
+	}
+	if a.killSwitch == nil {
+		writeError(w, 501, "chaos control not available")
+		return false
+	}
+	return true
+}
+
+func (a *adminAPI) chaosHalt(w http.ResponseWriter, r *http.Request) {
+	if !a.chaosControl(w, r, http.MethodPost) {
+		return
+	}
+	a.killSwitch.Halt()
+	w.WriteHeader(204)
+}
+
+func (a *adminAPI) chaosResume(w http.ResponseWriter, r *http.Request) {
+	if !a.chaosControl(w, r, http.MethodPost) {
+		return
+	}
+	a.killSwitch.Resume()
+	w.WriteHeader(204)
+}
+
+func (a *adminAPI) chaosStatus(w http.ResponseWriter, r *http.Request) {
+	if !a.chaosControl(w, r, http.MethodGet) {
+		return
+	}
+	writeJSON(w, 200, map[string]bool{"halted": a.killSwitch.Halted()})
 }
 
 func idFromPath(path, prefix string) string {

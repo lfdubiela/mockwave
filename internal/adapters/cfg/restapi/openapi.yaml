@@ -335,6 +335,138 @@ paths:
         "500":
           $ref: "#/components/responses/InternalServerError"
 
+  /api/faults:
+    get:
+      summary: List all fault profiles
+      operationId: listFaultProfiles
+      responses:
+        "200":
+          description: Array of fault profiles
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FaultProfile"
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+    post:
+      summary: Create a fault profile
+      operationId: createFaultProfile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FaultProfile"
+      responses:
+        "201":
+          description: Fault profile created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FaultProfile"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+
+  /api/faults/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: Get a fault profile by ID
+      operationId: getFaultProfile
+      responses:
+        "200":
+          description: Fault profile found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FaultProfile"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+    put:
+      summary: Update (replace) a fault profile
+      operationId: updateFaultProfile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FaultProfile"
+      responses:
+        "200":
+          description: Fault profile updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FaultProfile"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+    delete:
+      summary: Delete a fault profile
+      operationId: deleteFaultProfile
+      responses:
+        "204":
+          description: Fault profile deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+
+  /api/chaos/halt:
+    post:
+      summary: Globally halt fault injection (kill switch)
+      operationId: chaosHalt
+      responses:
+        "204":
+          description: Fault injection halted
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+
+  /api/chaos/resume:
+    post:
+      summary: Resume fault injection after a halt
+      operationId: chaosResume
+      responses:
+        "204":
+          description: Fault injection resumed
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+
+  /api/chaos/status:
+    get:
+      summary: Current kill-switch status
+      operationId: chaosStatus
+      responses:
+        "200":
+          description: Kill-switch status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChaosStatus"
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+
   /api/reload:
     post:
       summary: Trigger hot-reload from store
@@ -399,6 +531,11 @@ components:
           description: >-
             Required for forward buckets. Upstream base URL the request is
             proxied to. Ignored for simulate buckets.
+        fault_profile_id:
+          type: string
+          description: >-
+            Optional chaos fault profile applied to requests served by this
+            bucket. Must reference an existing fault profile.
 
     Rule:
       type: object
@@ -525,6 +662,77 @@ components:
           items:
             type: string
 
+    FaultParams:
+      type: object
+      description: >-
+        Type-specific fault parameters. Which fields are required depends on
+        the fault type.
+      properties:
+        base_delay_ms:
+          type: integer
+          minimum: 0
+          description: "jitter: fixed delay added to every affected request"
+        jitter_ms:
+          type: integer
+          minimum: 0
+          description: "jitter: random extra delay in [0, jitter_ms)"
+        status_code:
+          type: integer
+          minimum: 100
+          maximum: 599
+          description: "error: HTTP status to return"
+        body:
+          type: string
+          description: "error: response body (raw string)"
+        headers:
+          type: object
+          description: "error: response headers"
+          additionalProperties:
+            type: string
+
+    Fault:
+      type: object
+      description: One failure mode inside a fault profile.
+      required: [type, probability]
+      properties:
+        type:
+          type: string
+          enum: [jitter, error]
+        probability:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: Probability the fault fires, rolled per request.
+        params:
+          $ref: "#/components/schemas/FaultParams"
+
+    FaultProfile:
+      type: object
+      description: A named, reusable set of faults attachable to rule buckets.
+      required: [id, faults]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        enabled:
+          type: boolean
+        faults:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/Fault"
+
+    ChaosStatus:
+      type: object
+      required: [halted]
+      properties:
+        halted:
+          type: boolean
+          description: Whether the global fault-injection kill switch is engaged.
+
     RuleMetric:
       type: object
       properties:
@@ -584,6 +792,26 @@ components:
                 type: string
     MethodNotAllowed:
       description: HTTP method not allowed for this endpoint
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+    Conflict:
+      description: Resource conflict (duplicate ID or still referenced)
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+    NotImplemented:
+      description: >-
+        Feature not available — the store backend does not support fault
+        profiles, or no chaos kill switch is configured.
       content:
         application/json:
           schema:

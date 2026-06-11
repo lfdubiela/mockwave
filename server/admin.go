@@ -18,6 +18,7 @@ func (s *Server) startAdmin() error {
 	if s.cfg.ImportExport {
 		opts = append(opts, restapi.WithImportExport())
 	}
+	opts = append(opts, restapi.WithKillSwitch(s.killSwitch))
 	mux := restapi.NewMux(
 		s.cfg.Store,
 		func() { _ = s.Rebuild() },

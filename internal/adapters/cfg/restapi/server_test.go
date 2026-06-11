@@ -10,8 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mockwave/mockwave/internal/adapters/cfg/restapi"
 	"github.com/mockwave/mockwave/domain"
+	"github.com/mockwave/mockwave/internal/adapters/cfg/restapi"
+	"github.com/mockwave/mockwave/internal/chaos"
 	"github.com/mockwave/mockwave/internal/metrics"
 	"github.com/mockwave/mockwave/internal/unmatched"
 	"github.com/stretchr/testify/assert"
@@ -779,10 +780,24 @@ func (f *faultMemStore) GetFaultProfile(id string) (*domain.FaultProfile, error)
 	return nil, nil
 }
 func (f *faultMemStore) SaveFaultProfile(p domain.FaultProfile) error {
+	for i, existing := range f.profiles {
+		if existing.ID == p.ID {
+			f.profiles[i] = p
+			return nil
+		}
+	}
 	f.profiles = append(f.profiles, p)
 	return nil
 }
-func (f *faultMemStore) DeleteFaultProfile(id string) error { return nil }
+func (f *faultMemStore) DeleteFaultProfile(id string) error {
+	for i, p := range f.profiles {
+		if p.ID == id {
+			f.profiles = append(f.profiles[:i], f.profiles[i+1:]...)
+			return nil
+		}
+	}
+	return fmt.Errorf("not found")
+}
 
 func faultRule(id string) domain.Rule {
 	return domain.Rule{
@@ -836,4 +851,220 @@ func TestAdminAPI_PutRule_UnknownFaultProfileRejected(t *testing.T) {
 	mux.ServeHTTP(w, req)
 	assert.Equal(t, 422, w.Code)
 	assert.Contains(t, w.Body.String(), "unknown fault profile")
+}
+
+// --- fault profile CRUD + chaos kill-switch endpoint tests (Task 8) ---
+
+func validProfile(id string) domain.FaultProfile {
+	return domain.FaultProfile{
+		ID:      id,
+		Name:    "Profile " + id,
+		Enabled: true,
+		Faults: []domain.Fault{
+			{Type: domain.FaultJitter, Probability: 0.5, Params: domain.FaultParams{BaseDelayMs: 100, JitterMs: 50}},
+		},
+	}
+}
+
+func doReq(t *testing.T, mux http.Handler, method, path string, body interface{}) *httptest.ResponseRecorder {
+	t.Helper()
+	var rd *bytes.Reader
+	if body != nil {
+		b, err := json.Marshal(body)
+		require.NoError(t, err)
+		rd = bytes.NewReader(b)
+	} else {
+		rd = bytes.NewReader(nil)
+	}
+	req := httptest.NewRequest(method, path, rd)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	return w
+}
+
+func TestAdminAPI_Faults_CRUDRoundTrip(t *testing.T) {
+	store := &faultMemStore{}
+	reloads := 0
+	mux := restapi.NewMux(store, func() { reloads++ }, nil, nil, nil, nil)
+
+	// create
+	w := doReq(t, mux, http.MethodPost, "/api/faults", validProfile("p1"))
+	require.Equal(t, 201, w.Code, w.Body.String())
+	assert.Equal(t, 1, reloads)
+
+	// get
+	w = doReq(t, mux, http.MethodGet, "/api/faults/p1", nil)
+	require.Equal(t, 200, w.Code)
+	var got domain.FaultProfile
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&got))
+	assert.Equal(t, "p1", got.ID)
+
+	// list
+	w = doReq(t, mux, http.MethodGet, "/api/faults", nil)
+	require.Equal(t, 200, w.Code)
+	var list []domain.FaultProfile
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&list))
+	require.Len(t, list, 1)
+
+	// update
+	upd := validProfile("p1")
+	upd.Name = "Renamed"
+	w = doReq(t, mux, http.MethodPut, "/api/faults/p1", upd)
+	require.Equal(t, 200, w.Code, w.Body.String())
+	assert.Equal(t, 2, reloads)
+	assert.Equal(t, "Renamed", store.profiles[0].Name)
+
+	// delete
+	w = doReq(t, mux, http.MethodDelete, "/api/faults/p1", nil)
+	require.Equal(t, 204, w.Code)
+	assert.Equal(t, 3, reloads)
+	assert.Len(t, store.profiles, 0)
+}
+
+func TestAdminAPI_PostFault_DuplicateID(t *testing.T) {
+	store := &faultMemStore{profiles: []domain.FaultProfile{validProfile("p1")}}
+	mux := restapi.NewMux(store, nil, nil, nil, nil, nil)
+	w := doReq(t, mux, http.MethodPost, "/api/faults", validProfile("p1"))
+	assert.Equal(t, 409, w.Code)
+}
+
+func TestAdminAPI_PostFault_Invalid(t *testing.T) {
+	store := &faultMemStore{}
+	mux := restapi.NewMux(store, nil, nil, nil, nil, nil)
+	p := validProfile("p1")
+	p.Faults = nil // invalid: no faults
+	w := doReq(t, mux, http.MethodPost, "/api/faults", p)
+	assert.Equal(t, 422, w.Code)
+	assert.Len(t, store.profiles, 0)
+}
+
+func TestAdminAPI_GetFault_NotFound(t *testing.T) {
+	mux := restapi.NewMux(&faultMemStore{}, nil, nil, nil, nil, nil)
+	w := doReq(t, mux, http.MethodGet, "/api/faults/nope", nil)
+	assert.Equal(t, 404, w.Code)
+}
+
+func TestAdminAPI_PutFault_NotFound(t *testing.T) {
+	mux := restapi.NewMux(&faultMemStore{}, nil, nil, nil, nil, nil)
+	w := doReq(t, mux, http.MethodPut, "/api/faults/nope", validProfile("nope"))
+	assert.Equal(t, 404, w.Code)
+}
+
+func TestAdminAPI_PutFault_BodyIDMismatch(t *testing.T) {
+	store := &faultMemStore{profiles: []domain.FaultProfile{validProfile("p1")}}
+	mux := restapi.NewMux(store, nil, nil, nil, nil, nil)
+	w := doReq(t, mux, http.MethodPut, "/api/faults/p1", validProfile("other"))
+	assert.Equal(t, 422, w.Code)
+}
+
+func TestAdminAPI_PutFault_EmptyBodyID(t *testing.T) {
+	store := &faultMemStore{profiles: []domain.FaultProfile{validProfile("p1")}}
+	mux := restapi.NewMux(store, nil, nil, nil, nil, nil)
+	p := validProfile("p1")
+	p.ID = ""
+	w := doReq(t, mux, http.MethodPut, "/api/faults/p1", p)
+	assert.Equal(t, 200, w.Code, w.Body.String())
+}
+
+func TestAdminAPI_DeleteFault_NotFound(t *testing.T) {
+	mux := restapi.NewMux(&faultMemStore{}, nil, nil, nil, nil, nil)
+	w := doReq(t, mux, http.MethodDelete, "/api/faults/nope", nil)
+	assert.Equal(t, 404, w.Code)
+}
+
+func TestAdminAPI_DeleteFault_ReferencedByRule(t *testing.T) {
+	store := &faultMemStore{
+		memStore: memStore{rules: []domain.Rule{{
+			ID: "r1", Name: "Rule One", Match: domain.MatchCriteria{Path: "/x"},
+			Buckets: []domain.WeightedBucket{{Weight: 100, Action: domain.ActionSimulate, SimulationID: "s1", FaultProfileID: "p1"}},
+		}}},
+		profiles: []domain.FaultProfile{validProfile("p1")},
+	}
+	mux := restapi.NewMux(store, nil, nil, nil, nil, nil)
+	w := doReq(t, mux, http.MethodDelete, "/api/faults/p1", nil)
+	assert.Equal(t, 409, w.Code)
+	assert.Contains(t, w.Body.String(), "referenced by rule")
+	assert.Len(t, store.profiles, 1)
+}
+
+func TestAdminAPI_Faults_UnsupportedStore(t *testing.T) {
+	mux := restapi.NewMux(&memStore{}, nil, nil, nil, nil, nil)
+	for _, tc := range []struct{ method, path string }{
+		{http.MethodGet, "/api/faults"},
+		{http.MethodPost, "/api/faults"},
+		{http.MethodGet, "/api/faults/p1"},
+		{http.MethodPut, "/api/faults/p1"},
+		{http.MethodDelete, "/api/faults/p1"},
+	} {
+		w := doReq(t, mux, tc.method, tc.path, nil)
+		assert.Equal(t, 501, w.Code, "%s %s", tc.method, tc.path)
+		assert.Contains(t, w.Body.String(), "store does not support fault profiles")
+	}
+}
+
+func TestAdminAPI_Faults_MethodNotAllowed(t *testing.T) {
+	mux := restapi.NewMux(&faultMemStore{}, nil, nil, nil, nil, nil)
+	w := doReq(t, mux, http.MethodPut, "/api/faults", nil)
+	assert.Equal(t, 405, w.Code)
+	w = doReq(t, mux, http.MethodPatch, "/api/faults/p1", nil)
+	assert.Equal(t, 405, w.Code)
+}
+
+func TestAdminAPI_Chaos_HaltStatusResumeCycle(t *testing.T) {
+	ks := chaos.NewKillSwitch()
+	mux := restapi.NewMux(&faultMemStore{}, nil, nil, nil, nil, nil, restapi.WithKillSwitch(ks))
+
+	status := func() bool {
+		w := doReq(t, mux, http.MethodGet, "/api/chaos/status", nil)
+		require.Equal(t, 200, w.Code)
+		var body struct {
+			Halted bool `json:"halted"`
+		}
+		require.NoError(t, json.NewDecoder(w.Body).Decode(&body))
+		return body.Halted
+	}
+
+	assert.False(t, status())
+	w := doReq(t, mux, http.MethodPost, "/api/chaos/halt", nil)
+	assert.Equal(t, 204, w.Code)
+	assert.True(t, ks.Halted())
+	assert.True(t, status())
+	w = doReq(t, mux, http.MethodPost, "/api/chaos/resume", nil)
+	assert.Equal(t, 204, w.Code)
+	assert.False(t, ks.Halted())
+	assert.False(t, status())
+}
+
+func TestAdminAPI_Chaos_NotConfigured(t *testing.T) {
+	mux := restapi.NewMux(&faultMemStore{}, nil, nil, nil, nil, nil)
+	for _, tc := range []struct{ method, path string }{
+		{http.MethodPost, "/api/chaos/halt"},
+		{http.MethodPost, "/api/chaos/resume"},
+		{http.MethodGet, "/api/chaos/status"},
+	} {
+		w := doReq(t, mux, tc.method, tc.path, nil)
+		assert.Equal(t, 501, w.Code, "%s %s", tc.method, tc.path)
+		assert.Contains(t, w.Body.String(), "chaos control not available")
+	}
+}
+
+func TestAdminAPI_Chaos_MethodNotAllowed(t *testing.T) {
+	ks := chaos.NewKillSwitch()
+	mux := restapi.NewMux(&faultMemStore{}, nil, nil, nil, nil, nil, restapi.WithKillSwitch(ks))
+	for _, tc := range []struct{ method, path string }{
+		{http.MethodGet, "/api/chaos/halt"},
+		{http.MethodGet, "/api/chaos/resume"},
+		{http.MethodPost, "/api/chaos/status"},
+	} {
+		w := doReq(t, mux, tc.method, tc.path, nil)
+		assert.Equal(t, 405, w.Code, "%s %s", tc.method, tc.path)
+	}
+}
+
+func TestAdminAPI_PostFault_InvalidJSON(t *testing.T) {
+	mux := restapi.NewMux(&faultMemStore{}, nil, nil, nil, nil, nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/faults", bytes.NewReader([]byte("not json")))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	assert.Equal(t, 400, w.Code)
 }
