@@ -428,3 +428,174 @@ func TestImportCommit_OverrideKeepsStoreOnlySimReusedByIncoming(t *testing.T) {
 	dropped, _ := store.GetSimulation("s-drop")
 	assert.Nil(t, dropped, "sim no longer referenced must be cascaded")
 }
+
+// --- fault profile import/export (Task 11) ---
+
+func transferFaultStore() *faultMemStore {
+	return &faultMemStore{
+		memStore: memStore{
+			rules: []domain.Rule{
+				{ID: "r1", Name: "One", Match: domain.MatchCriteria{Path: "/one"},
+					Buckets: []domain.WeightedBucket{{Weight: 100, Action: domain.ActionSimulate, SimulationID: "s1", FaultProfileID: "p1"}}},
+				{ID: "r2", Name: "Two", Match: domain.MatchCriteria{Path: "/two"},
+					Buckets: []domain.WeightedBucket{{Weight: 100, Action: domain.ActionForward, ForwardURL: "http://up"}}},
+			},
+			sims: []domain.Simulation{{ID: "s1", Protocol: "http"}},
+		},
+		profiles: []domain.FaultProfile{validProfile("p1"), validProfile("p-orphan")},
+	}
+}
+
+func faultyRule(id, path, profileID string) domain.Rule {
+	return domain.Rule{ID: id, Name: id, Match: domain.MatchCriteria{Path: path},
+		Buckets: []domain.WeightedBucket{{Weight: 100, Action: domain.ActionForward,
+			ForwardURL: "http://up", FaultProfileID: profileID}}}
+}
+
+func TestExport_IncludesReferencedFaultProfiles(t *testing.T) {
+	mux := restapi.NewMux(transferFaultStore(), nil, nil, nil, nil, nil, restapi.WithImportExport())
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/export", nil))
+	require.Equal(t, 200, w.Code)
+	var cfg domain.Config
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&cfg))
+	require.Len(t, cfg.FaultProfiles, 1, "only profiles referenced by exported rules")
+	assert.Equal(t, "p1", cfg.FaultProfiles[0].ID)
+}
+
+func TestExport_SubsetExcludesUnreferencedProfiles(t *testing.T) {
+	mux := restapi.NewMux(transferFaultStore(), nil, nil, nil, nil, nil, restapi.WithImportExport())
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/export?rules=r2", nil))
+	require.Equal(t, 200, w.Code)
+	var cfg domain.Config
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&cfg))
+	assert.Empty(t, cfg.FaultProfiles)
+}
+
+func TestImportPreview_FaultProfileIDConflict(t *testing.T) {
+	mux := restapi.NewMux(transferFaultStore(), nil, nil, nil, nil, nil, restapi.WithImportExport())
+	cfg := domain.Config{
+		Rules:         []domain.Rule{faultyRule("r-new", "/fresh", "p1")},
+		FaultProfiles: []domain.FaultProfile{validProfile("p1")},
+	}
+	w := previewReq(t, mux, cfg)
+	require.Equal(t, 200, w.Code)
+	var resp struct {
+		Conflicts             []struct{ Reason string }
+		FaultProfileConflicts []struct {
+			Reason   string `json:"reason"`
+			Incoming struct{ ID, Name string }
+			Existing struct{ ID, Name string }
+		} `json:"fault_profile_conflicts"`
+	}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	assert.Empty(t, resp.Conflicts)
+	require.Len(t, resp.FaultProfileConflicts, 1)
+	assert.Equal(t, "id", resp.FaultProfileConflicts[0].Reason)
+	assert.Equal(t, "p1", resp.FaultProfileConflicts[0].Incoming.ID)
+	assert.Equal(t, "p1", resp.FaultProfileConflicts[0].Existing.ID)
+}
+
+func TestImportPreview_FaultProfileValidation422(t *testing.T) {
+	store := transferFaultStore()
+	mux := restapi.NewMux(store, nil, nil, nil, nil, nil, restapi.WithImportExport())
+	bad := validProfile("p-bad")
+	bad.Faults = nil // invalid: profile needs at least one fault
+	for name, cfg := range map[string]domain.Config{
+		"invalid profile":      {FaultProfiles: []domain.FaultProfile{bad}},
+		"duplicate profile id": {FaultProfiles: []domain.FaultProfile{validProfile("dup"), validProfile("dup")}},
+		"dangling profile ref": {Rules: []domain.Rule{faultyRule("rx", "/x", "nowhere")}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			w := previewReq(t, mux, cfg)
+			assert.Equal(t, 422, w.Code)
+		})
+	}
+}
+
+func TestImportPreview_ProfileRefResolvesInStore(t *testing.T) {
+	// references p1 which exists in the store (not in payload) — valid
+	mux := restapi.NewMux(transferFaultStore(), nil, nil, nil, nil, nil, restapi.WithImportExport())
+	cfg := domain.Config{Rules: []domain.Rule{faultyRule("rx", "/x", "p1")}}
+	w := previewReq(t, mux, cfg)
+	assert.Equal(t, 200, w.Code)
+}
+
+func TestImport_FaultProfilesUnsupportedStore422(t *testing.T) {
+	// plain memStore has no FaultStore capability
+	mux := restapi.NewMux(transferStore(), nil, nil, nil, nil, nil, restapi.WithImportExport())
+	for name, cfg := range map[string]domain.Config{
+		"payload profiles": {FaultProfiles: []domain.FaultProfile{validProfile("p1")}},
+		"rule profile ref": {Rules: []domain.Rule{faultyRule("rx", "/x", "p1")}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			w := commitReq(t, mux, cfg, "")
+			assert.Equal(t, 422, w.Code)
+		})
+	}
+}
+
+func TestImportCommit_UpsertsReferencedFaultProfiles(t *testing.T) {
+	store := transferFaultStore()
+	mux := restapi.NewMux(store, func() {}, nil, nil, nil, nil, restapi.WithImportExport())
+
+	updated := validProfile("p1")
+	updated.Name = "updated"
+	cfg := domain.Config{
+		Rules: []domain.Rule{
+			faultyRule("r-upd", "/upd", "p1"),    // upserts existing p1
+			faultyRule("r-new", "/new", "p-new"), // inserts new p-new
+		},
+		FaultProfiles: []domain.FaultProfile{updated, validProfile("p-new"), validProfile("p-unused")},
+	}
+	w := commitReq(t, mux, cfg, "")
+	require.Equal(t, 200, w.Code)
+
+	p1, _ := store.GetFaultProfile("p1")
+	require.NotNil(t, p1)
+	assert.Equal(t, "updated", p1.Name, "existing profile must be upserted")
+	pNew, _ := store.GetFaultProfile("p-new")
+	require.NotNil(t, pNew)
+	unused, _ := store.GetFaultProfile("p-unused")
+	assert.Nil(t, unused, "payload profile not referenced by a saved rule must not be written")
+}
+
+func TestImportCommit_SkippedRuleProfileNotWritten(t *testing.T) {
+	store := transferFaultStore()
+	mux := restapi.NewMux(store, func() {}, nil, nil, nil, nil, restapi.WithImportExport())
+	// r1 conflicts by id and is not overridden → its payload profile must not be written
+	updated := validProfile("p1")
+	updated.Name = "should-not-land"
+	cfg := domain.Config{
+		Rules: []domain.Rule{{ID: "r1", Name: "V2", Match: domain.MatchCriteria{Path: "/changed"},
+			Buckets: []domain.WeightedBucket{{Weight: 100, Action: domain.ActionForward,
+				ForwardURL: "http://up", FaultProfileID: "p1"}}}},
+		FaultProfiles: []domain.FaultProfile{updated},
+	}
+	w := commitReq(t, mux, cfg, "")
+	require.Equal(t, 200, w.Code)
+	var rep importReport
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&rep))
+	assert.Equal(t, []string{"r1"}, rep.Skipped)
+	p1, _ := store.GetFaultProfile("p1")
+	require.NotNil(t, p1)
+	assert.NotEqual(t, "should-not-land", p1.Name)
+}
+
+func TestExportImport_RoundTripWithProfiles(t *testing.T) {
+	src := transferFaultStore()
+	srcMux := restapi.NewMux(src, nil, nil, nil, nil, nil, restapi.WithImportExport())
+	w := httptest.NewRecorder()
+	srcMux.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/export", nil))
+	require.Equal(t, 200, w.Code)
+
+	dst := &faultMemStore{}
+	dstMux := restapi.NewMux(dst, func() {}, nil, nil, nil, nil, restapi.WithImportExport())
+	w2 := httptest.NewRecorder()
+	dstMux.ServeHTTP(w2, httptest.NewRequest(http.MethodPost, "/api/import", bytes.NewReader(w.Body.Bytes())))
+	require.Equal(t, 200, w2.Code)
+	assert.Len(t, dst.rules, 2)
+	require.Len(t, dst.profiles, 1)
+	assert.Equal(t, "p1", dst.profiles[0].ID)
+}

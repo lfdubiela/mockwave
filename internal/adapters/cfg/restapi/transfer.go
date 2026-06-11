@@ -7,7 +7,19 @@ import (
 	"strings"
 
 	"github.com/mockwave/mockwave/domain"
+	"github.com/mockwave/mockwave/store"
 )
+
+// ruleFaultIDs returns the fault profile IDs referenced by r's buckets.
+func ruleFaultIDs(r domain.Rule) []string {
+	var ids []string
+	for _, b := range r.Buckets {
+		if b.FaultProfileID != "" {
+			ids = append(ids, b.FaultProfileID)
+		}
+	}
+	return ids
+}
 
 // requireImportExport writes a 403 and returns false when the import/export
 // endpoints are disabled (json-file store: the config file itself is already
@@ -78,6 +90,28 @@ func (a *adminAPI) exportHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	// Auto-collect the fault profiles the exported rules' buckets reference
+	// (same policy as simulations). Stores without the FaultStore capability
+	// cannot hold profiles, so there is nothing to collect there.
+	if fs, ok := a.store.(store.FaultStore); ok {
+		seenProfiles := map[string]bool{}
+		for _, ru := range rules {
+			for _, id := range ruleFaultIDs(ru) {
+				if seenProfiles[id] {
+					continue
+				}
+				seenProfiles[id] = true
+				p, err := fs.GetFaultProfile(id)
+				if err != nil {
+					writeError(w, 500, err.Error())
+					return
+				}
+				if p != nil {
+					cfg.FaultProfiles = append(cfg.FaultProfiles, *p)
+				}
+			}
+		}
+	}
 	if cfg.Rules == nil {
 		cfg.Rules = []domain.Rule{}
 	}
@@ -98,6 +132,35 @@ type importConflict struct {
 	Reason   string        `json:"reason"`
 	Incoming conflictParty `json:"incoming"`
 	Existing conflictParty `json:"existing"`
+}
+
+func profileParty(p domain.FaultProfile) conflictParty {
+	name := p.Name
+	if name == "" {
+		name = p.ID
+	}
+	return conflictParty{ID: p.ID, Name: name}
+}
+
+// detectProfileConflicts lists incoming fault profiles whose ID already exists
+// in the store. Profiles conflict by ID only (they have no match criteria);
+// on commit they are upserted, so these conflicts are informational.
+func (a *adminAPI) detectProfileConflicts(cfg domain.Config) ([]importConflict, error) {
+	fs, ok := a.store.(store.FaultStore)
+	if !ok {
+		return nil, nil
+	}
+	var out []importConflict
+	for _, p := range cfg.FaultProfiles {
+		ex, err := fs.GetFaultProfile(p.ID)
+		if err != nil {
+			return nil, err
+		}
+		if ex != nil {
+			out = append(out, importConflict{Reason: "id", Incoming: profileParty(p), Existing: profileParty(*ex)})
+		}
+	}
+	return out, nil
 }
 
 func party(r domain.Rule) conflictParty {
@@ -142,6 +205,20 @@ func (a *adminAPI) validateImportPayload(cfg domain.Config) (string, error) {
 		}
 		payloadSims[s.ID] = true
 	}
+	fs, hasFaultStore := a.store.(store.FaultStore)
+	payloadProfiles := make(map[string]bool, len(cfg.FaultProfiles))
+	for _, p := range cfg.FaultProfiles {
+		if err := p.Validate(); err != nil {
+			return fmt.Sprintf("fault profile %q: %v", p.ID, err), nil
+		}
+		if payloadProfiles[p.ID] {
+			return fmt.Sprintf("payload contains duplicate fault profile id %q", p.ID), nil
+		}
+		payloadProfiles[p.ID] = true
+	}
+	if len(cfg.FaultProfiles) > 0 && !hasFaultStore {
+		return "payload contains fault profiles but the store does not support them", nil
+	}
 	seenIDs := make(map[string]bool, len(cfg.Rules))
 	for i, r := range cfg.Rules {
 		if err := r.Validate(); err != nil {
@@ -164,6 +241,21 @@ func (a *adminAPI) validateImportPayload(cfg domain.Config) (string, error) {
 			}
 			if sim == nil {
 				return fmt.Sprintf("rule %q references simulation %q which exists neither in the payload nor in the store", r.ID, simID), nil
+			}
+		}
+		for _, profID := range ruleFaultIDs(r) {
+			if payloadProfiles[profID] {
+				continue
+			}
+			if !hasFaultStore {
+				return fmt.Sprintf("rule %q references fault profile %q but the store does not support fault profiles", r.ID, profID), nil
+			}
+			p, err := fs.GetFaultProfile(profID)
+			if err != nil {
+				return "", err
+			}
+			if p == nil {
+				return fmt.Sprintf("rule %q references fault profile %q which exists neither in the payload nor in the store", r.ID, profID), nil
 			}
 		}
 	}
@@ -227,6 +319,13 @@ func (a *adminAPI) importHandler(w http.ResponseWriter, r *http.Request) {
 	for _, s := range cfg.Simulations {
 		payloadSims[s.ID] = s
 	}
+	// validateImportPayload already guaranteed fs is non-nil whenever any
+	// payload profile or rule profile reference exists.
+	fs, _ := a.store.(store.FaultStore)
+	payloadProfiles := make(map[string]domain.FaultProfile, len(cfg.FaultProfiles))
+	for _, p := range cfg.FaultProfiles {
+		payloadProfiles[p.ID] = p
+	}
 
 	imported, skipped, overridden := []string{}, []string{}, []string{}
 	wrote := false
@@ -245,6 +344,17 @@ func (a *adminAPI) importHandler(w http.ResponseWriter, r *http.Request) {
 					writeError(w, 500, err.Error())
 					return false
 				}
+			}
+		}
+		// Fault profiles are upserted (no skip/override dance): they conflict
+		// by ID only, and the incoming rule expects the payload's version.
+		for _, profID := range ruleFaultIDs(ru) {
+			if p, ok := payloadProfiles[profID]; ok {
+				if err := fs.SaveFaultProfile(p); err != nil {
+					writeError(w, 500, err.Error())
+					return false
+				}
+				wrote = true
 			}
 		}
 		if err := a.store.SaveRule(ru); err != nil {
@@ -311,8 +421,17 @@ func (a *adminAPI) importPreviewHandler(w http.ResponseWriter, r *http.Request) 
 	if conflicts == nil {
 		conflicts = []importConflict{}
 	}
+	profileConflicts, err := a.detectProfileConflicts(cfg)
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	if profileConflicts == nil {
+		profileConflicts = []importConflict{}
+	}
 	writeJSON(w, 200, map[string]interface{}{
-		"importable": len(cfg.Rules) - len(conflicts),
-		"conflicts":  conflicts,
+		"importable":              len(cfg.Rules) - len(conflicts),
+		"conflicts":               conflicts,
+		"fault_profile_conflicts": profileConflicts,
 	})
 }
