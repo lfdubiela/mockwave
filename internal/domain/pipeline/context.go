@@ -41,4 +41,14 @@ type PipelineContext struct {
 	// "error" when a short-circuit fault fired, "jitter" when only latency was
 	// injected, "" when no fault fired.
 	FaultType string
+	// ConnFault is a connection-level fault directive the protocol adapter must
+	// execute on the raw connection (hang/reset/halfResponse). "" when none.
+	ConnFault string
+	// ConnFaultMaxMs is the hang duration when ConnFault == "hang".
+	ConnFaultMaxMs int
+	// ConnFaultFraction is the body portion to write when ConnFault == "halfResponse".
+	ConnFaultFraction float64
+	// SlowBodyBytesPerSec throttles the response body write when > 0 (modifier,
+	// combines with any non-terminal outcome).
+	SlowBodyBytesPerSec int
 }
