@@ -144,3 +144,30 @@ func TestBucketFaultProfileIDRoundTrip(t *testing.T) {
 		t.Fatalf("fault_profile_id should be omitted: %s", data2)
 	}
 }
+
+func TestRetryStormValidate(t *testing.T) {
+	cases := []struct {
+		name  string
+		fault Fault
+		ok    bool
+	}{
+		{"valid path key", Fault{Type: FaultRetryStorm, Probability: 1, Params: FaultParams{FailFirst: 3, StatusCode: 503, KeyBy: "path", WindowSec: 60}}, true},
+		{"valid header key", Fault{Type: FaultRetryStorm, Probability: 1, Params: FaultParams{FailFirst: 1, StatusCode: 500, KeyBy: "header:X-Request-Id", WindowSec: 30}}, true},
+		{"fail_first zero", Fault{Type: FaultRetryStorm, Probability: 1, Params: FaultParams{FailFirst: 0, StatusCode: 503, KeyBy: "path", WindowSec: 60}}, false},
+		{"bad status", Fault{Type: FaultRetryStorm, Probability: 1, Params: FaultParams{FailFirst: 3, StatusCode: 0, KeyBy: "path", WindowSec: 60}}, false},
+		{"bad key_by", Fault{Type: FaultRetryStorm, Probability: 1, Params: FaultParams{FailFirst: 3, StatusCode: 503, KeyBy: "ip", WindowSec: 60}}, false},
+		{"header without name", Fault{Type: FaultRetryStorm, Probability: 1, Params: FaultParams{FailFirst: 3, StatusCode: 503, KeyBy: "header:", WindowSec: 60}}, false},
+		{"window zero", Fault{Type: FaultRetryStorm, Probability: 1, Params: FaultParams{FailFirst: 3, StatusCode: 503, KeyBy: "path", WindowSec: 0}}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.fault.Validate()
+			if tc.ok && err != nil {
+				t.Fatalf("expected valid, got %v", err)
+			}
+			if !tc.ok && err == nil {
+				t.Fatal("expected error")
+			}
+		})
+	}
+}

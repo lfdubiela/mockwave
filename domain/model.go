@@ -3,6 +3,7 @@ package domain
 import (
 	"errors"
 	"fmt"
+	"strings"
 )
 
 const (
@@ -165,6 +166,8 @@ const (
 	FaultReset        = "reset"
 	FaultHalfResponse = "halfResponse"
 	FaultSlowBody     = "slowBody"
+
+	FaultRetryStorm = "retryStorm"
 )
 
 // FaultParams holds type-specific fault parameters. One flat struct keeps the
@@ -178,6 +181,9 @@ type FaultParams struct {
 	MaxMs       int               `json:"max_ms,omitempty"`        // hang: max ms to block before giving up
 	Fraction    float64           `json:"fraction,omitempty"`      // halfResponse: portion of body to write in [0,1)
 	BytesPerSec int               `json:"bytes_per_sec,omitempty"` // slowBody: write throttle rate
+	FailFirst   int               `json:"fail_first,omitempty"`    // retryStorm: number of initial requests per key to fail
+	KeyBy       string            `json:"key_by,omitempty"`        // retryStorm: "path" or "header:<Name>"
+	WindowSec   int               `json:"window_sec,omitempty"`    // retryStorm: sliding window TTL in seconds
 }
 
 // Fault is one failure mode inside a FaultProfile.
@@ -216,6 +222,22 @@ func (f Fault) Validate() error {
 	case FaultSlowBody:
 		if f.Params.BytesPerSec <= 0 {
 			return fmt.Errorf("slowBody fault requires bytes_per_sec > 0, got %d", f.Params.BytesPerSec)
+		}
+	case FaultRetryStorm:
+		if f.Params.FailFirst <= 0 {
+			return fmt.Errorf("retryStorm fault requires fail_first > 0, got %d", f.Params.FailFirst)
+		}
+		if f.Params.StatusCode < 100 || f.Params.StatusCode > 599 {
+			return fmt.Errorf("retryStorm fault requires status_code in [100,599], got %d", f.Params.StatusCode)
+		}
+		if f.Params.WindowSec <= 0 {
+			return fmt.Errorf("retryStorm fault requires window_sec > 0, got %d", f.Params.WindowSec)
+		}
+		switch {
+		case f.Params.KeyBy == "path":
+		case strings.HasPrefix(f.Params.KeyBy, "header:") && len(f.Params.KeyBy) > len("header:"):
+		default:
+			return fmt.Errorf("retryStorm key_by must be \"path\" or \"header:<Name>\", got %q", f.Params.KeyBy)
 		}
 	default:
 		return fmt.Errorf("unknown fault type %q", f.Type)
