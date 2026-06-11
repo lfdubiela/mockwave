@@ -28,4 +28,13 @@ type PipelineContext struct {
 	ShouldForward  bool
 	ForwardDelayMs int    // delay (ms) for the selected forward bucket, applied concurrently in the forward stage
 	ForwardURL     string // upstream base URL of the selected forward bucket
+	// FaultProfileID is the chaos profile selected by the router for this
+	// request's bucket ("" when the bucket has none).
+	FaultProfileID string
+	// FaultShortCircuit is set by the fault stage when a terminal fault fired:
+	// later stages (simulation, script, forward) must skip processing.
+	FaultShortCircuit bool
+	// FaultDelayMs is extra latency injected by a jitter fault; protocol
+	// adapters apply it together with Response.DelayMs.
+	FaultDelayMs int
 }
