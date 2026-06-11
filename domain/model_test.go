@@ -1,6 +1,10 @@
 package domain
 
-import "testing"
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+)
 
 func TestMatchCriteria_Equal(t *testing.T) {
 	base := MatchCriteria{
@@ -53,5 +57,59 @@ func TestWeightedBucket_ForwardWithDelayValid(t *testing.T) {
 	b := WeightedBucket{Weight: 100, Action: ActionForward, DelayMs: 2000, ForwardURL: "https://upstream.example.com"}
 	if err := b.Validate(); err != nil {
 		t.Fatalf("expected forward bucket with delay to be valid, got %v", err)
+	}
+}
+
+func TestFaultProfileValidate(t *testing.T) {
+	valid := FaultProfile{
+		ID:      "flaky-db",
+		Name:    "Flaky database",
+		Enabled: true,
+		Faults: []Fault{
+			{Type: FaultJitter, Probability: 1.0, Params: FaultParams{BaseDelayMs: 200, JitterMs: 300}},
+			{Type: FaultError, Probability: 0.3, Params: FaultParams{StatusCode: 503, Body: `{"error":"unavailable"}`}},
+		},
+	}
+	if err := valid.Validate(); err != nil {
+		t.Fatalf("valid profile: %v", err)
+	}
+
+	cases := []struct {
+		name string
+		mut  func(*FaultProfile)
+	}{
+		{"missing id", func(p *FaultProfile) { p.ID = "" }},
+		{"no faults", func(p *FaultProfile) { p.Faults = nil }},
+		{"unknown type", func(p *FaultProfile) { p.Faults[0].Type = "explode" }},
+		{"probability below 0", func(p *FaultProfile) { p.Faults[0].Probability = -0.1 }},
+		{"probability above 1", func(p *FaultProfile) { p.Faults[0].Probability = 1.1 }},
+		{"jitter without delay params", func(p *FaultProfile) { p.Faults[0].Params.JitterMs = 0; p.Faults[0].Params.BaseDelayMs = 0 }},
+		{"error without status", func(p *FaultProfile) { p.Faults[1].Params.StatusCode = 0 }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			p := valid
+			p.Faults = append([]Fault(nil), valid.Faults...)
+			tc.mut(&p)
+			if err := p.Validate(); err == nil {
+				t.Fatal("expected validation error")
+			}
+		})
+	}
+}
+
+func TestBucketFaultProfileIDRoundTrip(t *testing.T) {
+	b := WeightedBucket{Weight: 100, Action: ActionSimulate, SimulationID: "s1", FaultProfileID: "flaky-db"}
+	if err := b.Validate(); err != nil {
+		t.Fatalf("bucket with fault profile id should be valid: %v", err)
+	}
+	data, _ := json.Marshal(b)
+	if !strings.Contains(string(data), `"fault_profile_id":"flaky-db"`) {
+		t.Fatalf("missing fault_profile_id in %s", data)
+	}
+	b2 := WeightedBucket{Weight: 100, Action: ActionSimulate, SimulationID: "s1"}
+	data2, _ := json.Marshal(b2)
+	if strings.Contains(string(data2), "fault_profile_id") {
+		t.Fatalf("fault_profile_id should be omitted: %s", data2)
 	}
 }
