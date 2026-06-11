@@ -684,6 +684,44 @@ Available in the script context:
 
 ---
 
+## Chaos Testing
+
+Mockwave can act as an API-level chaos tool: instead of breaking real infrastructure
+(Gremlin-style host agents), it injects failures at the boundary your client actually
+sees — mock responses and forwarded traffic. Everything below works today:
+
+| Failure mode | How |
+|---|---|
+| Latency on mock responses | `response.delay_ms` on a simulation |
+| Latency on real upstream calls | `delay_ms` on a `forward` bucket (net effect = max(delay, upstream latency)) |
+| Partial degradation / blast radius | weighted buckets — e.g. 90% forward to the real service, 10% to a failing simulation |
+| Dependency returning errors | a simulation with `status: 503` (or any code/body) on a percentage of traffic |
+| Conditional failures | match criteria (header/path/query/body) route only specific requests to a failing rule |
+| Dynamic failures | JavaScript `script` on a simulation computes status/body per request |
+
+Example — 20% of `/payments/**` traffic gets a 503, the rest reaches the real service:
+
+```json
+{
+  "rules": [{
+    "id": "payments-chaos",
+    "name": "Payments degradation",
+    "match": {"protocol": "http", "path": "/payments/**"},
+    "buckets": [
+      {"weight": 80, "action": "forward", "forward_url": "https://payments.internal"},
+      {"weight": 20, "action": "simulate", "simulation_id": "payments-503"}
+    ]
+  }],
+  "simulations": [{
+    "id": "payments-503",
+    "protocol": "http",
+    "response": {"status": 503, "delay_ms": 1500, "body": {"error": "service unavailable"}}
+  }]
+}
+```
+
+---
+
 ## Extending Mockwave
 
 Mockwave exposes public Go interfaces for storage and observability. Implement any of them and pass to `server.New`:
