@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/mockwave/mockwave/internal/domain/pipeline"
@@ -83,8 +84,8 @@ func writeHalf(w http.ResponseWriter, pctx *pipeline.PipelineContext) {
 	defer conn.Close()
 	// Minimal HTTP/1.1 response with a Content-Length that promises the full
 	// body, but only the prefix is written → client read is truncated.
-	_, _ = buf.WriteString("HTTP/1.1 " + itoa(resp.Status) + " " + http.StatusText(resp.Status) + "\r\n")
-	_, _ = buf.WriteString("Content-Length: " + itoa(len(full)) + "\r\n\r\n")
+	_, _ = buf.WriteString("HTTP/1.1 " + strconv.Itoa(resp.Status) + " " + http.StatusText(resp.Status) + "\r\n")
+	_, _ = buf.WriteString("Content-Length: " + strconv.Itoa(len(full)) + "\r\n\r\n")
 	_, _ = buf.Write(full[:n])
 	_ = buf.Flush()
 }
@@ -101,22 +102,13 @@ func bodyBytes(body interface{}) []byte {
 	return b
 }
 
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	var buf [20]byte
-	i := len(buf)
-	for n > 0 {
-		i--
-		buf[i] = byte('0' + n%10)
-		n /= 10
-	}
-	return string(buf[i:])
-}
 
 // throttledWrite writes b to w at approximately bytesPerSec, flushing chunks.
 func throttledWrite(w http.ResponseWriter, b []byte, bytesPerSec int) {
+	if bytesPerSec <= 0 {
+		_, _ = w.Write(b)
+		return
+	}
 	flusher, _ := w.(http.Flusher)
 	const chunk = 256
 	interval := time.Duration(float64(time.Second) * float64(chunk) / float64(bytesPerSec))

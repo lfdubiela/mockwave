@@ -3,7 +3,6 @@ package httprest_test
 import (
 	"context"
 	"io"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -24,7 +23,6 @@ func (f fakeExec) Execute(_ context.Context, pctx *pipeline.PipelineContext) err
 
 func TestHang_BlocksThenClosesWithoutResponse(t *testing.T) {
 	h := httprest.NewHandler(fakeExec{mutate: func(p *pipeline.PipelineContext) {
-		p.FaultShortCircuit = true
 		p.ConnFault = "hang"
 		p.ConnFaultMaxMs = 300
 	}})
@@ -46,7 +44,6 @@ func TestHang_BlocksThenClosesWithoutResponse(t *testing.T) {
 
 func TestReset_ClientSeesConnectionReset(t *testing.T) {
 	h := httprest.NewHandler(fakeExec{mutate: func(p *pipeline.PipelineContext) {
-		p.FaultShortCircuit = true
 		p.ConnFault = "reset"
 	}})
 	srv := httptest.NewServer(h)
@@ -68,7 +65,6 @@ func TestReset_ClientSeesConnectionReset(t *testing.T) {
 func TestHalfResponse_TruncatedBody(t *testing.T) {
 	full := strings.Repeat("A", 1000)
 	h := httprest.NewHandler(fakeExec{mutate: func(p *pipeline.PipelineContext) {
-		p.FaultShortCircuit = true
 		p.ConnFault = "halfResponse"
 		p.ConnFaultFraction = 0.5
 		p.Response = &pipeline.MockResponse{Status: 200, Body: full}
@@ -108,5 +104,3 @@ func TestSlowBody_ThrottlesWrite(t *testing.T) {
 		t.Fatalf("slowBody did not throttle: %v", time.Since(start))
 	}
 }
-
-var _ = net.Dial // keep import if unused after edits
