@@ -100,6 +100,35 @@ func TestFaultProfileValidate(t *testing.T) {
 	}
 }
 
+func TestConnectionFaultValidate(t *testing.T) {
+	cases := []struct {
+		name  string
+		fault Fault
+		ok    bool
+	}{
+		{"hang valid", Fault{Type: FaultHang, Probability: 1, Params: FaultParams{MaxMs: 5000}}, true},
+		{"hang missing max_ms", Fault{Type: FaultHang, Probability: 1}, false},
+		{"hang negative max_ms", Fault{Type: FaultHang, Probability: 1, Params: FaultParams{MaxMs: -1}}, false},
+		{"reset valid", Fault{Type: FaultReset, Probability: 1}, true},
+		{"halfResponse valid", Fault{Type: FaultHalfResponse, Probability: 1, Params: FaultParams{Fraction: 0.5}}, true},
+		{"halfResponse fraction 0", Fault{Type: FaultHalfResponse, Probability: 1, Params: FaultParams{Fraction: 0}}, false},
+		{"halfResponse fraction >1", Fault{Type: FaultHalfResponse, Probability: 1, Params: FaultParams{Fraction: 1.5}}, false},
+		{"slowBody valid", Fault{Type: FaultSlowBody, Probability: 1, Params: FaultParams{BytesPerSec: 1024}}, true},
+		{"slowBody zero rate", Fault{Type: FaultSlowBody, Probability: 1, Params: FaultParams{BytesPerSec: 0}}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.fault.Validate()
+			if tc.ok && err != nil {
+				t.Fatalf("expected valid, got %v", err)
+			}
+			if !tc.ok && err == nil {
+				t.Fatal("expected error")
+			}
+		})
+	}
+}
+
 func TestBucketFaultProfileIDRoundTrip(t *testing.T) {
 	b := WeightedBucket{Weight: 100, Action: ActionSimulate, SimulationID: "s1", FaultProfileID: "flaky-db"}
 	if err := b.Validate(); err != nil {

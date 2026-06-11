@@ -160,16 +160,24 @@ type Config struct {
 const (
 	FaultJitter = "jitter"
 	FaultError  = "error"
+
+	FaultHang         = "hang"
+	FaultReset        = "reset"
+	FaultHalfResponse = "halfResponse"
+	FaultSlowBody     = "slowBody"
 )
 
 // FaultParams holds type-specific fault parameters. One flat struct keeps the
 // JSON shape simple; Validate enforces which fields each type requires.
 type FaultParams struct {
 	BaseDelayMs int               `json:"base_delay_ms,omitempty"` // jitter: fixed delay added to every affected request
-	JitterMs    int               `json:"jitter_ms,omitempty"`    // jitter: random extra delay in [0, JitterMs)
-	StatusCode  int               `json:"status_code,omitempty"`  // error: HTTP status to return
-	Body        string            `json:"body,omitempty"`        // error: response body (raw string)
-	Headers     map[string]string `json:"headers,omitempty"`     // error: response headers
+	JitterMs    int               `json:"jitter_ms,omitempty"`     // jitter: random extra delay in [0, JitterMs)
+	StatusCode  int               `json:"status_code,omitempty"`   // error: HTTP status to return
+	Body        string            `json:"body,omitempty"`          // error: response body (raw string)
+	Headers     map[string]string `json:"headers,omitempty"`       // error: response headers
+	MaxMs       int               `json:"max_ms,omitempty"`        // hang: max ms to block before giving up
+	Fraction    float64           `json:"fraction,omitempty"`      // halfResponse: portion of body to write in [0,1)
+	BytesPerSec int               `json:"bytes_per_sec,omitempty"` // slowBody: write throttle rate
 }
 
 // Fault is one failure mode inside a FaultProfile.
@@ -194,6 +202,20 @@ func (f Fault) Validate() error {
 	case FaultError:
 		if f.Params.StatusCode < 100 || f.Params.StatusCode > 599 {
 			return fmt.Errorf("error fault requires status_code in [100,599], got %d", f.Params.StatusCode)
+		}
+	case FaultHang:
+		if f.Params.MaxMs <= 0 {
+			return fmt.Errorf("hang fault requires max_ms > 0, got %d", f.Params.MaxMs)
+		}
+	case FaultReset:
+		// no params
+	case FaultHalfResponse:
+		if f.Params.Fraction <= 0 || f.Params.Fraction >= 1 {
+			return fmt.Errorf("halfResponse fault requires fraction in (0,1), got %v", f.Params.Fraction)
+		}
+	case FaultSlowBody:
+		if f.Params.BytesPerSec <= 0 {
+			return fmt.Errorf("slowBody fault requires bytes_per_sec > 0, got %d", f.Params.BytesPerSec)
 		}
 	default:
 		return fmt.Errorf("unknown fault type %q", f.Type)
