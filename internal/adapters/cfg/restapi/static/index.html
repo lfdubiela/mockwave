@@ -1767,9 +1767,10 @@
     renderChips();
   }
 
-  // Load chart on page load and refresh every 10s.
+  // Load chart on page load and refresh every 10s. Chaos status rides the
+  // same cadence so a halt issued via CLI shows up in an already-open UI.
   loadChart();
-  setInterval(loadChart, 10000);
+  setInterval(() => { loadChart(); loadChaosStatus(); }, 10000);
 
   // ── Metrics (SSE) ──────────────────────────────────────────────────────────
   function connectMetrics() {
