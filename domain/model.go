@@ -155,6 +155,41 @@ type Config struct {
 	Simulations []Simulation `json:"simulations"`
 
 	FaultProfiles []FaultProfile `json:"fault_profiles,omitempty"`
+
+	Scenarios []Scenario `json:"scenarios,omitempty"`
+}
+
+// ScenarioPhase is one timed step of a Scenario. FaultProfileID "" means a
+// recovery phase: targeted rules run with no injected faults.
+type ScenarioPhase struct {
+	DurationSec    int    `json:"duration_sec"`
+	FaultProfileID string `json:"fault_profile_id,omitempty"`
+}
+
+// Scenario applies a sequence of fault profiles to a set of rules over time.
+type Scenario struct {
+	ID      string          `json:"id"`
+	Name    string          `json:"name"`
+	RuleIDs []string        `json:"rule_ids"`
+	Phases  []ScenarioPhase `json:"phases"`
+}
+
+func (s Scenario) Validate() error {
+	if s.ID == "" {
+		return fmt.Errorf("scenario id is required")
+	}
+	if len(s.RuleIDs) == 0 {
+		return fmt.Errorf("scenario must target at least one rule")
+	}
+	if len(s.Phases) == 0 {
+		return fmt.Errorf("scenario must have at least one phase")
+	}
+	for i, p := range s.Phases {
+		if p.DurationSec <= 0 {
+			return fmt.Errorf("phase[%d] duration_sec must be > 0, got %d", i, p.DurationSec)
+		}
+	}
+	return nil
 }
 
 // Fault types supported by FaultProfile.

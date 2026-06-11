@@ -171,3 +171,37 @@ func TestRetryStormValidate(t *testing.T) {
 		})
 	}
 }
+
+func TestScenarioValidate(t *testing.T) {
+	valid := Scenario{
+		ID: "drill", Name: "DB degradation drill", RuleIDs: []string{"r1", "r2"},
+		Phases: []ScenarioPhase{
+			{DurationSec: 300, FaultProfileID: "mild"},
+			{DurationSec: 120, FaultProfileID: ""},
+		},
+	}
+	if err := valid.Validate(); err != nil {
+		t.Fatalf("valid scenario: %v", err)
+	}
+	cases := []struct {
+		name string
+		mut  func(*Scenario)
+	}{
+		{"missing id", func(s *Scenario) { s.ID = "" }},
+		{"no rule ids", func(s *Scenario) { s.RuleIDs = nil }},
+		{"no phases", func(s *Scenario) { s.Phases = nil }},
+		{"phase zero duration", func(s *Scenario) { s.Phases[0].DurationSec = 0 }},
+		{"phase negative duration", func(s *Scenario) { s.Phases[0].DurationSec = -5 }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := valid
+			s.RuleIDs = append([]string(nil), valid.RuleIDs...)
+			s.Phases = append([]ScenarioPhase(nil), valid.Phases...)
+			tc.mut(&s)
+			if err := s.Validate(); err == nil {
+				t.Fatal("expected validation error")
+			}
+		})
+	}
+}
