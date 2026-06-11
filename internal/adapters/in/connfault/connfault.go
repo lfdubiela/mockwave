@@ -1,4 +1,7 @@
-package httprest
+// Package connfault implements terminal connection-level chaos faults that
+// operate directly on the raw connection (reset, hang, half-response) and
+// throttled body writes, shared across protocol adapters.
+package connfault
 
 import (
 	"encoding/json"
@@ -10,11 +13,11 @@ import (
 	"github.com/mockwave/mockwave/internal/domain/pipeline"
 )
 
-// handleConnFault executes a terminal connection-level fault directly on the
+// Handle executes a terminal connection-level fault directly on the
 // connection. Returns true when it handled the response (the caller must then
 // stop). hang/reset require hijacking the raw conn; halfResponse writes a
 // partial body and closes.
-func handleConnFault(w http.ResponseWriter, pctx *pipeline.PipelineContext) bool {
+func Handle(w http.ResponseWriter, pctx *pipeline.PipelineContext) bool {
 	switch pctx.ConnFault {
 	case "hang":
 		// Block up to MaxMs (or until client disconnects), then close silently.
@@ -68,7 +71,7 @@ func writeHalf(w http.ResponseWriter, pctx *pipeline.PipelineContext) {
 		hijackClose(w)
 		return
 	}
-	full := bodyBytes(resp.Body)
+	full := BodyBytes(resp.Body)
 	n := int(float64(len(full)) * pctx.ConnFaultFraction)
 	hj, ok := w.(http.Hijacker)
 	if !ok {
@@ -90,8 +93,8 @@ func writeHalf(w http.ResponseWriter, pctx *pipeline.PipelineContext) {
 	_ = buf.Flush()
 }
 
-// bodyBytes renders a MockResponse body the same way the normal path does.
-func bodyBytes(body interface{}) []byte {
+// BodyBytes renders a MockResponse body the same way the normal path does.
+func BodyBytes(body interface{}) []byte {
 	if body == nil {
 		return nil
 	}
@@ -102,9 +105,8 @@ func bodyBytes(body interface{}) []byte {
 	return b
 }
 
-
-// throttledWrite writes b to w at approximately bytesPerSec, flushing chunks.
-func throttledWrite(w http.ResponseWriter, b []byte, bytesPerSec int) {
+// ThrottledWrite writes b to w at approximately bytesPerSec, flushing chunks.
+func ThrottledWrite(w http.ResponseWriter, b []byte, bytesPerSec int) {
 	if bytesPerSec <= 0 {
 		_, _ = w.Write(b)
 		return

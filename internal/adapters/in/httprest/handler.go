@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mockwave/mockwave/internal/adapters/in/connfault"
 	"github.com/mockwave/mockwave/internal/domain/pipeline"
 	"github.com/mockwave/mockwave/observability"
 )
@@ -56,7 +57,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	// Connection-level terminal faults bypass the normal response path.
 	if pctx.ConnFault != "" {
-		handleConnFault(w, pctx)
+		connfault.Handle(w, pctx)
 		return
 	}
 	if pctx.Response == nil {
@@ -76,7 +77,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(resp.Status)
 	if resp.Body != nil {
 		if pctx.SlowBodyBytesPerSec > 0 {
-			throttledWrite(w, bodyBytes(resp.Body), pctx.SlowBodyBytesPerSec)
+			connfault.ThrottledWrite(w, connfault.BodyBytes(resp.Body), pctx.SlowBodyBytesPerSec)
 		} else {
 			_ = json.NewEncoder(w).Encode(resp.Body)
 		}
