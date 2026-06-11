@@ -32,7 +32,7 @@ func main() {
 
 func rootCmd() *cobra.Command {
 	root := &cobra.Command{Use: "mockwave", Short: "Multi-protocol mock server"}
-	root.AddCommand(startCmd(), validateCmd(), versionCmd(), mcpCmd())
+	root.AddCommand(startCmd(), validateCmd(), versionCmd(), mcpCmd(), faultCmd(), chaosCmd())
 	return root
 }
 
