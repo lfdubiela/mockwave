@@ -136,6 +136,32 @@ func (a *adminAPI) ruleByIDLookup(id string) (*domain.Rule, error) {
 	return nil, nil
 }
 
+// validateFaultProfileRefs checks every bucket referencing a fault profile
+// against the store. It writes the error response itself and returns false
+// when the rule must be rejected.
+func (a *adminAPI) validateFaultProfileRefs(w http.ResponseWriter, rule domain.Rule) bool {
+	fs, ok := a.store.(store.FaultStore)
+	for _, b := range rule.Buckets {
+		if b.FaultProfileID == "" {
+			continue
+		}
+		if !ok {
+			writeError(w, 422, "store does not support fault profiles")
+			return false
+		}
+		p, err := fs.GetFaultProfile(b.FaultProfileID)
+		if err != nil {
+			writeError(w, 500, err.Error())
+			return false
+		}
+		if p == nil {
+			writeError(w, 422, fmt.Sprintf("unknown fault profile %q", b.FaultProfileID))
+			return false
+		}
+	}
+	return true
+}
+
 func (a *adminAPI) reload() {
 	if a.onReload != nil {
 		a.onReload()
@@ -163,6 +189,9 @@ func (a *adminAPI) rules(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := rule.Validate(); err != nil {
 			writeError(w, 422, err.Error())
+			return
+		}
+		if !a.validateFaultProfileRefs(w, rule) {
 			return
 		}
 		if msg, err := a.duplicateMatchError(rule); err != nil {
@@ -242,6 +271,9 @@ func (a *adminAPI) ruleByID(w http.ResponseWriter, r *http.Request) {
 		rule.ID = id
 		if err := rule.Validate(); err != nil {
 			writeError(w, 422, err.Error())
+			return
+		}
+		if !a.validateFaultProfileRefs(w, rule) {
 			return
 		}
 		if msg, err := a.duplicateMatchError(rule); err != nil {

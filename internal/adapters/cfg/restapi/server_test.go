@@ -761,3 +761,79 @@ func TestAdminAPI_DeleteAllRules_SharedSimEventuallyDeleted(t *testing.T) {
 	// Both rules gone → shared sim must be deleted (no leak)
 	assert.Len(t, store.sims, 0)
 }
+
+// faultMemStore extends memStore with the store.FaultStore capability.
+type faultMemStore struct {
+	memStore
+	profiles []domain.FaultProfile
+}
+
+func (f *faultMemStore) ListFaultProfiles() ([]domain.FaultProfile, error) { return f.profiles, nil }
+func (f *faultMemStore) GetFaultProfile(id string) (*domain.FaultProfile, error) {
+	for _, p := range f.profiles {
+		if p.ID == id {
+			pp := p
+			return &pp, nil
+		}
+	}
+	return nil, nil
+}
+func (f *faultMemStore) SaveFaultProfile(p domain.FaultProfile) error {
+	f.profiles = append(f.profiles, p)
+	return nil
+}
+func (f *faultMemStore) DeleteFaultProfile(id string) error { return nil }
+
+func faultRule(id string) domain.Rule {
+	return domain.Rule{
+		ID:    id,
+		Match: domain.MatchCriteria{Path: "/chaos"},
+		Buckets: []domain.WeightedBucket{
+			{Weight: 100, Action: domain.ActionSimulate, SimulationID: "s1", FaultProfileID: "ghost"},
+		},
+	}
+}
+
+func TestAdminAPI_PostRule_UnknownFaultProfileRejected(t *testing.T) {
+	store := &faultMemStore{}
+	mux := restapi.NewMux(store, nil, nil, nil, nil, nil)
+	body, _ := json.Marshal(faultRule("r-fault"))
+	req := httptest.NewRequest(http.MethodPost, "/api/rules", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	assert.Equal(t, 422, w.Code)
+	assert.Contains(t, w.Body.String(), "unknown fault profile")
+	assert.Len(t, store.rules, 0)
+}
+
+func TestAdminAPI_PostRule_KnownFaultProfileAccepted(t *testing.T) {
+	store := &faultMemStore{profiles: []domain.FaultProfile{{ID: "ghost"}}}
+	mux := restapi.NewMux(store, nil, nil, nil, nil, nil)
+	body, _ := json.Marshal(faultRule("r-fault"))
+	req := httptest.NewRequest(http.MethodPost, "/api/rules", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	assert.Equal(t, 201, w.Code)
+}
+
+func TestAdminAPI_PostRule_FaultProfileUnsupportedStore(t *testing.T) {
+	store := &memStore{} // no FaultStore capability
+	mux := restapi.NewMux(store, nil, nil, nil, nil, nil)
+	body, _ := json.Marshal(faultRule("r-fault"))
+	req := httptest.NewRequest(http.MethodPost, "/api/rules", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	assert.Equal(t, 422, w.Code)
+	assert.Contains(t, w.Body.String(), "store does not support fault profiles")
+}
+
+func TestAdminAPI_PutRule_UnknownFaultProfileRejected(t *testing.T) {
+	store := &faultMemStore{memStore: memStore{rules: []domain.Rule{{ID: "r-fault", Match: domain.MatchCriteria{Path: "/chaos"}}}}}
+	mux := restapi.NewMux(store, nil, nil, nil, nil, nil)
+	body, _ := json.Marshal(faultRule("r-fault"))
+	req := httptest.NewRequest(http.MethodPut, "/api/rules/r-fault", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	assert.Equal(t, 422, w.Code)
+	assert.Contains(t, w.Body.String(), "unknown fault profile")
+}
