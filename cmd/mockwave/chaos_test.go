@@ -138,9 +138,48 @@ func TestAdminError_NonOK(t *testing.T) {
 	assert.Contains(t, err.Error(), "boom")
 }
 
+func TestRunScenarioList(t *testing.T) {
+	fa := &fakeAdmin{status: http.StatusOK, respBody: `[{"id":"s1"}]`}
+	srv := fa.server(t)
+
+	var out bytes.Buffer
+	require.NoError(t, runScenarioList(srv.URL, &out))
+	assert.Equal(t, http.MethodGet, fa.method)
+	assert.Equal(t, "/api/scenarios", fa.path)
+	assert.Equal(t, `[{"id":"s1"}]`, out.String())
+}
+
+func TestRunScenarioStart(t *testing.T) {
+	fa := &fakeAdmin{status: http.StatusAccepted}
+	srv := fa.server(t)
+
+	require.NoError(t, runScenarioStart(srv.URL, "s1"))
+	assert.Equal(t, http.MethodPost, fa.method)
+	assert.Equal(t, "/api/scenarios/s1/start", fa.path)
+}
+
+func TestRunScenarioStop(t *testing.T) {
+	fa := &fakeAdmin{status: http.StatusNoContent}
+	srv := fa.server(t)
+
+	require.NoError(t, runScenarioStop(srv.URL, "s1"))
+	assert.Equal(t, http.MethodPost, fa.method)
+	assert.Equal(t, "/api/scenarios/s1/stop", fa.path)
+}
+
+func TestRunScenario_NonOK(t *testing.T) {
+	fa := &fakeAdmin{status: http.StatusInternalServerError, respBody: "boom"}
+	srv := fa.server(t)
+
+	err := runScenarioStart(srv.URL, "s1")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "500")
+	assert.Contains(t, err.Error(), "boom")
+}
+
 func TestFaultAndChaosCmd_Registered(t *testing.T) {
 	root := rootCmd()
-	for _, name := range []string{"fault", "chaos"} {
+	for _, name := range []string{"fault", "chaos", "scenario"} {
 		found := false
 		for _, c := range root.Commands() {
 			if c.Name() == name {

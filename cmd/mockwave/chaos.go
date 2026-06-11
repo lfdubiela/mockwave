@@ -184,3 +184,52 @@ func runChaosStatus(base string, out io.Writer) error {
 	_, err = io.Copy(out, resp.Body)
 	return err
 }
+
+func scenarioCmd() *cobra.Command {
+	var adminURL string
+	cmd := &cobra.Command{Use: "scenario", Short: "Manage and run chaos scenarios"}
+	cmd.PersistentFlags().StringVar(&adminURL, "admin-url", "http://localhost:9090", "mockwave admin API base URL")
+
+	list := &cobra.Command{Use: "list", Short: "List scenarios", RunE: func(cmd *cobra.Command, _ []string) error {
+		return runScenarioList(adminURL, cmd.OutOrStdout())
+	}}
+	start := &cobra.Command{Use: "start <id>", Args: cobra.ExactArgs(1), Short: "Start a scenario", RunE: func(_ *cobra.Command, args []string) error {
+		return runScenarioStart(adminURL, args[0])
+	}}
+	stop := &cobra.Command{Use: "stop <id>", Args: cobra.ExactArgs(1), Short: "Stop a scenario", RunE: func(_ *cobra.Command, args []string) error {
+		return runScenarioStop(adminURL, args[0])
+	}}
+	cmd.AddCommand(list, start, stop)
+	return cmd
+}
+
+func runScenarioList(base string, out io.Writer) error {
+	resp, err := adminDo(base, http.MethodGet, "/api/scenarios", nil)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if err := checkStatus(resp, http.StatusOK); err != nil {
+		return err
+	}
+	_, err = io.Copy(out, resp.Body)
+	return err
+}
+
+func runScenarioStart(base, id string) error {
+	resp, err := adminDo(base, http.MethodPost, "/api/scenarios/"+id+"/start", nil)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	return checkStatus(resp, http.StatusAccepted)
+}
+
+func runScenarioStop(base, id string) error {
+	resp, err := adminDo(base, http.MethodPost, "/api/scenarios/"+id+"/stop", nil)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	return checkStatus(resp, http.StatusNoContent)
+}
