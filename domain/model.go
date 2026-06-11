@@ -189,11 +189,11 @@ func (f Fault) Validate() error {
 			return fmt.Errorf("jitter fault delay params must be >= 0")
 		}
 		if f.Params.BaseDelayMs <= 0 && f.Params.JitterMs <= 0 {
-			return fmt.Errorf("jitter fault requires baseDelayMs or jitterMs > 0")
+			return fmt.Errorf("jitter fault requires base_delay_ms or jitter_ms > 0")
 		}
 	case FaultError:
 		if f.Params.StatusCode < 100 || f.Params.StatusCode > 599 {
-			return fmt.Errorf("error fault requires statusCode in [100,599], got %d", f.Params.StatusCode)
+			return fmt.Errorf("error fault requires status_code in [100,599], got %d", f.Params.StatusCode)
 		}
 	default:
 		return fmt.Errorf("unknown fault type %q", f.Type)

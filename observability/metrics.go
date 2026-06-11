@@ -11,6 +11,10 @@ type RequestAttrs struct {
 	RuleID    string
 	RuleName  string
 	LatencyMs float64
+	// FaultProfileID is the chaos profile selected for this request ("" when none).
+	FaultProfileID string
+	// FaultType is the fault that fired: "error", "jitter", or "" when none.
+	FaultType string
 }
 
 // MetricsRecorder records application-level metrics.

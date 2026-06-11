@@ -165,3 +165,51 @@ func TestGraphQLHandler_FaultDelayApplied(t *testing.T) {
 	assert.GreaterOrEqual(t, time.Since(start), 50*time.Millisecond)
 	assert.Equal(t, http.StatusOK, w.Code)
 }
+
+func TestGraphQLHandler_FaultShortCircuitJSONBody(t *testing.T) {
+	exec := &mockExec{
+		fn: func(_ context.Context, pctx *pipeline.PipelineContext) error {
+			pctx.FaultShortCircuit = true
+			pctx.Response = &pipeline.MockResponse{
+				Status:  503,
+				Headers: map[string]string{"Retry-After": "5"},
+				Body:    map[string]interface{}{"error": "injected fault"},
+			}
+			return nil
+		},
+	}
+	h := graphqladapter.NewHandler(exec)
+	body := `{"query":"query GetUser { user { id } }"}`
+	req := httptest.NewRequest(http.MethodPost, "/graphql", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+	assert.Equal(t, "5", w.Header().Get("Retry-After"))
+	assert.Contains(t, w.Header().Get("Content-Type"), "application/json")
+	var resp map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, "injected fault", resp["error"])
+	assert.NotContains(t, resp, "data")
+}
+
+func TestGraphQLHandler_FaultShortCircuitStringBody(t *testing.T) {
+	exec := &mockExec{
+		fn: func(_ context.Context, pctx *pipeline.PipelineContext) error {
+			pctx.FaultShortCircuit = true
+			pctx.Response = &pipeline.MockResponse{
+				Status:  500,
+				Headers: map[string]string{"Content-Type": "text/plain"},
+				Body:    "boom",
+			}
+			return nil
+		},
+	}
+	h := graphqladapter.NewHandler(exec)
+	body := `{"query":"query GetUser { user { id } }"}`
+	req := httptest.NewRequest(http.MethodPost, "/graphql", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	assert.Contains(t, w.Header().Get("Content-Type"), "text/plain")
+	assert.Equal(t, "boom", w.Body.String())
+}

@@ -49,6 +49,7 @@ func (s *FaultStage) Execute(_ context.Context, pctx *pipeline.PipelineContext) 
 				d += s.intn(f.Params.JitterMs)
 			}
 			pctx.FaultDelayMs += d
+			pctx.FaultType = "jitter"
 		case domain.FaultError:
 			pctx.Response = &pipeline.MockResponse{
 				Status:  f.Params.StatusCode,
@@ -56,6 +57,7 @@ func (s *FaultStage) Execute(_ context.Context, pctx *pipeline.PipelineContext) 
 				Body:    parseBody(f.Params.Body),
 			}
 			pctx.FaultShortCircuit = true
+			pctx.FaultType = "error"
 			pctx.ShouldForward = false
 			pctx.SimulationID = ""
 			return nil // first terminal fault wins

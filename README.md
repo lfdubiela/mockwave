@@ -786,7 +786,8 @@ mockwave chaos status   # GET  /api/chaos/status — current state
 `/api/export` includes the fault profiles referenced by the exported rules'
 buckets, and `/api/import` upserts incoming profiles alongside the rules that
 reference them. Rules referencing a profile that exists neither in the payload
-nor in the store are rejected with `422`.
+nor in the store are rejected with `422`. Fault profiles in an import payload
+are only saved when referenced by an imported rule (same policy as simulations).
 
 ---
 

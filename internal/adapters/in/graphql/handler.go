@@ -78,11 +78,40 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if d := resp.DelayMs + pctx.FaultDelayMs; d > 0 {
 		time.Sleep(time.Duration(d) * time.Millisecond)
 	}
+	if pctx.FaultShortCircuit {
+		writeFaultResponse(w, resp)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(resp.Status)
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"data": resp.Body,
 	})
+}
+
+// writeFaultResponse writes an injected chaos fault response directly,
+// preserving the injected status, headers, and body instead of wrapping
+// it in a GraphQL {"data": ...} envelope.
+func writeFaultResponse(w http.ResponseWriter, resp *pipeline.MockResponse) {
+	for k, v := range resp.Headers {
+		w.Header().Set(k, v)
+	}
+	if w.Header().Get("Content-Type") == "" {
+		w.Header().Set("Content-Type", "application/json")
+	}
+	status := resp.Status
+	if status == 0 {
+		status = http.StatusOK
+	}
+	w.WriteHeader(status)
+	if resp.Body == nil {
+		return
+	}
+	if s, ok := resp.Body.(string); ok {
+		_, _ = w.Write([]byte(s))
+		return
+	}
+	_ = json.NewEncoder(w).Encode(resp.Body)
 }
 
 // ExtractOperationType returns "query", "mutation", or "subscription".

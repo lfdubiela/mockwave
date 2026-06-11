@@ -146,3 +146,52 @@ type executorFunc func(ctx context.Context, pctx *pipeline.PipelineContext) erro
 func (f executorFunc) Execute(ctx context.Context, pctx *pipeline.PipelineContext) error {
 	return f(ctx, pctx)
 }
+
+// faultExecutor matches a rule and simulates the fault stage having fired.
+type faultExecutor struct {
+	faultProfileID string
+	faultType      string
+}
+
+func (f *faultExecutor) Execute(_ context.Context, pctx *pipeline.PipelineContext) error {
+	pctx.Matched = &domain.Rule{ID: "r1", Name: "My Rule"}
+	pctx.FaultProfileID = f.faultProfileID
+	pctx.FaultType = f.faultType
+	return nil
+}
+
+func TestMiddleware_RecordsFaultAttrs(t *testing.T) {
+	col := metrics.NewCollector()
+	buf := unmatched.NewBuffer(10)
+	rec := &recordingMetrics{}
+
+	exec := &faultExecutor{faultProfileID: "fp-1", faultType: "error"}
+	mw := metrics.NewMiddleware(exec, col, buf, observability.NoopTracer{}, rec)
+
+	pctx := &pipeline.PipelineContext{
+		Request: pipeline.NormalizedRequest{Method: "GET", Path: "/ping", Protocol: "http"},
+	}
+	assert.NoError(t, mw.Execute(context.Background(), pctx))
+
+	assert.Len(t, rec.requests, 1)
+	assert.Equal(t, "fp-1", rec.requests[0].FaultProfileID)
+	assert.Equal(t, "error", rec.requests[0].FaultType)
+}
+
+func TestMiddleware_NoFaultLeavesAttrsEmpty(t *testing.T) {
+	col := metrics.NewCollector()
+	buf := unmatched.NewBuffer(10)
+	rec := &recordingMetrics{}
+
+	exec := &stubExecutor{matchedRule: &domain.Rule{ID: "r1", Name: "My Rule"}}
+	mw := metrics.NewMiddleware(exec, col, buf, observability.NoopTracer{}, rec)
+
+	pctx := &pipeline.PipelineContext{
+		Request: pipeline.NormalizedRequest{Method: "GET", Path: "/ping", Protocol: "http"},
+	}
+	assert.NoError(t, mw.Execute(context.Background(), pctx))
+
+	assert.Len(t, rec.requests, 1)
+	assert.Empty(t, rec.requests[0].FaultProfileID)
+	assert.Empty(t, rec.requests[0].FaultType)
+}

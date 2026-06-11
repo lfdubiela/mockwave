@@ -37,4 +37,8 @@ type PipelineContext struct {
 	// FaultDelayMs is extra latency injected by a jitter fault; protocol
 	// adapters apply it together with Response.DelayMs.
 	FaultDelayMs int
+	// FaultType records the terminal fault type that fired for this request:
+	// "error" when a short-circuit fault fired, "jitter" when only latency was
+	// injected, "" when no fault fired.
+	FaultType string
 }

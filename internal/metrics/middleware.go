@@ -68,12 +68,14 @@ func (m *Middleware) Execute(ctx context.Context, pctx *pipeline.PipelineContext
 	if pctx.Matched != nil {
 		m.collector.RecordHit(pctx.Matched.ID, pctx.Matched.Name, latencyMs)
 		m.recorder.RecordRequest(ctx, observability.RequestAttrs{
-			Protocol:  pctx.Request.Protocol,
-			Method:    pctx.Request.Method,
-			Path:      pctx.Request.Path,
-			RuleID:    pctx.Matched.ID,
-			RuleName:  pctx.Matched.Name,
-			LatencyMs: latencyMs,
+			Protocol:       pctx.Request.Protocol,
+			Method:         pctx.Request.Method,
+			Path:           pctx.Request.Path,
+			RuleID:         pctx.Matched.ID,
+			RuleName:       pctx.Matched.Name,
+			LatencyMs:      latencyMs,
+			FaultProfileID: pctx.FaultProfileID,
+			FaultType:      pctx.FaultType,
 		})
 	} else {
 		m.collector.RecordMiss()
