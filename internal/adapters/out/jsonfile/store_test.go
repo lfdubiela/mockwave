@@ -47,8 +47,9 @@ func TestStore_GetSimulation(t *testing.T) {
 func TestStore_GetSimulation_NotFound(t *testing.T) {
 	store, err := jsonfile.NewStore(writeConfig(t, domain.Config{}))
 	require.NoError(t, err)
-	_, err = store.GetSimulation("missing")
-	assert.Error(t, err)
+	sim, err := store.GetSimulation("missing")
+	require.NoError(t, err)
+	assert.Nil(t, sim)
 }
 
 func TestStore_SaveRule(t *testing.T) {
@@ -110,8 +111,9 @@ func TestStore_DeleteSimulation(t *testing.T) {
 	store, err := jsonfile.NewStore(writeConfig(t, cfg))
 	require.NoError(t, err)
 	require.NoError(t, store.DeleteSimulation("s1"))
-	_, err = store.GetSimulation("s1")
-	assert.Error(t, err)
+	deleted, err := store.GetSimulation("s1")
+	require.NoError(t, err)
+	assert.Nil(t, deleted)
 	got, err := store.GetSimulation("s2")
 	require.NoError(t, err)
 	assert.Equal(t, 201, got.Response.Status)

@@ -78,7 +78,9 @@ func (s *Store) GetSimulation(id string) (*domain.Simulation, error) {
 			return &sim, nil
 		}
 	}
-	return nil, fmt.Errorf("jsonfile: simulation %q not found", id)
+	// Not found is (nil, nil) per the store.DataStore contract; errors are
+	// reserved for storage failures.
+	return nil, nil
 }
 
 func (s *Store) ListSimulations() ([]domain.Simulation, error) {
