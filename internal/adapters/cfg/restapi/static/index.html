@@ -2045,7 +2045,8 @@
       type: 'jitter', probability: 0.5,
       baseDelayMs: 100, jitterMs: 50,
       statusCode: 503, body: '{\n  "error": "injected fault"\n}',
-      headers: [] // [{key, value}]
+      headers: [], // [{key, value}]
+      maxMs: 5000, fraction: 0.5, bytesPerSec: 1024
     };
   }
 
@@ -2071,6 +2072,10 @@
             <select onchange="_faults[${i}].type=this.value;renderFaults()">
               <option value="jitter" ${f.type === 'jitter' ? 'selected' : ''}>Jitter</option>
               <option value="error" ${f.type === 'error' ? 'selected' : ''}>Error</option>
+              <option value="hang" ${f.type === 'hang' ? 'selected' : ''}>Hang</option>
+              <option value="reset" ${f.type === 'reset' ? 'selected' : ''}>Reset</option>
+              <option value="halfResponse" ${f.type === 'halfResponse' ? 'selected' : ''}>Half Response</option>
+              <option value="slowBody" ${f.type === 'slowBody' ? 'selected' : ''}>Slow Body</option>
             </select>
           </div>
           <div class="form-group" style="flex:0 0 8rem">
@@ -2086,10 +2091,25 @@
           <div class="form-group" style="flex:0 0 8rem">
             <label>Jitter (ms)</label>
             <input type="number" min="0" value="${f.jitterMs}" oninput="_faults[${i}].jitterMs=parseInt(this.value)||0">
-          </div>` : `
+          </div>` : f.type === 'error' ? `
           <div class="form-group" style="flex:0 0 8rem">
             <label>Status code</label>
             <input type="number" min="100" max="599" value="${f.statusCode}" oninput="_faults[${i}].statusCode=parseInt(this.value)||503">
+          </div>` : f.type === 'hang' ? `
+          <div class="form-group" style="flex:0 0 8rem">
+            <label>Max (ms)</label>
+            <input type="number" min="0" value="${f.maxMs}" oninput="_faults[${i}].maxMs=parseInt(this.value)||0">
+          </div>` : f.type === 'halfResponse' ? `
+          <div class="form-group" style="flex:0 0 8rem">
+            <label>Fraction (0–1)</label>
+            <input type="number" min="0.01" max="0.99" step="0.05" value="${f.fraction}" oninput="_faults[${i}].fraction=parseFloat(this.value)">
+          </div>` : f.type === 'slowBody' ? `
+          <div class="form-group" style="flex:0 0 8rem">
+            <label>Bytes / sec</label>
+            <input type="number" min="0" value="${f.bytesPerSec}" oninput="_faults[${i}].bytesPerSec=parseInt(this.value)||0">
+          </div>` : `
+          <div class="form-group" style="flex:1">
+            <span style="color:var(--muted);font-size:0.8rem">No parameters — connection is reset immediately.</span>
           </div>`}
         </div>
         ${f.type === 'error' ? `
@@ -2157,16 +2177,23 @@
     document.getElementById('f-enabled').checked = !!p.enabled;
     _faults = (p.faults || []).map(f => {
       const row = defaultFault();
-      row.type = f.type === 'error' ? 'error' : 'jitter';
+      const known = ['jitter', 'error', 'hang', 'reset', 'halfResponse', 'slowBody'];
+      row.type = known.includes(f.type) ? f.type : 'jitter';
       row.probability = typeof f.probability === 'number' ? f.probability : 0.5;
       const params = f.params || {};
       if (row.type === 'jitter') {
         row.baseDelayMs = params.base_delay_ms || 0;
         row.jitterMs = params.jitter_ms || 0;
-      } else {
+      } else if (row.type === 'error') {
         row.statusCode = params.status_code || 503;
         row.body = params.body || '';
         row.headers = objectToKV(params.headers);
+      } else if (row.type === 'hang') {
+        row.maxMs = params.max_ms || 0;
+      } else if (row.type === 'halfResponse') {
+        row.fraction = typeof params.fraction === 'number' ? params.fraction : 0.5;
+      } else if (row.type === 'slowBody') {
+        row.bytesPerSec = params.bytes_per_sec || 0;
       }
       return row;
     });
@@ -2195,11 +2222,28 @@
         name: document.getElementById('f-name').value.trim(),
         description: document.getElementById('f-desc').value.trim(),
         enabled: document.getElementById('f-enabled').checked,
-        faults: _faults.map(f => f.type === 'jitter'
-          ? { type: 'jitter', probability: isNaN(f.probability) ? 0 : f.probability,
-              params: { base_delay_ms: f.baseDelayMs || 0, jitter_ms: f.jitterMs || 0 } }
-          : { type: 'error', probability: isNaN(f.probability) ? 0 : f.probability,
-              params: { status_code: f.statusCode || 503, body: f.body || '', headers: kvToObject(f.headers) } })
+        faults: _faults.map(f => {
+          const prob = isNaN(f.probability) ? 0 : f.probability;
+          switch (f.type) {
+            case 'jitter':
+              return { type: 'jitter', probability: prob,
+                params: { base_delay_ms: f.baseDelayMs || 0, jitter_ms: f.jitterMs || 0 } };
+            case 'error':
+              return { type: 'error', probability: prob,
+                params: { status_code: f.statusCode || 503, body: f.body || '', headers: kvToObject(f.headers) } };
+            case 'hang':
+              return { type: 'hang', probability: prob, params: { max_ms: f.maxMs || 0 } };
+            case 'reset':
+              return { type: 'reset', probability: prob, params: {} };
+            case 'halfResponse':
+              return { type: 'halfResponse', probability: prob,
+                params: { fraction: isNaN(f.fraction) ? 0.5 : f.fraction } };
+            case 'slowBody':
+              return { type: 'slowBody', probability: prob, params: { bytes_per_sec: f.bytesPerSec || 0 } };
+            default:
+              return { type: f.type, probability: prob, params: {} };
+          }
+        })
       };
       const method = _editingFaultID ? 'PUT' : 'POST';
       const url = _editingFaultID ? '/api/faults/' + encodeURIComponent(_editingFaultID) : '/api/faults';

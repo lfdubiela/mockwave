@@ -699,6 +699,19 @@ components:
           description: "error: response headers"
           additionalProperties:
             type: string
+        max_ms:
+          type: integer
+          minimum: 0
+          description: "hang: hold the connection open for up to this many ms"
+        fraction:
+          type: number
+          minimum: 0.01
+          maximum: 0.99
+          description: "halfResponse: fraction of the body to send before truncating"
+        bytes_per_sec:
+          type: integer
+          minimum: 0
+          description: "slowBody: throttle the response body to this many bytes per second"
 
     Fault:
       type: object
@@ -707,7 +720,7 @@ components:
       properties:
         type:
           type: string
-          enum: [jitter, error]
+          enum: [jitter, error, hang, reset, halfResponse, slowBody]
         probability:
           type: number
           minimum: 0
