@@ -93,8 +93,7 @@ type ScenarioStore interface {
 }
 ```
 
-Of the built-in backends, only the `json` file store implements `FaultStore`
-and `ScenarioStore` today; `dynamodb` and `mongo` implement `VersionedStore`.
+All built-in backends implement `FaultStore` and `ScenarioStore`: `json` (file), `dynamodb`, and `mongo` (with Cosmos inheriting the MongoDB implementation). All also implement `VersionedStore` except `json`.
 
 ### Example — Redis store
 

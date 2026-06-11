@@ -804,9 +804,13 @@ Attach a profile to any bucket via `fault_profile_id`:
 {"weight": 100, "action": "simulate", "simulation_id": "payments-ok", "fault_profile_id": "flaky-payments"}
 ```
 
-Profiles are persisted by the store. Today only the `json` file store supports
-them (`fault_profiles` in the config file); the fault profile endpoints return
-`501` for stores without support.
+Profiles are persisted by the store and work on all backends:
+- **JSON file:** `fault_profiles` array in config; loaded at startup and reloaded on changes
+- **DynamoDB:** Requires two additional tables created out-of-band like the rules/simulations tables:
+  - `mockwave-fault-profiles` (PK: `id`, on-demand billing)
+  - `mockwave-scenarios` (PK: `id`, on-demand billing)
+  - Override table names via `--dynamo-faults-table` / `--dynamo-scenarios-table` flags or `MOCKWAVE_DYNAMO_FAULTS_TABLE` / `MOCKWAVE_DYNAMO_SCENARIOS_TABLE` env vars
+- **MongoDB/Cosmos:** Collections `fault_profiles` and `scenarios` auto-create on first write
 
 ### Managing profiles (API + CLI)
 
@@ -855,9 +859,7 @@ rules are never mutated). Key properties:
 - **Run state is per-process and in-memory.** Restarting mockwave clears any
   active run; scenarios themselves are persisted, their live execution is not.
 
-A scenario is a persisted entity, available when the store supports the optional
-`ScenarioStore` capability (the json-file store does; endpoints return `501`
-otherwise).
+A scenario is a persisted entity, available on all backends (JSON file, DynamoDB, MongoDB, and Cosmos). See "Chaos Testing" → "Fault profiles" above for backend-specific setup details (same table/collection names).
 
 ```json
 {
