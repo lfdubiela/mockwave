@@ -18,6 +18,7 @@ import (
 var (
 	_ store.DataStore      = (*Store)(nil)
 	_ store.VersionedStore = (*Store)(nil)
+	_ store.FaultStore     = (*Store)(nil)
 )
 
 // versionItemID is the reserved rules-table key holding the config-version
@@ -36,17 +37,21 @@ type DynamoClient interface {
 
 // Config holds DynamoDB connection parameters.
 type Config struct {
-	RulesTable string // DynamoDB table name for rules (PK: "id")
-	SimsTable  string // DynamoDB table name for simulations (PK: "id")
-	Region     string // AWS region (e.g. "us-east-1")
-	Endpoint   string // optional custom endpoint for local DynamoDB
+	RulesTable     string // DynamoDB table name for rules (PK: "id")
+	SimsTable      string // DynamoDB table name for simulations (PK: "id")
+	FaultsTable    string // DynamoDB table for fault profiles (PK: "id")
+	ScenariosTable string // DynamoDB table for scenarios (PK: "id")
+	Region         string // AWS region (e.g. "us-east-1")
+	Endpoint       string // optional custom endpoint for local DynamoDB
 }
 
 // Store is a DataStore backed by DynamoDB.
 type Store struct {
-	client     DynamoClient
-	rulesTable string
-	simsTable  string
+	client         DynamoClient
+	rulesTable     string
+	simsTable      string
+	faultsTable    string
+	scenariosTable string
 }
 
 // NewStore creates a Store using the default AWS credential chain
@@ -70,9 +75,11 @@ func NewStore(cfg Config) (*Store, error) {
 // Use in tests to inject a mock client.
 func NewStoreFromClient(client DynamoClient, cfg Config) *Store {
 	return &Store{
-		client:     client,
-		rulesTable: cfg.RulesTable,
-		simsTable:  cfg.SimsTable,
+		client:         client,
+		rulesTable:     cfg.RulesTable,
+		simsTable:      cfg.SimsTable,
+		faultsTable:    cfg.FaultsTable,
+		scenariosTable: cfg.ScenariosTable,
 	}
 }
 
@@ -197,6 +204,79 @@ func (s *Store) DeleteSimulation(id string) error {
 		Key:       map[string]types.AttributeValue{"id": &types.AttributeValueMemberS{Value: id}},
 	})
 	if err := wrapErr(err, "delete simulation %q", id); err != nil {
+		return err
+	}
+	return s.bumpVersion()
+}
+
+func (s *Store) ListFaultProfiles() ([]domain.FaultProfile, error) {
+	out, err := s.client.Scan(context.Background(), &dynamodb.ScanInput{
+		TableName: aws.String(s.faultsTable),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("dynamodb: scan fault profiles: %w", err)
+	}
+	profiles := make([]domain.FaultProfile, 0, len(out.Items))
+	for _, item := range out.Items {
+		dataAttr, ok := item["data"].(*types.AttributeValueMemberS)
+		if !ok {
+			continue
+		}
+		var p domain.FaultProfile
+		if err := json.Unmarshal([]byte(dataAttr.Value), &p); err != nil {
+			return nil, fmt.Errorf("dynamodb: unmarshal fault profile: %w", err)
+		}
+		profiles = append(profiles, p)
+	}
+	return profiles, nil
+}
+
+func (s *Store) GetFaultProfile(id string) (*domain.FaultProfile, error) {
+	out, err := s.client.GetItem(context.Background(), &dynamodb.GetItemInput{
+		TableName: aws.String(s.faultsTable),
+		Key:       map[string]types.AttributeValue{"id": &types.AttributeValueMemberS{Value: id}},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("dynamodb: get fault profile %q: %w", id, err)
+	}
+	if out.Item == nil {
+		return nil, nil
+	}
+	dataAttr, ok := out.Item["data"].(*types.AttributeValueMemberS)
+	if !ok {
+		return nil, nil
+	}
+	var p domain.FaultProfile
+	if err := json.Unmarshal([]byte(dataAttr.Value), &p); err != nil {
+		return nil, fmt.Errorf("dynamodb: unmarshal fault profile: %w", err)
+	}
+	return &p, nil
+}
+
+func (s *Store) SaveFaultProfile(p domain.FaultProfile) error {
+	data, err := json.Marshal(p)
+	if err != nil {
+		return fmt.Errorf("dynamodb: marshal fault profile: %w", err)
+	}
+	_, err = s.client.PutItem(context.Background(), &dynamodb.PutItemInput{
+		TableName: aws.String(s.faultsTable),
+		Item: map[string]types.AttributeValue{
+			"id":   &types.AttributeValueMemberS{Value: p.ID},
+			"data": &types.AttributeValueMemberS{Value: string(data)},
+		},
+	})
+	if err := wrapErr(err, "put fault profile %q", p.ID); err != nil {
+		return err
+	}
+	return s.bumpVersion()
+}
+
+func (s *Store) DeleteFaultProfile(id string) error {
+	_, err := s.client.DeleteItem(context.Background(), &dynamodb.DeleteItemInput{
+		TableName: aws.String(s.faultsTable),
+		Key:       map[string]types.AttributeValue{"id": &types.AttributeValueMemberS{Value: id}},
+	})
+	if err := wrapErr(err, "delete fault profile %q", id); err != nil {
 		return err
 	}
 	return s.bumpVersion()

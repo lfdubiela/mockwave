@@ -204,3 +204,46 @@ func TestStore_ConfigVersion_AndBumpOnWrite(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int64(7), v)
 }
+
+func TestStore_FaultProfileCRUD(t *testing.T) {
+	client := &mockDynamo{
+		getOut:  map[string]*dynamodb.GetItemOutput{},
+		scanOut: map[string]*dynamodb.ScanOutput{},
+	}
+	s := dynamostore.NewStoreFromClient(client, dynamostore.Config{
+		RulesTable: "rules", SimsTable: "sims",
+		FaultsTable: "faults", ScenariosTable: "scenarios",
+	})
+
+	p := domain.FaultProfile{ID: "fp1", Name: "p", Enabled: true,
+		Faults: []domain.Fault{{Type: domain.FaultError, Probability: 1, Params: domain.FaultParams{StatusCode: 503}}}}
+	require.NoError(t, s.SaveFaultProfile(p))
+	require.Len(t, client.putItems, 1)
+	assert.Equal(t, "faults", aws.ToString(client.putItems[0].TableName))
+
+	data, _ := json.Marshal(p)
+	client.getOut["faults"] = &dynamodb.GetItemOutput{Item: map[string]types.AttributeValue{
+		"id":   &types.AttributeValueMemberS{Value: "fp1"},
+		"data": &types.AttributeValueMemberS{Value: string(data)},
+	}}
+	got, err := s.GetFaultProfile("fp1")
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Equal(t, "p", got.Name)
+
+	client.getOut["faults"] = &dynamodb.GetItemOutput{Item: nil}
+	got, err = s.GetFaultProfile("missing")
+	require.NoError(t, err)
+	assert.Nil(t, got)
+
+	client.scanOut["faults"] = &dynamodb.ScanOutput{Items: []map[string]types.AttributeValue{
+		{"id": &types.AttributeValueMemberS{Value: "fp1"}, "data": &types.AttributeValueMemberS{Value: string(data)}},
+	}}
+	list, err := s.ListFaultProfiles()
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	assert.Equal(t, "fp1", list[0].ID)
+
+	require.NoError(t, s.DeleteFaultProfile("fp1"))
+	assert.Equal(t, "faults", aws.ToString(client.delItems[len(client.delItems)-1].TableName))
+}
