@@ -27,6 +27,9 @@ func NewSimulationStage(sims map[string]domain.Simulation) *SimulationStage {
 func (s *SimulationStage) Name() string { return "simulation" }
 
 func (s *SimulationStage) Execute(_ context.Context, pctx *pipeline.PipelineContext) error {
+	if pctx.FaultShortCircuit {
+		return nil
+	}
 	if pctx.ShouldForward {
 		return nil
 	}

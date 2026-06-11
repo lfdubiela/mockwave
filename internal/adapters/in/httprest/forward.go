@@ -27,6 +27,9 @@ func NewForwardStage(client *http.Client) *ForwardStage {
 func (s *ForwardStage) Name() string { return "forward" }
 
 func (s *ForwardStage) Execute(_ context.Context, pctx *pipeline.PipelineContext) error {
+	if pctx.FaultShortCircuit {
+		return nil
+	}
 	if !pctx.ShouldForward {
 		return nil
 	}

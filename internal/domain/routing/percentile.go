@@ -29,6 +29,7 @@ func (s *PercentileRouterStage) Execute(_ context.Context, pctx *pipeline.Pipeli
 	if err != nil {
 		return fmt.Errorf("percentile-router: %w", err)
 	}
+	pctx.FaultProfileID = bucket.FaultProfileID
 	switch bucket.Action {
 	case domain.ActionSimulate:
 		pctx.SimulationID = bucket.SimulationID

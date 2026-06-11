@@ -59,8 +59,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp := pctx.Response
-	if resp.DelayMs > 0 {
-		time.Sleep(time.Duration(resp.DelayMs) * time.Millisecond)
+	if d := resp.DelayMs + pctx.FaultDelayMs; d > 0 {
+		time.Sleep(time.Duration(d) * time.Millisecond)
 	}
 	for k, v := range resp.Headers {
 		w.Header().Set(k, v)

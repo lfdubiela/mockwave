@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/mockwave/mockwave/domain"
+	"github.com/mockwave/mockwave/internal/adapters/out/jsonfile"
 	"github.com/mockwave/mockwave/observability"
 	"github.com/mockwave/mockwave/server"
 	"github.com/stretchr/testify/assert"
@@ -270,4 +271,37 @@ func TestServer_ReloaderEngagesForVersionedStore(t *testing.T) {
 	require.NoError(t, err)
 	defer srv.Shutdown(context.Background())
 	require.NotNil(t, srv)
+}
+
+func TestServer_FaultStage_ErrorAndKillSwitch(t *testing.T) {
+	st := jsonfile.NewMemStore(domain.Config{
+		Rules: []domain.Rule{{
+			ID:    "r1",
+			Match: domain.MatchCriteria{Protocol: "http", Method: "GET", Path: "/ping"},
+			Buckets: []domain.WeightedBucket{{
+				Weight: 100, Action: domain.ActionSimulate, SimulationID: "ok", FaultProfileID: "p",
+			}},
+		}},
+		Simulations: []domain.Simulation{{ID: "ok", Protocol: "http", Response: domain.HTTPResponse{Status: 200}}},
+		FaultProfiles: []domain.FaultProfile{{
+			ID: "p", Name: "p", Enabled: true,
+			Faults: []domain.Fault{{Type: domain.FaultError, Probability: 1, Params: domain.FaultParams{StatusCode: 503}}},
+		}},
+	})
+	srv, err := server.New(server.Config{Store: st})
+	require.NoError(t, err)
+	h := srv.HTTPHandler()
+
+	do := func() int {
+		req := httptest.NewRequest(http.MethodGet, "/ping", nil)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		return w.Code
+	}
+
+	assert.Equal(t, 503, do(), "fault profile should short-circuit with 503")
+	srv.KillSwitch().Halt()
+	assert.Equal(t, 200, do(), "halted kill switch should bypass faults")
+	srv.KillSwitch().Resume()
+	assert.Equal(t, 503, do(), "resumed kill switch should re-enable faults")
 }

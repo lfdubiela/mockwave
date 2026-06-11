@@ -26,6 +26,7 @@ import (
 	grpcadapter "github.com/mockwave/mockwave/internal/adapters/in/grpc"
 	"github.com/mockwave/mockwave/internal/adapters/in/httprest"
 	soapadapter "github.com/mockwave/mockwave/internal/adapters/in/soap"
+	"github.com/mockwave/mockwave/internal/chaos"
 	"github.com/mockwave/mockwave/internal/domain/matching"
 	"github.com/mockwave/mockwave/internal/domain/pipeline"
 	"github.com/mockwave/mockwave/internal/domain/routing"
@@ -83,6 +84,7 @@ type Server struct {
 	broker       *metrics.Broker
 	brokerCancel context.CancelFunc
 	reloadCancel context.CancelFunc
+	killSwitch   *chaos.KillSwitch
 	adminSrv     *http.Server
 }
 
@@ -120,6 +122,7 @@ func New(cfg Config) (*Server, error) {
 		buffer:       buf,
 		broker:       broker,
 		brokerCancel: brokerCancel,
+		killSwitch:   chaos.NewKillSwitch(),
 	}
 	if err := s.rebuild(); err != nil {
 		brokerCancel()
@@ -176,6 +179,9 @@ func (s *Server) Tracer() observability.Tracer { return s.cfg.Tracer }
 // MetricsRecorder returns the MetricsRecorder configured for this server (never nil).
 func (s *Server) MetricsRecorder() observability.MetricsRecorder { return s.cfg.Metrics }
 
+// KillSwitch returns the global chaos kill switch for this server.
+func (s *Server) KillSwitch() *chaos.KillSwitch { return s.killSwitch }
+
 func (s *Server) rebuild() error {
 	rules, err := s.cfg.Store.GetRules()
 	if err != nil {
@@ -199,7 +205,18 @@ func (s *Server) rebuild() error {
 		return simMap[pctx.SimulationID].Script
 	})
 	fwdStage := httprest.NewForwardStage(nil)
-	p := pipeline.New(matchStage, routeStage, simStage, scriptStage, fwdStage)
+	profMap := map[string]domain.FaultProfile{}
+	if fs, ok := s.cfg.Store.(store.FaultStore); ok {
+		profiles, err := fs.ListFaultProfiles()
+		if err != nil {
+			return fmt.Errorf("server: load fault profiles: %w", err)
+		}
+		for _, p := range profiles {
+			profMap[p.ID] = p
+		}
+	}
+	faultStage := chaos.NewFaultStage(profMap, s.killSwitch)
+	p := pipeline.New(matchStage, routeStage, faultStage, simStage, scriptStage, fwdStage)
 	s.mu.Lock()
 	s.pipeline = p
 	s.mu.Unlock()

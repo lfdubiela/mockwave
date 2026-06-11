@@ -25,6 +25,9 @@ func NewScriptStage(runner ScriptRunner, getScript ScriptProvider) *ScriptStage 
 func (s *ScriptStage) Name() string { return "script" }
 
 func (s *ScriptStage) Execute(ctx context.Context, pctx *PipelineContext) error {
+	if pctx.FaultShortCircuit {
+		return nil
+	}
 	if pctx.ShouldForward || pctx.Response == nil {
 		return nil
 	}

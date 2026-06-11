@@ -87,6 +87,16 @@ func TestRouter_SetsForwardDelayMs(t *testing.T) {
 	}
 }
 
+func TestRouter_SetsFaultProfileID(t *testing.T) {
+	stage := routing.NewPercentileRouterStage()
+	rule := &domain.Rule{Buckets: []domain.WeightedBucket{
+		{Weight: 1, Action: domain.ActionSimulate, SimulationID: "sim-ok", FaultProfileID: "p"},
+	}}
+	pctx := &pipeline.PipelineContext{Matched: rule}
+	require.NoError(t, stage.Execute(context.Background(), pctx))
+	assert.Equal(t, "p", pctx.FaultProfileID)
+}
+
 func TestRouter_SetsForwardURL(t *testing.T) {
 	stage := routing.NewPercentileRouterStage()
 	pctx := &pipeline.PipelineContext{
