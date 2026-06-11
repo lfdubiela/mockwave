@@ -407,6 +407,52 @@ func mustSimMap(t *testing.T, st *dynamostore.Store) map[string]domain.Simulatio
 	return m
 }
 
+func TestDynamoLocal_FaultAndScenarioCRUD(t *testing.T) {
+	endpoint := dynamoEndpoint(t)
+	client := newLocalClient(t, endpoint)
+	faultsTable := "mockwave-fault-profiles-test"
+	scenariosTable := "mockwave-scenarios-test"
+	createTable(t, client, rulesTable) // bumpVersion target
+	createTable(t, client, faultsTable)
+	createTable(t, client, scenariosTable)
+
+	store := dynamostore.NewStoreFromClient(client, dynamostore.Config{
+		RulesTable:     rulesTable,
+		SimsTable:      simsTable,
+		FaultsTable:    faultsTable,
+		ScenariosTable: scenariosTable,
+	})
+
+	// Fault profile round-trip
+	p := domain.FaultProfile{ID: "fp1", Name: "p", Enabled: true,
+		Faults: []domain.Fault{{Type: domain.FaultError, Probability: 1, Params: domain.FaultParams{StatusCode: 503}}}}
+	require.NoError(t, store.SaveFaultProfile(p))
+	got, err := store.GetFaultProfile("fp1")
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	require.Equal(t, "p", got.Name)
+	list, err := store.ListFaultProfiles()
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	require.NoError(t, store.DeleteFaultProfile("fp1"))
+	got, err = store.GetFaultProfile("fp1")
+	require.NoError(t, err)
+	require.Nil(t, got)
+
+	// Scenario round-trip
+	sc := domain.Scenario{ID: "sc1", Name: "n", RuleIDs: []string{"r1"},
+		Phases: []domain.ScenarioPhase{{DurationSec: 10, FaultProfileID: "fp1"}}}
+	require.NoError(t, store.SaveScenario(sc))
+	gotSc, err := store.GetScenario("sc1")
+	require.NoError(t, err)
+	require.NotNil(t, gotSc)
+	require.Equal(t, "n", gotSc.Name)
+	require.NoError(t, store.DeleteScenario("sc1"))
+	gotSc, err = store.GetScenario("sc1")
+	require.NoError(t, err)
+	require.Nil(t, gotSc)
+}
+
 func TestDynamoLocal_VersionPropagates(t *testing.T) {
 	endpoint := dynamoEndpoint(t)
 	client := newLocalClient(t, endpoint)
