@@ -86,6 +86,11 @@ type Server struct {
 	reloadCancel context.CancelFunc
 	killSwitch   *chaos.KillSwitch
 	adminSrv     *http.Server
+
+	scenario       *chaos.ScenarioController
+	scenarioCancel context.CancelFunc // cancels the active runner; nil when idle
+	scenarioGen    uint64             // bumped on each start; guards cross-run clear
+	scenarioMu     sync.Mutex         // guards scenarioCancel + scenarioGen + start/stop
 }
 
 // New creates a Server from cfg, loading rules from the store.
@@ -124,6 +129,7 @@ func New(cfg Config) (*Server, error) {
 		brokerCancel: brokerCancel,
 		killSwitch:   chaos.NewKillSwitch(),
 	}
+	s.scenario = chaos.NewScenarioController()
 	if err := s.rebuild(); err != nil {
 		brokerCancel()
 		return nil, err
@@ -182,6 +188,53 @@ func (s *Server) MetricsRecorder() observability.MetricsRecorder { return s.cfg.
 // KillSwitch returns the global chaos kill switch for this server.
 func (s *Server) KillSwitch() *chaos.KillSwitch { return s.killSwitch }
 
+// Scenario returns the server's scenario controller.
+func (s *Server) Scenario() *chaos.ScenarioController { return s.scenario }
+
+// StartScenario launches sc in a background runner. Returns an error if another
+// scenario is already running.
+func (s *Server) StartScenario(sc domain.Scenario) error {
+	s.scenarioMu.Lock()
+	defer s.scenarioMu.Unlock()
+	if s.scenarioCancel != nil {
+		return fmt.Errorf("a scenario is already running")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	s.scenarioCancel = cancel
+	s.scenarioGen++
+	gen := s.scenarioGen
+	sleep := func(d time.Duration) {
+		t := time.NewTimer(d)
+		defer t.Stop()
+		select {
+		case <-t.C:
+		case <-ctx.Done():
+		}
+	}
+	runner := chaos.NewScenarioRunner(s.scenario, sleep, nil)
+	go func() {
+		runner.Run(ctx, sc)
+		s.scenarioMu.Lock()
+		// Only clear if no later StartScenario replaced us — otherwise we'd nil
+		// out a different run's cancel.
+		if s.scenarioGen == gen {
+			s.scenarioCancel = nil
+		}
+		s.scenarioMu.Unlock()
+	}()
+	return nil
+}
+
+// StopScenario aborts the active scenario, if any.
+func (s *Server) StopScenario() {
+	s.scenarioMu.Lock()
+	defer s.scenarioMu.Unlock()
+	if s.scenarioCancel != nil {
+		s.scenarioCancel()
+		s.scenarioCancel = nil
+	}
+}
+
 func (s *Server) rebuild() error {
 	rules, err := s.cfg.Store.GetRules()
 	if err != nil {
@@ -230,7 +283,7 @@ func (s *Server) rebuild() error {
 			}
 		}
 	}
-	faultStage := chaos.NewFaultStage(profMap, s.killSwitch)
+	faultStage := chaos.NewFaultStageWithScenario(profMap, s.killSwitch, s.scenario)
 	p := pipeline.New(matchStage, routeStage, faultStage, simStage, scriptStage, fwdStage)
 	s.mu.Lock()
 	s.pipeline = p

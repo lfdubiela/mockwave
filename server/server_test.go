@@ -364,6 +364,85 @@ func TestServer_DanglingFaultProfileRef(t *testing.T) {
 	assert.Equal(t, 200, w.Code, "dangling fault profile reference should not fault")
 }
 
+func scenarioStore() *jsonfile.Store {
+	return jsonfile.NewMemStore(domain.Config{
+		Rules: []domain.Rule{{
+			ID:    "r1",
+			Match: domain.MatchCriteria{Protocol: "http", Method: "GET", Path: "/ping"},
+			Buckets: []domain.WeightedBucket{{
+				Weight: 100, Action: domain.ActionSimulate, SimulationID: "ok",
+			}},
+		}},
+		Simulations: []domain.Simulation{{ID: "ok", Protocol: "http", Response: domain.HTTPResponse{Status: 200}}},
+		FaultProfiles: []domain.FaultProfile{{
+			ID: "boom", Name: "boom", Enabled: true,
+			Faults: []domain.Fault{{Type: domain.FaultError, Probability: 1, Params: domain.FaultParams{StatusCode: 503}}},
+		}},
+	})
+}
+
+func TestServer_StartStopScenario(t *testing.T) {
+	srv, err := server.New(server.Config{Store: scenarioStore()})
+	require.NoError(t, err)
+	h := srv.HTTPHandler()
+
+	do := func() int {
+		req := httptest.NewRequest(http.MethodGet, "/ping", nil)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		return w.Code
+	}
+
+	require.Equal(t, 200, do(), "no scenario: rule responds 200")
+
+	sc := domain.Scenario{
+		ID: "drill", Name: "drill", RuleIDs: []string{"r1"},
+		Phases: []domain.ScenarioPhase{{DurationSec: 60, FaultProfileID: "boom"}},
+	}
+	require.NoError(t, srv.StartScenario(sc))
+	require.Eventually(t, func() bool {
+		return srv.Scenario().Active() != nil
+	}, time.Second, 5*time.Millisecond, "scenario becomes active")
+	require.Equal(t, 503, do(), "active scenario overlays the boom profile")
+
+	srv.StopScenario()
+	require.Eventually(t, func() bool {
+		return srv.Scenario().Active() == nil
+	}, time.Second, 5*time.Millisecond, "controller cleared after stop")
+	assert.Equal(t, 200, do(), "stopped scenario: rule responds 200 again")
+}
+
+func TestServer_StartScenario_AlreadyRunning(t *testing.T) {
+	srv, err := server.New(server.Config{Store: scenarioStore()})
+	require.NoError(t, err)
+
+	sc := domain.Scenario{
+		ID: "drill", Name: "drill", RuleIDs: []string{"r1"},
+		Phases: []domain.ScenarioPhase{{DurationSec: 60, FaultProfileID: "boom"}},
+	}
+	require.NoError(t, srv.StartScenario(sc))
+	t.Cleanup(srv.StopScenario)
+	require.Error(t, srv.StartScenario(sc), "second start while running must error")
+}
+
+func TestServer_StartScenario_AfterCompletion(t *testing.T) {
+	srv, err := server.New(server.Config{Store: scenarioStore()})
+	require.NoError(t, err)
+
+	// 1s phase elapses quickly; the run completes and clears scenarioCancel.
+	sc := domain.Scenario{
+		ID: "drill", Name: "drill", RuleIDs: []string{"r1"},
+		Phases: []domain.ScenarioPhase{{DurationSec: 1, FaultProfileID: "boom"}},
+	}
+	require.NoError(t, srv.StartScenario(sc))
+	// After the run completes, the goroutine clears scenarioCancel and a new
+	// StartScenario must succeed (exercises the generation guard).
+	require.Eventually(t, func() bool {
+		return srv.StartScenario(sc) == nil
+	}, 3*time.Second, 10*time.Millisecond, "starting again after completion must succeed")
+	t.Cleanup(srv.StopScenario)
+}
+
 func newFileStore(t *testing.T, cfg domain.Config) *jsonfile.Store {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "config.json")
