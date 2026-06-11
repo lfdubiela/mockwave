@@ -138,3 +138,49 @@ func (s *Store) DeleteSimulation(id string) error {
 	}
 	return fmt.Errorf("jsonfile: simulation %q not found", id)
 }
+
+func (s *Store) ListFaultProfiles() ([]domain.FaultProfile, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]domain.FaultProfile, len(s.config.FaultProfiles))
+	copy(out, s.config.FaultProfiles)
+	return out, nil
+}
+
+// GetFaultProfile returns (nil, nil) when no profile with the given id exists.
+func (s *Store) GetFaultProfile(id string) (*domain.FaultProfile, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for i := range s.config.FaultProfiles {
+		if s.config.FaultProfiles[i].ID == id {
+			p := s.config.FaultProfiles[i]
+			return &p, nil
+		}
+	}
+	return nil, nil
+}
+
+func (s *Store) SaveFaultProfile(p domain.FaultProfile) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, existing := range s.config.FaultProfiles {
+		if existing.ID == p.ID {
+			s.config.FaultProfiles[i] = p
+			return s.flush()
+		}
+	}
+	s.config.FaultProfiles = append(s.config.FaultProfiles, p)
+	return s.flush()
+}
+
+func (s *Store) DeleteFaultProfile(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, p := range s.config.FaultProfiles {
+		if p.ID == id {
+			s.config.FaultProfiles = append(s.config.FaultProfiles[:i], s.config.FaultProfiles[i+1:]...)
+			return s.flush()
+		}
+	}
+	return fmt.Errorf("jsonfile: fault profile %q not found", id)
+}

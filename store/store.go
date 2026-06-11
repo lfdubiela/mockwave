@@ -27,6 +27,16 @@ type DataStore interface {
 	DeleteSimulation(id string) error
 }
 
+// FaultStore is an optional capability for stores that persist chaos fault
+// profiles. Same contract style as DataStore: GetFaultProfile returns
+// (nil, nil) when the profile does not exist.
+type FaultStore interface {
+	ListFaultProfiles() ([]domain.FaultProfile, error)
+	GetFaultProfile(id string) (*domain.FaultProfile, error)
+	SaveFaultProfile(p domain.FaultProfile) error
+	DeleteFaultProfile(id string) error
+}
+
 // VersionedStore is an optional capability. Stores that can report a monotonic
 // config version enable the periodic version-poll reloader: the reloader reads
 // ConfigVersion cheaply each tick and triggers a full in-memory reload only when

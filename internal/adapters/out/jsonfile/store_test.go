@@ -188,3 +188,38 @@ func TestStore_Reload(t *testing.T) {
 	require.Len(t, rules, 1)
 	assert.Equal(t, "r2", rules[0].ID)
 }
+
+func TestFaultProfileCRUD(t *testing.T) {
+	store, err := jsonfile.NewStore(writeConfig(t, domain.Config{}))
+	require.NoError(t, err)
+
+	p := domain.FaultProfile{ID: "fp1", Name: "p", Enabled: true,
+		Faults: []domain.Fault{{Type: domain.FaultJitter, Probability: 1, Params: domain.FaultParams{JitterMs: 100}}}}
+
+	require.NoError(t, store.SaveFaultProfile(p))
+
+	got, err := store.GetFaultProfile("fp1")
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Equal(t, "p", got.Name)
+
+	list, err := store.ListFaultProfiles()
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+
+	// update path: same ID, changed name
+	p.Name = "renamed"
+	require.NoError(t, store.SaveFaultProfile(p))
+	got, err = store.GetFaultProfile("fp1")
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Equal(t, "renamed", got.Name)
+	list, err = store.ListFaultProfiles()
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+
+	require.NoError(t, store.DeleteFaultProfile("fp1"))
+	got, err = store.GetFaultProfile("fp1")
+	require.NoError(t, err)
+	assert.Nil(t, got)
+}
