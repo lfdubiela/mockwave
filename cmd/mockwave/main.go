@@ -138,6 +138,8 @@ func startCmd() *cobra.Command {
 	// DynamoDB flags
 	cmd.Flags().StringVar(&opts.DynamoRulesTable, "dynamo-rules-table", "mockwave-rules", "DynamoDB table for rules")
 	cmd.Flags().StringVar(&opts.DynamoSimsTable, "dynamo-sims-table", "mockwave-simulations", "DynamoDB table for simulations")
+	cmd.Flags().StringVar(&opts.DynamoFaultsTable, "dynamo-faults-table", "mockwave-fault-profiles", "DynamoDB table for fault profiles")
+	cmd.Flags().StringVar(&opts.DynamoScenariosTable, "dynamo-scenarios-table", "mockwave-scenarios", "DynamoDB table for scenarios")
 	cmd.Flags().StringVar(&opts.DynamoRegion, "dynamo-region", "us-east-1", "AWS region for DynamoDB")
 	cmd.Flags().StringVar(&opts.DynamoEndpoint, "dynamo-endpoint", "", "custom DynamoDB endpoint (e.g. http://localhost:8000)")
 
@@ -155,10 +157,12 @@ func startCmd() *cobra.Command {
 // storeOpts holds connection details for non-JSON store backends.
 type storeOpts struct {
 	// DynamoDB
-	DynamoRulesTable string
-	DynamoSimsTable  string
-	DynamoRegion     string
-	DynamoEndpoint   string // optional; empty = use AWS default endpoint
+	DynamoRulesTable     string
+	DynamoSimsTable      string
+	DynamoFaultsTable    string
+	DynamoScenariosTable string
+	DynamoRegion         string
+	DynamoEndpoint       string // optional; empty = use AWS default endpoint
 
 	// MongoDB
 	MongoURI string
@@ -179,10 +183,12 @@ func buildStore(storeType, configFile string, opts storeOpts) (store.DataStore, 
 		return jsonfile.NewStore(configFile)
 	case "dynamodb":
 		return dynamostore.NewStore(dynamostore.Config{
-			RulesTable: opts.DynamoRulesTable,
-			SimsTable:  opts.DynamoSimsTable,
-			Region:     opts.DynamoRegion,
-			Endpoint:   opts.DynamoEndpoint,
+			RulesTable:     opts.DynamoRulesTable,
+			SimsTable:      opts.DynamoSimsTable,
+			FaultsTable:    opts.DynamoFaultsTable,
+			ScenariosTable: opts.DynamoScenariosTable,
+			Region:         opts.DynamoRegion,
+			Endpoint:       opts.DynamoEndpoint,
 		})
 	case "mongo":
 		return mongodb.NewStore(opts.MongoURI, opts.MongoDB)

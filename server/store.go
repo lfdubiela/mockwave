@@ -37,10 +37,12 @@ func buildStoreFromEnv() (store.DataStore, error) {
 		return jsonfile.NewStore(path)
 	case "dynamodb":
 		return dynamostore.NewStore(dynamostore.Config{
-			RulesTable: envOr("MOCKWAVE_DYNAMO_RULES_TABLE", "mockwave-rules"),
-			SimsTable:  envOr("MOCKWAVE_DYNAMO_SIMS_TABLE", "mockwave-simulations"),
-			Region:     envOr("MOCKWAVE_DYNAMO_REGION", "us-east-1"),
-			Endpoint:   os.Getenv("MOCKWAVE_DYNAMO_ENDPOINT"),
+			RulesTable:     envOr("MOCKWAVE_DYNAMO_RULES_TABLE", "mockwave-rules"),
+			SimsTable:      envOr("MOCKWAVE_DYNAMO_SIMS_TABLE", "mockwave-simulations"),
+			FaultsTable:    envOr("MOCKWAVE_DYNAMO_FAULTS_TABLE", "mockwave-fault-profiles"),
+			ScenariosTable: envOr("MOCKWAVE_DYNAMO_SCENARIOS_TABLE", "mockwave-scenarios"),
+			Region:         envOr("MOCKWAVE_DYNAMO_REGION", "us-east-1"),
+			Endpoint:       os.Getenv("MOCKWAVE_DYNAMO_ENDPOINT"),
 		})
 	case "mongo":
 		return mongodb.NewStore(
