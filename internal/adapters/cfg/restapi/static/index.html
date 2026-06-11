@@ -375,6 +375,20 @@
       <tbody id="faults-tbody"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
     </table>
   </div>
+
+  <div id="scenario-banner" style="display:none;align-items:center;gap:0.75rem;background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--success);border-radius:0.5rem;padding:0.75rem 1rem;margin:1.5rem 0"></div>
+
+  <div id="scenarios-unsupported" class="empty" style="display:none;margin-top:1.5rem">Scenarios not supported by this store.</div>
+  <div id="scenarios-section" style="margin-top:1.5rem">
+    <div class="section-header">
+      <h2>Scenarios</h2>
+      <button class="btn-primary" id="btn-add-scenario" onclick="openScenarioModal()">+ Add Scenario</button>
+    </div>
+    <table>
+      <thead><tr><th>ID</th><th>Name</th><th>Rules</th><th>Phases</th><th></th></tr></thead>
+      <tbody id="scenarios-tbody"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
+    </table>
+  </div>
 </div>
 
   </div><!-- /main-content -->
@@ -506,6 +520,45 @@
       <div class="form-actions">
         <button class="btn-ghost" type="button" onclick="closeFaultModal()">Cancel</button>
         <button class="btn-primary" id="btn-save-fault" data-idle-label="Save Profile" type="button" onclick="saveFaultProfile()">Save Profile</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Scenario modal -->
+<div class="modal-overlay" id="scenario-modal">
+  <div class="modal" style="width:44rem">
+    <div class="modal-titlebar">
+      <div class="modal-lights"><span class="l-close"></span><span class="l-min"></span><span class="l-max"></span></div>
+      <h2 id="scenario-modal-title">Add Scenario</h2>
+    </div>
+    <div class="modal-body">
+      <div class="sg-label">General</div>
+      <div class="settings-group">
+        <div class="sg-row">
+          <label for="sc-id">Scenario ID *</label>
+          <div class="sg-ctl"><input id="sc-id" placeholder="db-degradation"></div>
+        </div>
+        <div class="sg-row">
+          <label for="sc-name">Name</label>
+          <div class="sg-ctl"><input id="sc-name" placeholder="DB degradation drill"></div>
+        </div>
+        <div class="sg-row">
+          <label for="sc-rules">Target rule IDs *</label>
+          <div class="sg-ctl"><input id="sc-rules" placeholder="rule-a, rule-b (comma-separated)"></div>
+        </div>
+      </div>
+
+      <div class="section-divider" style="display:flex;justify-content:space-between;align-items:center">
+        <span>Phases</span>
+        <button class="btn-sm btn-ghost" type="button" onclick="addPhase()">+ Add Phase</button>
+      </div>
+      <div id="phase-rows-container"></div>
+      <div id="scenario-form-error" style="display:none;color:var(--error);font-size:0.8rem;margin-top:0.5rem"></div>
+
+      <div class="form-actions">
+        <button class="btn-ghost" type="button" onclick="closeScenarioModal()">Cancel</button>
+        <button class="btn-primary" id="btn-save-scenario" data-idle-label="Save Scenario" type="button" onclick="saveScenario()">Save Scenario</button>
       </div>
     </div>
   </div>
@@ -840,7 +893,7 @@
       tab.classList.add('active');
       document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
       if (tab.dataset.tab === 'rules') loadRules();
-      if (tab.dataset.tab === 'chaos') { loadChaosStatus(); loadFaultProfiles(); }
+      if (tab.dataset.tab === 'chaos') { loadChaosStatus(); loadFaultProfiles(); loadScenarios(); }
       if (tab.dataset.tab === 'dashboard') {
         document.getElementById('unmatched-badge').style.display = 'none';
       }
@@ -1997,10 +2050,26 @@
       const d = await res.json();
       _chaosHalted = !!d.halted;
       renderChaosStatus(true);
+      renderScenarioBanner(d.active_scenario || null);
     } catch (e) {
       console.error('loadChaosStatus:', e);
       renderChaosStatusUnavailable();
     }
+  }
+
+  function renderScenarioBanner(active) {
+    const el = document.getElementById('scenario-banner');
+    if (!el) return;
+    if (!active) { el.style.display = 'none'; el.innerHTML = ''; return; }
+    const phase = `phase ${(active.phase_index || 0) + 1}/${active.phase_count || 0}`;
+    const prof = active.phase_profile_id
+      ? `<span class="badge">${escapeHtml(active.phase_profile_id)}</span>`
+      : '<span class="badge-muted" style="margin-left:0">recovery</span>';
+    el.innerHTML = `<span class="chaos-badge on" style="animation:none">SCENARIO RUNNING</span>`
+      + `<strong style="font-size:0.85rem">${escapeHtml(active.scenario_name || active.scenario_id || '')}</strong>`
+      + `<span style="color:var(--muted);font-size:0.8rem">${phase}</span>`
+      + `<span style="color:var(--muted);font-size:0.8rem">·</span>${prof}`;
+    el.style.display = 'flex';
   }
 
   function renderChaosStatusUnavailable() {
@@ -2288,6 +2357,252 @@
     } catch (e) {
       if (btn) setButtonState(btn, 'error', 'Save Profile', e.message);
       showFaultError(e.message);
+    }
+  }
+
+  // ── Scenarios ───────────────────────────────────────────────────────────────
+  let _scenarios = [];
+  let scenariosSupported = false;
+  let _phases = [];          // editor phase rows: [{durationSec, faultProfileID}]
+  let _editingScenarioID = null;
+
+  async function loadScenarios() {
+    try {
+      const res = await fetch('/api/scenarios');
+      if (res.status === 501) {
+        scenariosSupported = false;
+        _scenarios = [];
+      } else if (res.ok) {
+        scenariosSupported = true;
+        _scenarios = (await res.json()) || [];
+      } else {
+        _scenarios = [];
+        _scenarios._loadError = `Failed to load scenarios: ${res.status} ${res.statusText}`;
+      }
+    } catch (e) {
+      _scenarios = [];
+      _scenarios._loadError = `Failed to load scenarios: ${e.message}`;
+    }
+    renderScenariosTable();
+  }
+
+  function renderScenariosTable() {
+    const section = document.getElementById('scenarios-section');
+    const notice = document.getElementById('scenarios-unsupported');
+    if (!section || !notice) return;
+    if (!scenariosSupported) {
+      section.style.display = 'none';
+      notice.style.display = 'block';
+      return;
+    }
+    section.style.display = '';
+    notice.style.display = 'none';
+    const tbody = document.getElementById('scenarios-tbody');
+    if (_scenarios._loadError) {
+      tbody.innerHTML = `<tr><td colspan="5" style="color:var(--error);padding:0.8rem">${escapeHtml(_scenarios._loadError)}</td></tr>`;
+      return;
+    }
+    if (_scenarios.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" class="empty">No scenarios. Click "+ Add Scenario" to create one.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = _scenarios.map((s, i) => `
+      <tr>
+        <td><span class="badge">${escapeHtml(s.id)}</span></td>
+        <td>${s.name ? escapeHtml(s.name) : '<span style="color:var(--muted)">—</span>'}</td>
+        <td style="color:var(--muted);font-size:0.8rem">${(s.rule_ids || []).length}</td>
+        <td style="color:var(--muted);font-size:0.8rem">${(s.phases || []).length}</td>
+        <td style="white-space:nowrap">
+          <div style="display:flex;gap:0.4rem;justify-content:flex-end">
+            <button class="btn-sm btn-primary" onclick="startScenario('${escapeAttr(s.id)}', this)">Start</button>
+            <button class="btn-sm btn-ghost" onclick="stopScenario('${escapeAttr(s.id)}', this)">Stop</button>
+            <button class="btn-sm btn-primary" onclick="editScenarioByIdx(${i})">Edit</button>
+            <button class="btn-sm btn-danger" onclick="deleteScenario('${escapeAttr(s.id)}', this)">Delete</button>
+          </div>
+        </td>
+      </tr>`).join('');
+  }
+
+  async function startScenario(id, btnEl) {
+    const orig = btnEl ? btnEl.textContent : '';
+    if (btnEl) { btnEl.disabled = true; btnEl.textContent = '…'; }
+    try {
+      const res = await fetch('/api/scenarios/' + encodeURIComponent(id) + '/start', { method: 'POST' });
+      if (!res.ok) {
+        const msg = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(msg.error || res.statusText);
+      }
+      await loadChaosStatus();
+    } catch (e) {
+      alert('Start failed: ' + e.message);
+    } finally {
+      if (btnEl) { btnEl.disabled = false; btnEl.textContent = orig; }
+    }
+  }
+
+  async function stopScenario(id, btnEl) {
+    const orig = btnEl ? btnEl.textContent : '';
+    if (btnEl) { btnEl.disabled = true; btnEl.textContent = '…'; }
+    try {
+      const res = await fetch('/api/scenarios/' + encodeURIComponent(id) + '/stop', { method: 'POST' });
+      if (!res.ok) {
+        const msg = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(msg.error || res.statusText);
+      }
+      await loadChaosStatus();
+    } catch (e) {
+      alert('Stop failed: ' + e.message);
+    } finally {
+      if (btnEl) { btnEl.disabled = false; btnEl.textContent = orig; }
+    }
+  }
+
+  async function deleteScenario(id, btnEl) {
+    if (!confirm(`Delete scenario "${id}"? This cannot be undone.`)) return;
+    const orig = btnEl ? btnEl.textContent : '';
+    if (btnEl) { btnEl.disabled = true; btnEl.textContent = '…'; }
+    try {
+      const res = await fetch('/api/scenarios/' + encodeURIComponent(id), { method: 'DELETE' });
+      if (!res.ok) {
+        const msg = await res.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(msg.error || res.statusText);
+      }
+      await loadScenarios();
+    } catch (e) {
+      if (btnEl) { btnEl.disabled = false; btnEl.textContent = orig; }
+      alert('Delete failed: ' + e.message);
+    }
+  }
+
+  // ── Scenario editor ───────────────────────────────────────────────────────
+  function defaultPhase() { return { durationSec: 60, faultProfileID: '' }; }
+  function addPhase() { _phases.push(defaultPhase()); renderPhases(); }
+  function removePhase(i) { _phases.splice(i, 1); renderPhases(); }
+
+  // Phase profile select: "" = recovery (no faults). Keeps an unknown referenced
+  // ID selectable so editing doesn't silently drop it.
+  function phaseProfileOptions(selected) {
+    let opts = '<option value="">— recovery (no faults) —</option>';
+    let found = !selected;
+    for (const p of _faultProfiles) {
+      if (p.id === selected) found = true;
+      opts += `<option value="${escapeAttr(p.id)}" ${p.id === selected ? 'selected' : ''}>${escapeHtml(p.name || p.id)}</option>`;
+    }
+    if (!found) opts += `<option value="${escapeAttr(selected)}" selected>${escapeHtml(selected)} (unknown)</option>`;
+    return opts;
+  }
+
+  function renderPhases() {
+    const c = document.getElementById('phase-rows-container');
+    if (!c) return;
+    if (_phases.length === 0) {
+      c.innerHTML = '<p class="empty" style="padding:1rem">No phases. Click "+ Add Phase".</p>';
+      return;
+    }
+    c.innerHTML = _phases.map((p, i) => `
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:0.375rem;padding:1rem;margin-bottom:0.75rem">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem">
+          <span style="color:var(--muted);font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em">Phase ${i + 1}</span>
+          <button class="btn-sm btn-danger" type="button" onclick="removePhase(${i})">Remove</button>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="flex:0 0 10rem">
+            <label>Duration (sec)</label>
+            <input type="number" min="1" value="${p.durationSec}" oninput="_phases[${i}].durationSec=parseInt(this.value,10)||0">
+          </div>
+          <div class="form-group" style="flex:1">
+            <label>Fault profile</label>
+            <select onchange="_phases[${i}].faultProfileID=this.value">${phaseProfileOptions(p.faultProfileID)}</select>
+          </div>
+        </div>
+      </div>`).join('');
+  }
+
+  function showScenarioError(msg) {
+    const el = document.getElementById('scenario-form-error');
+    if (!el) return;
+    el.textContent = msg ? '✗ ' + msg : '';
+    el.style.display = msg ? 'block' : 'none';
+  }
+
+  function openScenarioModal() {
+    _editingScenarioID = null;
+    document.getElementById('scenario-modal-title').textContent = 'Add Scenario';
+    const idInput = document.getElementById('sc-id');
+    idInput.disabled = false;
+    idInput.value = '';
+    document.getElementById('sc-name').value = '';
+    document.getElementById('sc-rules').value = '';
+    _phases = [defaultPhase()];
+    renderPhases();
+    showScenarioError('');
+    document.getElementById('scenario-modal').classList.add('open');
+    idInput.focus();
+  }
+
+  function editScenarioByIdx(i) {
+    const s = _scenarios[i];
+    if (!s) return;
+    _editingScenarioID = s.id;
+    document.getElementById('scenario-modal-title').textContent = 'Edit Scenario';
+    const idInput = document.getElementById('sc-id');
+    idInput.value = s.id;
+    idInput.disabled = true; // ID is immutable when editing
+    document.getElementById('sc-name').value = s.name || '';
+    document.getElementById('sc-rules').value = (s.rule_ids || []).join(', ');
+    _phases = (s.phases || []).map(p => ({
+      durationSec: typeof p.duration_sec === 'number' ? p.duration_sec : 0,
+      faultProfileID: p.fault_profile_id || ''
+    }));
+    if (_phases.length === 0) _phases = [defaultPhase()];
+    renderPhases();
+    showScenarioError('');
+    document.getElementById('scenario-modal').classList.add('open');
+  }
+
+  function closeScenarioModal() {
+    document.getElementById('scenario-modal').classList.remove('open');
+  }
+
+  async function saveScenario() {
+    const btn = document.getElementById('btn-save-scenario');
+    if (btn) setButtonState(btn, 'loading', 'Saving…');
+    showScenarioError('');
+    try {
+      const id = document.getElementById('sc-id').value.trim();
+      if (!id) {
+        if (btn) setButtonState(btn, 'idle', 'Save Scenario');
+        showScenarioError('Scenario ID is required.');
+        return;
+      }
+      const ruleIDs = document.getElementById('sc-rules').value
+        .split(',').map(s => s.trim()).filter(Boolean);
+      const scenario = {
+        id,
+        name: document.getElementById('sc-name').value.trim(),
+        rule_ids: ruleIDs,
+        phases: _phases.map(p => ({
+          duration_sec: p.durationSec || 0,
+          fault_profile_id: p.faultProfileID || ''
+        }))
+      };
+      const method = _editingScenarioID ? 'PUT' : 'POST';
+      const url = _editingScenarioID ? '/api/scenarios/' + encodeURIComponent(_editingScenarioID) : '/api/scenarios';
+      const res = await fetch(url, {
+        method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(scenario)
+      });
+      if (!res.ok) {
+        const msg = await res.json().catch(() => ({ error: 'Unknown server error' }));
+        if (btn) setButtonState(btn, 'error', 'Save Scenario', msg.error);
+        showScenarioError(msg.error || 'Unknown server error');
+        return;
+      }
+      if (btn) setButtonState(btn, 'success', 'Saved');
+      closeScenarioModal();
+      loadScenarios();
+    } catch (e) {
+      if (btn) setButtonState(btn, 'error', 'Save Scenario', e.message);
+      showScenarioError(e.message);
     }
   }
 
