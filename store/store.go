@@ -37,6 +37,15 @@ type FaultStore interface {
 	DeleteFaultProfile(id string) error
 }
 
+// ScenarioStore is an optional capability for stores that persist chaos
+// scenarios. GetScenario returns (nil, nil) when the scenario does not exist.
+type ScenarioStore interface {
+	ListScenarios() ([]domain.Scenario, error)
+	GetScenario(id string) (*domain.Scenario, error)
+	SaveScenario(s domain.Scenario) error
+	DeleteScenario(id string) error
+}
+
 // VersionedStore is an optional capability. Stores that can report a monotonic
 // config version enable the periodic version-poll reloader: the reloader reads
 // ConfigVersion cheaply each tick and triggers a full in-memory reload only when

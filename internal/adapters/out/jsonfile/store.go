@@ -186,3 +186,49 @@ func (s *Store) DeleteFaultProfile(id string) error {
 	}
 	return fmt.Errorf("jsonfile: fault profile %q not found", id)
 }
+
+func (s *Store) ListScenarios() ([]domain.Scenario, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]domain.Scenario, len(s.config.Scenarios))
+	copy(out, s.config.Scenarios)
+	return out, nil
+}
+
+// GetScenario returns (nil, nil) when no scenario with the given id exists.
+func (s *Store) GetScenario(id string) (*domain.Scenario, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for i := range s.config.Scenarios {
+		if s.config.Scenarios[i].ID == id {
+			sc := s.config.Scenarios[i]
+			return &sc, nil
+		}
+	}
+	return nil, nil
+}
+
+func (s *Store) SaveScenario(sc domain.Scenario) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, existing := range s.config.Scenarios {
+		if existing.ID == sc.ID {
+			s.config.Scenarios[i] = sc
+			return s.flush()
+		}
+	}
+	s.config.Scenarios = append(s.config.Scenarios, sc)
+	return s.flush()
+}
+
+func (s *Store) DeleteScenario(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, sc := range s.config.Scenarios {
+		if sc.ID == id {
+			s.config.Scenarios = append(s.config.Scenarios[:i], s.config.Scenarios[i+1:]...)
+			return s.flush()
+		}
+	}
+	return fmt.Errorf("jsonfile: scenario %q not found", id)
+}

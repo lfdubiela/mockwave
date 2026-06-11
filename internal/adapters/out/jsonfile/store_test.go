@@ -225,3 +225,27 @@ func TestFaultProfileCRUD(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, got)
 }
+
+func TestScenarioCRUD(t *testing.T) {
+	s, err := jsonfile.NewStore(writeConfig(t, domain.Config{}))
+	require.NoError(t, err)
+	sc := domain.Scenario{ID: "sc1", Name: "n", RuleIDs: []string{"r1"},
+		Phases: []domain.ScenarioPhase{{DurationSec: 10, FaultProfileID: "p"}}}
+	require.NoError(t, s.SaveScenario(sc))
+	got, err := s.GetScenario("sc1")
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Equal(t, "n", got.Name)
+	list, err := s.ListScenarios()
+	require.NoError(t, err)
+	assert.Len(t, list, 1)
+	sc.Name = "n2"
+	require.NoError(t, s.SaveScenario(sc))
+	list, _ = s.ListScenarios()
+	assert.Len(t, list, 1)
+	assert.Equal(t, "n2", list[0].Name)
+	require.NoError(t, s.DeleteScenario("sc1"))
+	got, err = s.GetScenario("sc1")
+	require.NoError(t, err)
+	assert.Nil(t, got)
+}
