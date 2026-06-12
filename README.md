@@ -686,227 +686,63 @@ Available in the script context:
 
 ## Chaos Testing
 
-Mockwave can act as an API-level chaos tool: instead of breaking real infrastructure
-(Gremlin-style host agents), it injects failures at the boundary your client actually
-sees — mock responses and forwarded traffic. Everything below works today:
+Mockwave doubles as an **API-level chaos tool**: instead of breaking real
+infrastructure (Gremlin-style host agents), it injects failures at the boundary
+your client sees — mock responses and forwarded upstream traffic. No agent, no
+root; runs locally and in CI.
 
-| Failure mode | How |
+Define a **fault profile** (a reusable set of failure modes), attach it to a rule
+bucket via `fault_profile_id`, and tune the blast radius with the bucket weight
+and each fault's `probability`. Seven fault types are available:
+
+| Type | Effect |
 |---|---|
-| Latency on mock responses | `response.delay_ms` on a simulation |
-| Latency on real upstream calls | `delay_ms` on a `forward` bucket (net effect = max(delay, upstream latency)) |
-| Partial degradation / blast radius | weighted buckets — e.g. 90% forward to the real service, 10% to a failing simulation |
-| Dependency returning errors | a simulation with `status: 503` (or any code/body) on a percentage of traffic |
-| Conditional failures | match criteria (header/path/query/body) route only specific requests to a failing rule |
-| Dynamic failures | JavaScript `script` on a simulation computes status/body per request |
+| `jitter` | latency: `base_delay_ms` + random `[0, jitter_ms)` |
+| `error` | short-circuit with a custom HTTP `status_code` / `body` / `headers` |
+| `hang` | blackhole: block `max_ms` then close with no response |
+| `reset` | TCP RST — client sees a connection reset (dead upstream) |
+| `halfResponse` | write `fraction` of the body then cut the connection |
+| `slowBody` | bandwidth throttle to `bytes_per_sec` (modifier) |
+| `retryStorm` | fail the first `fail_first` requests per key, then recover |
 
-Example — 20% of `/payments/**` traffic gets a 503, the rest reaches the real service:
+`jitter`/`slowBody` are modifiers (combine with anything); the rest are terminal
+(first one to fire wins). All types work on REST/GraphQL/SOAP; **gRPC is not yet
+supported**. A global **kill switch** suppresses everything instantly, and
+**scenarios** chain profiles into timed phases for drills.
 
-```json
-{
-  "rules": [{
-    "id": "payments-chaos",
-    "name": "Payments degradation",
-    "match": {"protocol": "http", "path": "/payments/**"},
-    "buckets": [
-      {"weight": 80, "action": "forward", "forward_url": "https://payments.internal"},
-      {"weight": 20, "action": "simulate", "simulation_id": "payments-503"}
-    ]
-  }],
-  "simulations": [{
-    "id": "payments-503",
-    "protocol": "http",
-    "response": {"status": 503, "delay_ms": 1500, "body": {"error": "service unavailable"}}
-  }]
-}
-```
-
-### Fault profiles
-
-A fault profile is a named, reusable set of failure modes you attach to rule
-buckets. Each fault is rolled independently per request against its
-`probability`. Two response-level fault types affect the HTTP response:
-
-- `jitter` — adds `base_delay_ms` plus a random extra delay in `[0, jitter_ms)`
-- `error` — short-circuits the request with the configured status/body/headers
-
-Four connection-level fault types manipulate the raw socket instead of
-returning a normal response:
-
-- `hang` — blackhole: blocks up to `max_ms` then closes without any response
-- `reset` — TCP RST, simulating a dead upstream that abruptly drops the connection
-- `halfResponse` — writes only `fraction` (0–1) of the body then closes, producing a truncated response
-- `slowBody` — bandwidth throttle: streams the body at `bytes_per_sec` (a modifier; combines with a non-terminal outcome)
-
-Connection-level faults are supported on the HTTP-based protocols only
-(REST/GraphQL/SOAP); gRPC connection-fault semantics are on the roadmap.
-
-One stateful fault type validates client resilience over a sequence of requests:
-
-- `retryStorm` — fails the first `fail_first` requests for a given key with
-  `status_code`, then lets requests through. This exercises a client's retry
-  backoff and idempotency handling: a well-behaved client should recover once
-  the upstream stops failing. `key_by` selects the bucket key — `path` groups
-  by request path, or `header:<Name>` (e.g. `header:X-Request-Id`) groups by a
-  header value, so each distinct value gets its own independent counter. Each
-  key's counter resets after `window_sec` seconds of sliding-window inactivity.
-
-> Counters are per-process and reset on restart. Behind a load balancer with
-> multiple mockwave instances the `fail_first` budget multiplies by the number
-> of instances, since each instance keeps its own counters.
-
-```json
-{
-  "fault_profiles": [{
-    "id": "retry-storm",
-    "name": "Retry storm",
-    "enabled": true,
-    "faults": [
-      {"type": "retryStorm", "probability": 1, "params": {"fail_first": 2, "status_code": 503, "key_by": "path", "window_sec": 60}}
-    ]
-  }]
-}
-```
-
-```json
-{
-  "fault_profiles": [{
-    "id": "flaky-payments",
-    "name": "Flaky payments",
-    "enabled": true,
-    "faults": [
-      {"type": "jitter", "probability": 0.5, "params": {"base_delay_ms": 200, "jitter_ms": 300}},
-      {"type": "error", "probability": 0.1, "params": {"status_code": 503, "body": "{\"error\":\"injected\"}"}}
-    ]
-  }]
-}
-```
-
-A connection-level example combining a bandwidth throttle with intermittent
-resets — list `slowBody` first so it applies alongside the terminal `reset`:
-
-```json
-{
-  "fault_profiles": [{
-    "id": "flaky-network",
-    "name": "Flaky network",
-    "enabled": true,
-    "faults": [
-      {"type": "slowBody", "probability": 1, "params": {"bytes_per_sec": 2048}},
-      {"type": "reset", "probability": 0.2}
-    ]
-  }]
-}
-```
-
-Attach a profile to any bucket via `fault_profile_id`:
-
-```json
-{"weight": 100, "action": "simulate", "simulation_id": "payments-ok", "fault_profile_id": "flaky-payments"}
-```
-
-Profiles are persisted by the store and work on all backends:
-- **JSON file:** `fault_profiles` array in config; loaded at startup and reloaded on changes
-- **DynamoDB:** Requires two additional tables created out-of-band like the rules/simulations tables:
-  - `mockwave-fault-profiles` (PK: `id`, on-demand billing)
-  - `mockwave-scenarios` (PK: `id`, on-demand billing)
-  - Override table names via `--dynamo-faults-table` / `--dynamo-scenarios-table` flags or `MOCKWAVE_DYNAMO_FAULTS_TABLE` / `MOCKWAVE_DYNAMO_SCENARIOS_TABLE` env vars
-- **MongoDB/Cosmos:** Collections `fault_profiles` and `scenarios` auto-create on first write
-
-### Managing profiles (API + CLI)
-
-CRUD lives at `/api/faults` on the admin port:
+Quick example — 30% of `/orders` traffic gets a 503:
 
 ```bash
-# CLI (uses --admin-url, default http://localhost:9090)
-mockwave fault list
-mockwave fault get flaky-payments
-mockwave fault create -f profile.json
-mockwave fault delete flaky-payments
-
-# Raw API
-curl -X POST localhost:9090/api/faults -d @profile.json
+curl -X POST localhost:9090/api/faults -d '{
+  "id":"flaky-orders","name":"Flaky orders","enabled":true,
+  "faults":[{"type":"error","probability":0.3,"params":{"status_code":503,"body":"{\"error\":\"boom\"}"}}]}'
+# then attach "fault_profile_id":"flaky-orders" to the /orders rule's bucket
 ```
 
-Deleting a profile still referenced by a rule bucket returns `409`.
+**→ [Full Chaos Testing guide: every fault type, UI/CLI/API walkthroughs, scenarios, API reference](docs/chaos.md)**
 
-### Kill switch
+### Admin API summary
 
-A global kill switch instantly suppresses all fault injection without touching
-any rule or profile — handy when an experiment goes sideways:
+All on the admin port (default `:9090`). Full details and schemas in the
+[chaos guide](docs/chaos.md#admin-api-reference).
 
-```bash
-mockwave chaos halt     # POST /api/chaos/halt   — stop injecting faults
-mockwave chaos resume   # POST /api/chaos/resume — resume injection
-mockwave chaos status   # GET  /api/chaos/status — current state
-```
+| Method | Path | Purpose |
+|---|---|---|
+| `GET POST` | `/api/faults` | list / create fault profiles |
+| `GET PUT DELETE` | `/api/faults/{id}` | get / update / delete a profile (`409` if referenced) |
+| `POST` | `/api/chaos/halt` · `/api/chaos/resume` | kill switch off / on |
+| `GET` | `/api/chaos/status` | `{halted, active_scenario}` |
+| `GET POST` | `/api/scenarios` | list / create scenarios |
+| `GET PUT DELETE` | `/api/scenarios/{id}` | get / update / delete a scenario |
+| `POST` | `/api/scenarios/{id}/start` · `/stop` | start (`202`, `409` if one runs) / stop |
 
-### Scenarios
+Equivalent CLI: `mockwave fault …`, `mockwave chaos halt|resume|status`,
+`mockwave scenario list|start|stop` (all accept `--admin-url`).
 
-A **scenario** runs a timed sequence of fault phases against a set of target
-rules — useful for drills like "degrade the payments API for 5 minutes, then
-recover". Each phase applies one fault profile to every targeted rule for a
-fixed duration, then the runner advances to the next phase. A phase with an
-empty `fault_profile_id` is a **recovery phase**: the targeted rules run with no
-injected faults.
-
-While a scenario is active, its current phase profile *overrides* the bucket's
-own `fault_profile_id` for any targeted rule (an in-memory overlay — stored
-rules are never mutated). Key properties:
-
-- **At most one scenario runs at a time.** Starting a second returns `409`.
-- **The kill switch aborts the active scenario** (halting also stops the run so
-  it does not silently resume on `resume`).
-- **Run state is per-process and in-memory.** Restarting mockwave clears any
-  active run; scenarios themselves are persisted, their live execution is not.
-
-A scenario is a persisted entity, available on all backends (JSON file, DynamoDB, MongoDB, and Cosmos). See "Chaos Testing" → "Fault profiles" above for backend-specific setup details (same table/collection names).
-
-```json
-{
-  "id": "payments-drill",
-  "name": "Payments degradation drill",
-  "rule_ids": ["pay-charge", "pay-refund"],
-  "phases": [
-    { "duration_sec": 300, "fault_profile_id": "mild-latency" },
-    { "duration_sec": 120, "fault_profile_id": "errors-503" },
-    { "duration_sec": 60,  "fault_profile_id": "" }
-  ]
-}
-```
-
-CRUD lives at `/api/scenarios`; start/stop and live phase are exposed via:
-
-```bash
-mockwave scenario list           # GET  /api/scenarios
-mockwave scenario start <id>     # POST /api/scenarios/<id>/start  → 202
-mockwave scenario stop  <id>     # POST /api/scenarios/<id>/stop   → 204
-```
-
-`GET /api/chaos/status` reports the active scenario (or `null`) alongside the
-kill-switch state:
-
-```json
-{ "halted": false, "active_scenario": { "scenario_id": "payments-drill", "phase_index": 1, "phase_count": 3, "phase_profile_id": "errors-503" } }
-```
-
-### Import/export
-
-`/api/export` includes the fault profiles referenced by the exported rules'
-buckets, and `/api/import` upserts incoming profiles alongside the rules that
-reference them. Rules referencing a profile that exists neither in the payload
-nor in the store are rejected with `422`. Fault profiles in an import payload
-are only saved when referenced by an imported rule (same policy as simulations).
-
-Scenarios participate too: `/api/export` includes a scenario only when **every**
-one of its `rule_ids` is in the exported rule set (a scenario spanning a rule
-left behind would dangle, so it is omitted), and any fault profile its phases
-reference is auto-collected. `/api/import` upserts **all** payload scenarios
-(they are independent top-level entities, not gated by per-rule import
-decisions, unlike fault profiles), after validating that every `rule_id` and
-non-empty phase `fault_profile_id` resolves in the payload or the store (`422`
-otherwise; also `422` if the payload carries scenarios but the store lacks the
-`ScenarioStore` capability). Import preview reports scenario ID conflicts in a
-`scenario_conflicts` array.
+Fault profiles and scenarios persist on every backend (JSON file, DynamoDB,
+MongoDB, Cosmos). DynamoDB needs two extra tables (`mockwave-fault-profiles`,
+`mockwave-scenarios`, PK `id`); Mongo/Cosmos collections auto-create. See the
+[guide](docs/chaos.md#backends--persistence) for details.
 
 ---
 
