@@ -31,6 +31,7 @@ import (
 	"github.com/mockwave/mockwave/internal/domain/pipeline"
 	"github.com/mockwave/mockwave/internal/domain/routing"
 	"github.com/mockwave/mockwave/internal/domain/simulation"
+	"github.com/mockwave/mockwave/internal/matched"
 	"github.com/mockwave/mockwave/internal/metrics"
 	"github.com/mockwave/mockwave/internal/reload"
 	"github.com/mockwave/mockwave/internal/scripting"
@@ -64,6 +65,9 @@ type Config struct {
 	// Set true for remote store backends; leave false for the json-file store,
 	// whose config file is already the import/export format.
 	ImportExport bool
+
+	// Matched configures matched-request capture (default disabled).
+	Matched MatchedConfig
 }
 
 func (c Config) reloadInterval() time.Duration {
@@ -91,6 +95,10 @@ type Server struct {
 	scenarioCancel context.CancelFunc // cancels the active runner; nil when idle
 	scenarioGen    uint64             // bumped on each start; guards cross-run clear
 	scenarioMu     sync.Mutex         // guards scenarioCancel + scenarioGen + start/stop
+
+	matchedBuf    *matched.Buffer
+	matchedSyncer *matched.Syncer
+	matchedSweep  context.CancelFunc
 }
 
 // New creates a Server from cfg, loading rules from the store.
@@ -143,6 +151,23 @@ func New(cfg Config) (*Server, error) {
 		s.reloadCancel = rcancel
 		go rl.Run(rctx)
 	}
+	if mc := resolveMatchedConfig(cfg.Matched); mc.Enabled {
+		s.cfg.Matched = mc
+		s.matchedBuf = matched.NewBuffer(mc.BufferSize)
+		if sink := matchedSink(mc, s.cfg.Store); sink != nil {
+			if ms, ok := sink.(store.MatchedStore); ok {
+				if page, err := ms.ListMatched(context.Background(), "", store.MatchedQuery{Limit: mc.BufferSize}); err == nil {
+					s.matchedBuf.Hydrate(page.Items)
+				}
+			}
+			s.matchedSyncer = matched.NewSyncer(s.matchedBuf, sink, mc.SyncInterval)
+			go s.matchedSyncer.Run(context.Background())
+		} else {
+			sctx, scancel := context.WithCancel(context.Background())
+			s.matchedSweep = scancel
+			go s.runMatchedSweep(sctx, mc.SyncInterval)
+		}
+	}
 	if cfg.AdminPort > 0 {
 		if err := s.startAdmin(); err != nil {
 			brokerCancel()
@@ -167,13 +192,53 @@ type Executor interface {
 // pre-wrapped with metrics middleware. Every request through MockHandler
 // or GRPCServer automatically feeds the admin dashboard.
 func (s *Server) NewProxy() Executor {
-	return metrics.NewMiddleware(
+	mw := metrics.NewMiddleware(
 		&pipelineProxy{server: s},
 		s.collector,
 		s.buffer,
 		s.cfg.Tracer,
 		s.cfg.Metrics,
 	)
+	if s.matchedBuf != nil {
+		mw.SetMatchedCapture(s.matchedBuf, s.cfg.Matched.ttlSeconds())
+	}
+	return mw
+}
+
+// MatchedBuffer returns the matched-capture buffer, or nil when capture is off.
+func (s *Server) MatchedBuffer() *matched.Buffer { return s.matchedBuf }
+
+// Close releases background resources: broker, reloader, and the matched syncer
+// (with a final flush). Safe to call once.
+func (s *Server) Close() error {
+	if s.brokerCancel != nil {
+		s.brokerCancel()
+	}
+	if s.reloadCancel != nil {
+		s.reloadCancel()
+	}
+	if s.matchedSyncer != nil {
+		_ = s.matchedSyncer.Close()
+	}
+	if s.matchedSweep != nil {
+		s.matchedSweep()
+	}
+	return nil
+}
+
+func (s *Server) runMatchedSweep(ctx context.Context, interval time.Duration) {
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			if s.matchedBuf != nil {
+				s.matchedBuf.SweepExpired()
+			}
+		}
+	}
 }
 
 // Logger returns the Logger configured for this server (never nil).
