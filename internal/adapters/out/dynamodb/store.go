@@ -42,6 +42,7 @@ type Config struct {
 	SimsTable      string // DynamoDB table name for simulations (PK: "id")
 	FaultsTable    string // DynamoDB table for fault profiles (PK: "id")
 	ScenariosTable string // DynamoDB table for scenarios (PK: "id")
+	MatchedTable   string // DynamoDB table for matched requests (PK: "rule_id", SK: "sk")
 	Region         string // AWS region (e.g. "us-east-1")
 	Endpoint       string // optional custom endpoint for local DynamoDB
 }
@@ -53,6 +54,7 @@ type Store struct {
 	simsTable      string
 	faultsTable    string
 	scenariosTable string
+	matchedTable_  string
 }
 
 // NewStore creates a Store using the default AWS credential chain
@@ -75,12 +77,17 @@ func NewStore(cfg Config) (*Store, error) {
 // NewStoreFromClient creates a Store using the provided DynamoClient.
 // Use in tests to inject a mock client.
 func NewStoreFromClient(client DynamoClient, cfg Config) *Store {
+	matchedTable := cfg.MatchedTable
+	if matchedTable == "" {
+		matchedTable = "mockwave-matched-requests"
+	}
 	return &Store{
 		client:         client,
 		rulesTable:     cfg.RulesTable,
 		simsTable:      cfg.SimsTable,
 		faultsTable:    cfg.FaultsTable,
 		scenariosTable: cfg.ScenariosTable,
+		matchedTable_:  matchedTable,
 	}
 }
 

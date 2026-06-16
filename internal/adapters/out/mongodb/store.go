@@ -57,6 +57,8 @@ type scenarioDoc struct {
 
 // Store is a DataStore backed by MongoDB.
 type Store struct {
+	client    *mongo.Client
+	dbName    string
 	rules     *mongo.Collection
 	sims      *mongo.Collection
 	faults    *mongo.Collection
@@ -83,6 +85,8 @@ func NewStore(uri, dbName string) (*Store, error) {
 func NewStoreFromClient(client *mongo.Client, dbName string) *Store {
 	db := client.Database(dbName)
 	return &Store{
+		client:    client,
+		dbName:    dbName,
 		rules:     db.Collection(colRules),
 		sims:      db.Collection(colSims),
 		faults:    db.Collection(colFaults),

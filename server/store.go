@@ -41,6 +41,7 @@ func buildStoreFromEnv() (store.DataStore, error) {
 			SimsTable:      envOr("MOCKWAVE_DYNAMO_SIMS_TABLE", "mockwave-simulations"),
 			FaultsTable:    envOr("MOCKWAVE_DYNAMO_FAULTS_TABLE", "mockwave-fault-profiles"),
 			ScenariosTable: envOr("MOCKWAVE_DYNAMO_SCENARIOS_TABLE", "mockwave-scenarios"),
+			MatchedTable:   envOr("MOCKWAVE_DYNAMO_MATCHED_TABLE", "mockwave-matched-requests"),
 			Region:         envOr("MOCKWAVE_DYNAMO_REGION", "us-east-1"),
 			Endpoint:       os.Getenv("MOCKWAVE_DYNAMO_ENDPOINT"),
 		})
