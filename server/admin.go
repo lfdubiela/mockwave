@@ -59,17 +59,26 @@ func (s *Server) scenarioByID(id string) (*domain.Scenario, error) {
 	return sc, nil
 }
 
-// startAdmin binds an HTTP listener on cfg.AdminPort, builds the admin mux,
-// and serves in a goroutine. Stores the *http.Server in s.adminSrv for Shutdown.
-// Returns an error if the port cannot be bound.
-func (s *Server) startAdmin() error {
+// adminMuxOptions returns the MuxOption slice for the admin mux, including
+// WithMatched when matched-request capture is enabled.
+func (s *Server) adminMuxOptions() []restapi.MuxOption {
 	var opts []restapi.MuxOption
 	if s.cfg.ImportExport {
 		opts = append(opts, restapi.WithImportExport())
 	}
 	opts = append(opts, restapi.WithKillSwitch(s.killSwitch))
 	opts = append(opts, restapi.WithScenarioControl(scenarioControlAdapter{s}))
-	mux := restapi.NewMux(
+	if s.matchedBuf != nil {
+		opts = append(opts, restapi.WithMatched(s.matchedBuf))
+	}
+	return opts
+}
+
+// AdminMux builds the admin HTTP mux. Exported primarily for tests; the live
+// admin server uses the same construction path.
+func (s *Server) AdminMux() http.Handler {
+	opts := s.adminMuxOptions()
+	return restapi.NewMux(
 		s.cfg.Store,
 		func() { _ = s.Rebuild() },
 		s.collector,
@@ -78,6 +87,13 @@ func (s *Server) startAdmin() error {
 		s.engine,
 		opts...,
 	)
+}
+
+// startAdmin binds an HTTP listener on cfg.AdminPort, builds the admin mux,
+// and serves in a goroutine. Stores the *http.Server in s.adminSrv for Shutdown.
+// Returns an error if the port cannot be bound.
+func (s *Server) startAdmin() error {
+	mux := s.AdminMux()
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", s.cfg.AdminPort))
 	if err != nil {
 		return fmt.Errorf("server: admin listen :%d: %w", s.cfg.AdminPort, err)
