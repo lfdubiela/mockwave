@@ -7,6 +7,7 @@ import (
 
 	"github.com/mockwave/mockwave/domain"
 	"github.com/mockwave/mockwave/internal/chaos"
+	"github.com/mockwave/mockwave/internal/matched"
 	"github.com/mockwave/mockwave/internal/metrics"
 	"github.com/mockwave/mockwave/internal/scripting"
 	"github.com/mockwave/mockwave/internal/unmatched"
@@ -36,6 +37,11 @@ func WithKillSwitch(ks *chaos.KillSwitch) MuxOption {
 // active-scenario field in chaos status. Without it those return 501 / null.
 func WithScenarioControl(sc ScenarioControl) MuxOption {
 	return func(a *adminAPI) { a.scenarioControl = sc }
+}
+
+// WithMatched wires the matched-request capture buffer into the admin API.
+func WithMatched(buf *matched.Buffer) MuxOption {
+	return func(a *adminAPI) { a.matchedBuf = buf }
 }
 
 // NewMux builds the admin HTTP mux.
@@ -75,6 +81,8 @@ func NewMux(store store.DataStore, onReload OnReload, collector *metrics.Collect
 	mux.HandleFunc("/api/chaos/status", api.chaosStatus)
 	mux.HandleFunc("/api/scenarios", api.scenarios)
 	mux.HandleFunc("/api/scenarios/", api.scenarioByID)
+	mux.HandleFunc("/api/matched", api.matchedByRule)
+	mux.HandleFunc("/api/matched/", api.matchedByRule)
 	serveUI(mux)
 	return mux
 }
@@ -89,6 +97,7 @@ type adminAPI struct {
 	importExport    bool               // /api/export + /api/import enabled (remote stores only)
 	killSwitch      *chaos.KillSwitch  // may be nil — chaos endpoints return 501
 	scenarioControl ScenarioControl    // may be nil — scenario start/stop return 501
+	matchedBuf      *matched.Buffer    // may be nil — capture disabled
 }
 
 // duplicateMatchError returns a 409-ready, human-readable message if rule's
