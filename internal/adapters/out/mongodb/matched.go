@@ -8,6 +8,7 @@ import (
 	"github.com/mockwave/mockwave/internal/matched"
 	"github.com/mockwave/mockwave/store"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -149,14 +150,33 @@ func (s *Store) ListMatched(ctx context.Context, ruleID string, q store.MatchedQ
 	return page, nil
 }
 
+// decodeBinaryBody converts the bson-decoded body field to []byte. BSON
+// round-trips []byte as primitive.Binary, so a plain []byte assertion always
+// fails after a real decode — we must handle both cases.
+func decodeBinaryBody(v interface{}) []byte {
+	switch val := v.(type) {
+	case []byte:
+		return val
+	case primitive.Binary:
+		return val.Data
+	}
+	return nil
+}
+
 // GetMatched returns the full request (with bodies), or (nil, nil) when absent.
+// It filters by both id AND ruleID so that a mismatched rule returns (nil, nil).
 func (s *Store) GetMatched(ctx context.Context, ruleID, id string) (*matched.FullRequest, error) {
 	db := s.client.Database(s.dbName)
 	reqsColl := db.Collection(colMatchedRequests)
 	bodiesColl := db.Collection(colMatchedBodies)
 
+	filter := bson.D{{Key: "_id", Value: id}}
+	if ruleID != "" {
+		filter = append(filter, bson.E{Key: "rule_id", Value: ruleID})
+	}
+
 	var doc matchedRequestDoc
-	err := reqsColl.FindOne(ctx, bson.D{{Key: "_id", Value: id}}).Decode(&doc)
+	err := reqsColl.FindOne(ctx, filter).Decode(&doc)
 	if err == mongo.ErrNoDocuments {
 		return nil, nil
 	}
@@ -170,9 +190,7 @@ func (s *Store) GetMatched(ctx context.Context, ruleID, id string) (*matched.Ful
 		var bodyDoc matchedBodyDoc
 		err := bodiesColl.FindOne(ctx, bson.D{{Key: "_id", Value: doc.Data.RequestBodyID}}).Decode(&bodyDoc)
 		if err == nil {
-			if b, ok := bodyDoc.Body.([]byte); ok {
-				full.RequestBody = b
-			}
+			full.RequestBody = decodeBinaryBody(bodyDoc.Body)
 		}
 	}
 	if doc.Data.ResponseBodyID != "" {

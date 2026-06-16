@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/mockwave/mockwave/internal/matched"
+	"github.com/mockwave/mockwave/store"
 )
 
 // matchedByRule routes /api/matched/{rule_id} and /api/matched/{rule_id}/{id}.
@@ -32,7 +33,7 @@ func (a *adminAPI) matchedByRule(w http.ResponseWriter, r *http.Request) {
 		case 1:
 			a.matchedList(w, r, parts[0])
 		case 2:
-			a.matchedDetail(w, parts[0], parts[1])
+			a.matchedDetail(w, r, parts[0], parts[1])
 		default:
 			writeError(w, 404, "not found")
 		}
@@ -73,13 +74,35 @@ func (a *adminAPI) matchedList(w http.ResponseWriter, r *http.Request, ruleID st
 	writeJSON(w, 200, page)
 }
 
-func (a *adminAPI) matchedDetail(w http.ResponseWriter, ruleID, id string) {
+func (a *adminAPI) matchedDetail(w http.ResponseWriter, r *http.Request, ruleID, id string) {
 	full, ok := a.matchedBuf.Get(ruleID, id)
-	if !ok {
-		writeError(w, 404, "matched request not found")
+	if ok {
+		// Buffer hit: if the entry was hydrated from the store, its bodies may
+		// be nil. Set BodyWarning when RequestBodyID is set but body is absent.
+		if full.RequestBodyID != "" && full.RequestBody == nil {
+			full.BodyWarning = "request body unavailable (evicted)"
+		}
+		writeJSON(w, 200, full)
 		return
 	}
-	writeJSON(w, 200, full)
+
+	// Buffer miss: fall back to the store if it supports matched capture.
+	if ms, ok := a.store.(store.MatchedStore); ok {
+		storeFull, err := ms.GetMatched(r.Context(), ruleID, id)
+		if err != nil {
+			writeError(w, 500, err.Error())
+			return
+		}
+		if storeFull != nil {
+			if storeFull.RequestBodyID != "" && storeFull.RequestBody == nil {
+				storeFull.BodyWarning = "request body unavailable (evicted)"
+			}
+			writeJSON(w, 200, storeFull)
+			return
+		}
+	}
+
+	writeError(w, 404, "matched request not found")
 }
 
 // parseHeaderFilters turns repeated "key:value" params into a map. Only the

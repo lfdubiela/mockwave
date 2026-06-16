@@ -17,6 +17,12 @@ type Buffer struct {
 	reqB   map[string][]byte
 	respB  map[string]interface{}
 	now    func() time.Time
+
+	// dirty tracking: populated by Add, cleared by Drain.
+	// Hydrate does NOT mark dirty (those entries came from the store already).
+	pendingReqs      []ref
+	pendingReqBodies map[string]struct{}
+	pendingRespBodies map[string]struct{}
 }
 
 type ref struct {
@@ -30,11 +36,13 @@ func NewBuffer(capacity int) *Buffer {
 		capacity = 1
 	}
 	return &Buffer{
-		cap:    capacity,
-		byRule: map[string][]Request{},
-		reqB:   map[string][]byte{},
-		respB:  map[string]interface{}{},
-		now:    time.Now,
+		cap:               capacity,
+		byRule:            map[string][]Request{},
+		reqB:              map[string][]byte{},
+		respB:             map[string]interface{}{},
+		now:               time.Now,
+		pendingReqBodies:  map[string]struct{}{},
+		pendingRespBodies: map[string]struct{}{},
 	}
 }
 
@@ -51,11 +59,14 @@ func (b *Buffer) Add(r Request, reqBody []byte, respBody interface{}) {
 	defer b.mu.Unlock()
 	b.byRule[r.RuleID] = append(b.byRule[r.RuleID], r)
 	b.order = append(b.order, ref{rule: r.RuleID, id: r.ID})
+	b.pendingReqs = append(b.pendingReqs, ref{rule: r.RuleID, id: r.ID})
 	if r.RequestBodyID != "" && reqBody != nil {
 		b.reqB[r.RequestBodyID] = reqBody
+		b.pendingReqBodies[r.RequestBodyID] = struct{}{}
 	}
 	if r.ResponseBodyID != "" && respBody != nil {
 		b.respB[r.ResponseBodyID] = respBody
+		b.pendingRespBodies[r.ResponseBodyID] = struct{}{}
 	}
 	b.evictLocked()
 }
@@ -64,7 +75,19 @@ func (b *Buffer) evictLocked() {
 	for len(b.order) > b.cap {
 		old := b.order[0]
 		b.order = b.order[1:]
+		// Also remove from pending so evicted entries aren't drained.
+		b.removePendingLocked(old.rule, old.id)
 		b.removeEntryLocked(old.rule, old.id)
+	}
+}
+
+// removePendingLocked removes a specific ref from pendingReqs (if present).
+func (b *Buffer) removePendingLocked(rule, id string) {
+	for i, p := range b.pendingReqs {
+		if p.rule == rule && p.id == id {
+			b.pendingReqs = append(b.pendingReqs[:i], b.pendingReqs[i+1:]...)
+			return
+		}
 	}
 }
 
@@ -189,23 +212,47 @@ func (b *Buffer) Clear(ruleID string) {
 	delete(b.byRule, ruleID)
 }
 
-// Drain returns a snapshot of all entries and bodies for write-behind. It does
-// NOT remove them — the buffer remains the query source.
+// Drain returns only the entries and bodies added since the last Drain (dirty
+// tracking). Entries remain queryable in the buffer — only the dirty set is
+// cleared. Hydrated entries are never included.
 func (b *Buffer) Drain() ([]Request, []RequestBody, []ResponseBody) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+
+	// Collect pending requests by looking up their current data.
+	seen := map[string]bool{}
 	var reqs []Request
-	for _, entries := range b.byRule {
-		reqs = append(reqs, entries...)
+	for _, p := range b.pendingReqs {
+		if seen[p.id] {
+			continue
+		}
+		seen[p.id] = true
+		for _, r := range b.byRule[p.rule] {
+			if r.ID == p.id {
+				reqs = append(reqs, r)
+				break
+			}
+		}
 	}
-	reqBodies := make([]RequestBody, 0, len(b.reqB))
-	for id, body := range b.reqB {
-		reqBodies = append(reqBodies, RequestBody{ID: id, Body: body})
+
+	reqBodies := make([]RequestBody, 0, len(b.pendingReqBodies))
+	for id := range b.pendingReqBodies {
+		if body, ok := b.reqB[id]; ok {
+			reqBodies = append(reqBodies, RequestBody{ID: id, Body: body})
+		}
 	}
-	respBodies := make([]ResponseBody, 0, len(b.respB))
-	for id, body := range b.respB {
-		respBodies = append(respBodies, ResponseBody{ID: id, Body: body})
+	respBodies := make([]ResponseBody, 0, len(b.pendingRespBodies))
+	for id := range b.pendingRespBodies {
+		if body, ok := b.respB[id]; ok {
+			respBodies = append(respBodies, ResponseBody{ID: id, Body: body})
+		}
 	}
+
+	// Clear dirty sets.
+	b.pendingReqs = nil
+	b.pendingReqBodies = map[string]struct{}{}
+	b.pendingRespBodies = map[string]struct{}{}
+
 	return reqs, reqBodies, respBodies
 }
 

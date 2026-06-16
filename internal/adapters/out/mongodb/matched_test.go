@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo/integration/mtest"
 )
 
@@ -155,6 +156,52 @@ func TestMongo_DeleteMatched_All(t *testing.T) {
 		s := mongodb.NewStoreFromClient(mt.Client, "mockwave")
 		err := s.DeleteMatched(context.Background(), "")
 		require.NoError(mt, err)
+	})
+}
+
+// TestMongo_GetMatched_BinaryBody verifies that a request body stored as
+// primitive.Binary (what bson produces for []byte) is decoded back to []byte.
+func TestMongo_GetMatched_BinaryBody(t *testing.T) {
+	mt := mtest.New(t, mtest.NewOptions().ClientType(mtest.Mock))
+	mt.Run("binary body decoded", func(mt *mtest.T) {
+		bodyBytes := []byte(`{"q":"test"}`)
+		req := matched.Request{ID: "r1", RuleID: "rule-1", Method: "GET", Path: "/x", RequestBodyID: "rb1"}
+
+		// First FindOne: the request doc. cursorID=0 means exhausted (no killCursors needed).
+		mt.AddMockResponses(mtest.CreateCursorResponse(0, "mockwave.matched_requests", mtest.FirstBatch,
+			bson.D{
+				{Key: "_id", Value: "r1"},
+				{Key: "rule_id", Value: "rule-1"},
+				{Key: "data", Value: req},
+			},
+		))
+		// Second FindOne: the body doc — body as primitive.Binary (what bson actually stores).
+		mt.AddMockResponses(mtest.CreateCursorResponse(0, "mockwave.matched_request_bodies", mtest.FirstBatch,
+			bson.D{
+				{Key: "_id", Value: "rb1"},
+				{Key: "body", Value: primitive.Binary{Subtype: 0x00, Data: bodyBytes}},
+			},
+		))
+
+		s := mongodb.NewStoreFromClient(mt.Client, "mockwave")
+		full, err := s.GetMatched(context.Background(), "rule-1", "r1")
+		require.NoError(mt, err)
+		require.NotNil(mt, full)
+		assert.Equal(mt, bodyBytes, full.RequestBody)
+	})
+}
+
+// TestMongo_GetMatched_WrongRule verifies that GetMatched returns (nil, nil)
+// when the id exists but belongs to a different rule.
+func TestMongo_GetMatched_WrongRule(t *testing.T) {
+	mt := mtest.New(t, mtest.NewOptions().ClientType(mtest.Mock))
+	mt.Run("wrong rule returns nil", func(mt *mtest.T) {
+		// MongoDB filter includes rule_id, so no document matches → ErrNoDocuments.
+		mt.AddMockResponses(mtest.CreateCursorResponse(0, "mockwave.matched_requests", mtest.FirstBatch))
+		s := mongodb.NewStoreFromClient(mt.Client, "mockwave")
+		full, err := s.GetMatched(context.Background(), "wrong-rule", "r1")
+		require.NoError(mt, err)
+		assert.Nil(mt, full)
 	})
 }
 

@@ -125,6 +125,60 @@ func TestBuffer_DrainReturnsAllAndKeeps(t *testing.T) {
 	assert.Len(t, b.List("r1", matched.Query{}).Items, 1)
 }
 
+// FIX D: dirty-tracking tests.
+
+func TestBuffer_Drain_DirtyTracking(t *testing.T) {
+	b := matched.NewBuffer(10)
+	b.Add(matched.Request{ID: "a", RuleID: "r1", At: time.Unix(1, 0)}, nil, nil)
+	b.Add(matched.Request{ID: "b", RuleID: "r1", At: time.Unix(2, 0)}, nil, nil)
+
+	// First drain: 2 new entries.
+	reqs, _, _ := b.Drain()
+	assert.Len(t, reqs, 2)
+
+	// Second drain with no new adds: 0 entries.
+	reqs2, _, _ := b.Drain()
+	assert.Empty(t, reqs2)
+
+	// Add one more and drain: only the new one.
+	b.Add(matched.Request{ID: "c", RuleID: "r1", At: time.Unix(3, 0)}, nil, nil)
+	reqs3, _, _ := b.Drain()
+	assert.Len(t, reqs3, 1)
+	assert.Equal(t, "c", reqs3[0].ID)
+
+	// Entries are still queryable after drains.
+	page := b.List("r1", matched.Query{})
+	assert.Len(t, page.Items, 3)
+}
+
+func TestBuffer_Drain_HydrateNotDirty(t *testing.T) {
+	b := matched.NewBuffer(10)
+	b.Hydrate([]matched.Request{
+		{ID: "h1", RuleID: "r1", At: time.Unix(1, 0)},
+		{ID: "h2", RuleID: "r1", At: time.Unix(2, 0)},
+	})
+
+	// Hydrated entries must NOT appear in Drain.
+	reqs, _, _ := b.Drain()
+	assert.Empty(t, reqs)
+
+	// But they are still queryable.
+	page := b.List("r1", matched.Query{})
+	assert.Len(t, page.Items, 2)
+}
+
+func TestBuffer_Drain_EvictedNotDirty(t *testing.T) {
+	// Cap of 1: adding a second entry evicts the first.
+	b := matched.NewBuffer(1)
+	b.Add(matched.Request{ID: "old", RuleID: "r1", At: time.Unix(1, 0)}, nil, nil)
+	b.Add(matched.Request{ID: "new", RuleID: "r1", At: time.Unix(2, 0)}, nil, nil)
+
+	// Only the surviving (new) entry should be dirty.
+	reqs, _, _ := b.Drain()
+	require.Len(t, reqs, 1)
+	assert.Equal(t, "new", reqs[0].ID)
+}
+
 func TestBuffer_SweepExpired(t *testing.T) {
 	b := matched.NewBuffer(10)
 	now := time.Unix(100, 0)
