@@ -13,6 +13,9 @@ type Store struct {
 	mu     sync.RWMutex
 	path   string
 	config domain.Config
+
+	matchedOnce  sync.Once
+	matchedStore *matchedMem
 }
 
 // NewMemStore creates an in-memory store pre-loaded with cfg. No file I/O.
