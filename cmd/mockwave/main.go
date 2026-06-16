@@ -47,6 +47,11 @@ func startCmd() *cobra.Command {
 		storeType      string
 		reloadInterval time.Duration
 		opts           storeOpts
+
+		matchedCapture      bool
+		matchedTTL          int
+		matchedBufferSize   int
+		matchedSyncInterval int
 	)
 
 	cmd := &cobra.Command{
@@ -63,6 +68,12 @@ func startCmd() *cobra.Command {
 				Store:          s,
 				ReloadInterval: reloadInterval,
 				ImportExport:   storeType != "json",
+				Matched: server.MatchedConfig{
+					Enabled:      matchedCapture,
+					TTL:          time.Duration(matchedTTL) * time.Second,
+					BufferSize:   matchedBufferSize,
+					SyncInterval: time.Duration(matchedSyncInterval) * time.Second,
+				},
 			})
 			if err != nil {
 				return err
@@ -150,6 +161,12 @@ func startCmd() *cobra.Command {
 	// Cosmos DB flags
 	cmd.Flags().StringVar(&opts.CosmosURI, "cosmos-uri", "", "Cosmos DB connection string (MongoDB API)")
 	cmd.Flags().StringVar(&opts.CosmosDB, "cosmos-db", "mockwave", "Cosmos DB database name")
+
+	// Matched request capture flags
+	cmd.Flags().BoolVar(&matchedCapture, "matched-capture", false, "enable matched request capture")
+	cmd.Flags().IntVar(&matchedTTL, "matched-ttl", 3600, "TTL in seconds for captured matched requests")
+	cmd.Flags().IntVar(&matchedBufferSize, "matched-buffer-size", 10000, "in-memory buffer size for matched request capture")
+	cmd.Flags().IntVar(&matchedSyncInterval, "matched-sync-interval", 30, "sync interval in seconds for matched request capture")
 
 	return cmd
 }
