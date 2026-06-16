@@ -17,6 +17,7 @@
 - **Hot reload** — update rules without restarting via the admin API
 - **Import/Export** — export rules + simulations to a runnable JSON config from the admin UI/API; two-phase import with conflict override (remote stores; with the JSON store the config file already plays this role)
 - **Chaos testing with profiles** — inject faults (latency, errors, resets, truncation, throttling) at the boundary; profile chaos testing with realistic scenarios (degraded services, network partitions, cascading failures) without host agents or root access
+- **Matched request capture** — opt-in capture of requests that matched a rule, retrievable via `GET /api/matched/{rule_id}` (paginated; filter by method/path/status/header) and `GET /api/matched/{rule_id}/{id}` (full request + bodies). Global TTL with native expiry on DynamoDB/Mongo/Cosmos. Enables regressive e2e: assert both the mock's response and the exact request your system sent.
 - **AI integration (MCP)** — `mockwave mcp` exposes a Model Context Protocol server so Claude Code can create rules, manage simulations, and auto-generate mocks from any OpenAPI 2.0/3.0 spec
 - **Embeddable library** — public `store.DataStore`, `observability.Logger/Tracer/MetricsRecorder` interfaces; bring your own backends
 
@@ -157,6 +158,12 @@ Flags (start):
   # Cosmos DB
       --cosmos-uri string         Cosmos DB connection string (MongoDB API)
       --cosmos-db string          Cosmos DB database name (default "mockwave")
+
+  # Matched request capture
+      --matched-capture            Enable matched request capture (default false)
+      --matched-ttl int            Capture TTL in seconds (default 3600)
+      --matched-buffer-size int    In-memory ring buffer capacity (default 10000)
+      --matched-sync-interval int  Write-behind sync interval in seconds (default 30)
 ```
 
 ### Examples
