@@ -22,11 +22,13 @@ import (
 	"time"
 
 	"github.com/mockwave/mockwave/domain"
+	awsmsg "github.com/mockwave/mockwave/internal/adapters/in/awsmsg"
 	graphqladapter "github.com/mockwave/mockwave/internal/adapters/in/graphql"
 	grpcadapter "github.com/mockwave/mockwave/internal/adapters/in/grpc"
 	"github.com/mockwave/mockwave/internal/adapters/in/httprest"
 	soapadapter "github.com/mockwave/mockwave/internal/adapters/in/soap"
 	"github.com/mockwave/mockwave/internal/chaos"
+	eventroute "github.com/mockwave/mockwave/internal/domain/eventroute"
 	"github.com/mockwave/mockwave/internal/domain/matching"
 	"github.com/mockwave/mockwave/internal/domain/pipeline"
 	"github.com/mockwave/mockwave/internal/domain/routing"
@@ -68,6 +70,9 @@ type Config struct {
 
 	// Matched configures matched-request capture (default disabled).
 	Matched MatchedConfig
+
+	// Event configures AWS event interception + capture (default disabled).
+	Event EventConfig
 }
 
 func (c Config) reloadInterval() time.Duration {
@@ -99,6 +104,9 @@ type Server struct {
 	matchedBuf    *matched.Buffer
 	matchedSyncer *matched.Syncer
 	matchedSweep  context.CancelFunc
+
+	eventCaptureBuf *matched.Buffer     // nil when event capture disabled
+	eventMatcher    *eventroute.Matcher // guarded by s.mu; rebuilt on reload
 }
 
 // New creates a Server from cfg, loading rules from the store.
@@ -167,6 +175,10 @@ func New(cfg Config) (*Server, error) {
 			s.matchedSweep = scancel
 			go s.runMatchedSweep(sctx, mc.SyncInterval)
 		}
+	}
+	if ec := resolveEventConfig(cfg.Event); ec.Enabled {
+		s.cfg.Event = ec
+		s.eventCaptureBuf = matched.NewBuffer(ec.BufferSize)
 	}
 	if cfg.AdminPort > 0 {
 		if err := s.startAdmin(); err != nil {
@@ -239,6 +251,48 @@ func (s *Server) runMatchedSweep(ctx context.Context, interval time.Duration) {
 			}
 		}
 	}
+}
+
+// currentEventMatcher returns the active event matcher under the read lock.
+// Returns a nil interface (not a typed nil) when no matcher is built, so the
+// awsmsg handler's nil check works.
+func (s *Server) currentEventMatcher() awsmsg.Matcher {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.eventMatcher == nil {
+		return nil
+	}
+	return s.eventMatcher
+}
+
+// captureEvent records a matched intercepted event into the in-memory buffer.
+func (s *Server) captureEvent(ev domain.Event, ruleID, messageID string) {
+	if s.eventCaptureBuf == nil {
+		return
+	}
+	now := time.Now()
+	r := matched.Request{
+		ID:             matched.NewID(),
+		RuleID:         ruleID,
+		At:             now,
+		Protocol:       "aws-" + ev.Service,
+		Method:         ev.Operation,
+		Path:           ev.Target,
+		Query:          eventQuery(ev),
+		Identity:       ev.Identity,
+		ResponseStatus: 200,
+	}
+	if ttl := s.cfg.Event.ttlSeconds(); ttl > 0 {
+		r.TTL = now.Add(time.Duration(ttl) * time.Second).Unix()
+	}
+	var reqBody []byte
+	if len(ev.Message) > 0 {
+		r.RequestBodyID = matched.NewID()
+		reqBody = ev.Message
+	}
+	r.ResponseBodyID = matched.NewID()
+	respBody := map[string]string{"messageId": messageID}
+	s.eventCaptureBuf.Add(r, reqBody, respBody)
 }
 
 // Logger returns the Logger configured for this server (never nil).
@@ -353,8 +407,18 @@ func (s *Server) rebuild() error {
 	}
 	faultStage := chaos.NewFaultStageWithScenario(profMap, s.killSwitch, s.scenario)
 	p := pipeline.New(matchStage, routeStage, faultStage, simStage, scriptStage, fwdStage)
+	var eventRules []domain.EventRule
+	if ers, ok := s.cfg.Store.(store.EventRuleStore); ok {
+		er, err := ers.GetEventRules()
+		if err != nil {
+			return err
+		}
+		eventRules = er
+	}
+	newEventMatcher := eventroute.NewMatcher(eventRules)
 	s.mu.Lock()
 	s.pipeline = p
+	s.eventMatcher = newEventMatcher
 	s.mu.Unlock()
 	return nil
 }
@@ -374,15 +438,20 @@ func (s *Server) MockHandler(protocols []string, exec Executor) http.Handler {
 	httpH := httprest.NewHandler(exec)
 	var gqlH *graphqladapter.Handler
 	var soapH *soapadapter.Handler
+	var awsH *awsmsg.Handler
 	for _, p := range protocols {
 		switch strings.ToLower(p) {
 		case "graphql":
 			gqlH = graphqladapter.NewHandler(exec)
 		case "soap":
 			soapH = soapadapter.NewHandler(exec)
+		case "aws":
+			if s.eventCaptureBuf != nil {
+				awsH = awsmsg.NewHandler(s.currentEventMatcher, s.captureEvent, matched.NewID)
+			}
 		}
 	}
-	return &protocolMux{httpH: httpH, gqlH: gqlH, soapH: soapH}
+	return &protocolMux{httpH: httpH, gqlH: gqlH, soapH: soapH, awsH: awsH}
 }
 
 // GRPCServer returns a configured *grpc.Server backed by exec.
@@ -396,9 +465,16 @@ type protocolMux struct {
 	httpH *httprest.Handler
 	gqlH  *graphqladapter.Handler
 	soapH *soapadapter.Handler
+	awsH  *awsmsg.Handler
 }
 
 func (m *protocolMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if m.awsH != nil {
+		if d := awsmsg.Detect(r); d.Service != "" {
+			m.awsH.ServeHTTP(w, r, d)
+			return
+		}
+	}
 	ct := strings.ToLower(r.Header.Get("Content-Type"))
 	if m.soapH != nil {
 		if r.Header.Get("SOAPAction") != "" ||
