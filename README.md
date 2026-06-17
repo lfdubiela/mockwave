@@ -18,6 +18,7 @@
 - **Import/Export** — export rules + simulations to a runnable JSON config from the admin UI/API; two-phase import with conflict override (remote stores; with the JSON store the config file already plays this role)
 - **Chaos testing with profiles** — inject faults (latency, errors, resets, truncation, throttling) at the boundary; profile chaos testing with realistic scenarios (degraded services, network partitions, cascading failures) without host agents or root access
 - **Matched request capture** — opt-in capture of requests that matched a rule, retrievable via `GET /api/matched/{rule_id}` (paginated; filter by method/path/status/header) and `GET /api/matched/{rule_id}/{id}` (full request + bodies). Global TTL with native expiry on DynamoDB/Mongo/Cosmos. Enables regressive e2e: assert both the mock's response and the exact request your system sent.
+- **Outgoing event capture (AWS)** — intercept the app's SNS publishes on the mock port, capture them to state for assertion, and return a valid SDK response. Point your AWS SDK client at Mockwave via endpoint override (`--protocols http,aws --event-capture`). See [`docs/event-capture.md`](docs/event-capture.md). (SQS/EventBridge + re-signed forward on the [roadmap](docs/roadmap.md).)
 - **AI integration (MCP)** — `mockwave mcp` exposes a Model Context Protocol server so Claude Code can create rules, manage simulations, and auto-generate mocks from any OpenAPI 2.0/3.0 spec
 - **Embeddable library** — public `store.DataStore`, `observability.Logger/Tracer/MetricsRecorder` interfaces; bring your own backends
 
@@ -141,18 +142,21 @@ Flags (start):
   -f, --config string            Path to JSON config file (required for --store=json)
       --port int                 Mock server port (default 8080)
       --admin-port int           Admin UI/API port (default 9090)
-      --protocols string         Comma-separated: http,graphql,soap,grpc (default "http")
+      --protocols string         Comma-separated: http,graphql,soap,grpc,aws (default "http")
       --grpc-port int            gRPC server port (default 50051)
       --grpc-proto string        Path to compiled .pb descriptor for gRPC proto conversion
 
   # Store backend
       --store string             Storage backend: json|dynamodb|mongo|cosmos (default "json")
+      --reload-interval duration Version-poll reload interval for remote stores (default 15s)
 
   # DynamoDB
-      --dynamo-rules-table string  DynamoDB table for rules (default "mockwave-rules")
-      --dynamo-sims-table string   DynamoDB table for simulations (default "mockwave-simulations")
-      --dynamo-region string       AWS region (default "us-east-1")
-      --dynamo-endpoint string     Custom endpoint, e.g. http://localhost:8000
+      --dynamo-rules-table string      DynamoDB table for rules (default "mockwave-rules")
+      --dynamo-sims-table string       DynamoDB table for simulations (default "mockwave-simulations")
+      --dynamo-faults-table string     DynamoDB table for fault profiles (default "mockwave-fault-profiles")
+      --dynamo-scenarios-table string  DynamoDB table for scenarios (default "mockwave-scenarios")
+      --dynamo-region string           AWS region (default "us-east-1")
+      --dynamo-endpoint string         Custom endpoint, e.g. http://localhost:8000
 
   # MongoDB
       --mongo-uri string          MongoDB connection URI (default "mongodb://localhost:27017")
@@ -167,6 +171,12 @@ Flags (start):
       --matched-ttl int            Capture TTL in seconds (default 3600)
       --matched-buffer-size int    In-memory ring buffer capacity (default 10000)
       --matched-sync-interval int  Write-behind sync interval in seconds (default 30)
+
+  # AWS event capture (use with --protocols aws)
+      --event-capture              Enable AWS event interception + capture (default false)
+      --event-ttl int              Capture TTL in seconds (default 3600)
+      --event-buffer-size int      In-memory buffer capacity (default 10000)
+      --event-sync-interval int    Write-behind sync interval in seconds (default 30)
 ```
 
 ### Examples
@@ -827,6 +837,12 @@ make test
 # Check coverage (must be ≥80%)
 make coverage
 ```
+
+---
+
+## Roadmap
+
+Planned-but-not-yet-built work — including scope deliberately deferred from shipped features — is tracked in [`docs/roadmap.md`](docs/roadmap.md).
 
 ---
 

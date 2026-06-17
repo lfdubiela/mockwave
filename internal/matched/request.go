@@ -33,6 +33,10 @@ type Request struct {
 	Headers  map[string]string `json:"headers"`
 	Query    map[string]string `json:"query"`
 
+	// Identity is the publisher principal for captured events (the SigV4 access
+	// key id). Empty for HTTP captures.
+	Identity string `json:"identity,omitempty"`
+
 	ResponseStatus  int               `json:"response_status"`
 	ResponseHeaders map[string]string `json:"response_headers"`
 

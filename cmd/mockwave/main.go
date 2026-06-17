@@ -52,6 +52,11 @@ func startCmd() *cobra.Command {
 		matchedTTL          int
 		matchedBufferSize   int
 		matchedSyncInterval int
+
+		eventCapture      bool
+		eventTTL          int
+		eventBufferSize   int
+		eventSyncInterval int
 	)
 
 	cmd := &cobra.Command{
@@ -73,6 +78,12 @@ func startCmd() *cobra.Command {
 					TTL:          time.Duration(matchedTTL) * time.Second,
 					BufferSize:   matchedBufferSize,
 					SyncInterval: time.Duration(matchedSyncInterval) * time.Second,
+				},
+				Event: server.EventConfig{
+					Enabled:      eventCapture,
+					TTL:          time.Duration(eventTTL) * time.Second,
+					BufferSize:   eventBufferSize,
+					SyncInterval: time.Duration(eventSyncInterval) * time.Second,
 				},
 			})
 			if err != nil {
@@ -138,7 +149,7 @@ func startCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&configFile, "config", "f", "", "path to JSON config file (required for --store=json)")
 	cmd.Flags().IntVar(&mockPort, "port", 8080, "mock server port")
 	cmd.Flags().IntVar(&adminPort, "admin-port", 9090, "admin API port")
-	cmd.Flags().StringVar(&protocolsStr, "protocols", "http", "comma-separated: http,graphql,soap,grpc")
+	cmd.Flags().StringVar(&protocolsStr, "protocols", "http", "comma-separated: http,graphql,soap,grpc,aws")
 	cmd.Flags().IntVar(&grpcPort, "grpc-port", 50051, "gRPC server port")
 	cmd.Flags().StringVar(&grpcProto, "grpc-proto", "", "path to compiled .pb descriptor for gRPC proto conversion")
 
@@ -167,6 +178,11 @@ func startCmd() *cobra.Command {
 	cmd.Flags().IntVar(&matchedTTL, "matched-ttl", 3600, "TTL in seconds for captured matched requests")
 	cmd.Flags().IntVar(&matchedBufferSize, "matched-buffer-size", 10000, "in-memory buffer size for matched request capture")
 	cmd.Flags().IntVar(&matchedSyncInterval, "matched-sync-interval", 30, "sync interval in seconds for matched request capture")
+
+	cmd.Flags().BoolVar(&eventCapture, "event-capture", false, "enable AWS event interception + capture (use with --protocols aws)")
+	cmd.Flags().IntVar(&eventTTL, "event-ttl", 3600, "TTL in seconds for captured events")
+	cmd.Flags().IntVar(&eventBufferSize, "event-buffer-size", 10000, "in-memory buffer size for event capture")
+	cmd.Flags().IntVar(&eventSyncInterval, "event-sync-interval", 30, "sync interval in seconds for event capture")
 
 	return cmd
 }
