@@ -156,15 +156,16 @@ SDK is never blocked.
 | `attributes` | no | Map of message attribute key → expected value. Exact match; all specified attributes must be present. |
 | `message` | no | Map of JSONPath expression → expected scalar value, applied to the published message body. Reuses the same JSONPath matcher as HTTP rule body matching. |
 
-`forward` is reserved for a later phase (re-signed forward to the real broker).
-Omit it or leave it null; Mockwave will synthesize a valid response in its place.
+The `forward` field on an event rule (sibling of `match`) is reserved for a
+later phase (re-signed forward to the real broker). Omit it or leave it null;
+Mockwave will synthesize a valid response in its place.
 
 ---
 
 ## Admin API
 
 When event capture is disabled (`--event-capture` not set), all
-`/api/event-captures` endpoints return `404`.
+`/api/event-captures/` endpoints return `404`.
 
 The admin port is `:9090` in all examples below.
 
@@ -237,7 +238,7 @@ Returns the full capture including the published message as the request body.
   "response_status": 200,
   "request_body": "{\"eventType\":\"ORDER_PLACED\",\"orderId\":\"abc-123\"}",
   "response_body": {
-    "MessageId": "d1e7b8c0-1234-5678-9abc-def012345678"
+    "messageId": "d1e7b8c0-1234-5678-9abc-def012345678"
   }
 }
 ```
@@ -339,7 +340,7 @@ resp, err := http.Get("http://localhost:9090/api/event-captures/order-placed-sns
 - **In-memory capture only.** Event captures are held in the ring buffer; they
   do not survive a restart and are not written to the configured store backend
   in v1. Persistence is on the roadmap.
-- **No forward.** The `forward` field in `EventMatch` is reserved but not yet
+- **No forward.** The `forward` field on an event rule is reserved but not yet
   active. Forward requires Mockwave to re-sign the request with its own AWS
   credentials — it cannot reuse the app's SigV4 token verbatim because the
   signature commits to the `host` header and that host is Mockwave, not the
