@@ -34,10 +34,13 @@ func NewHandler(matcher func() Matcher, capture CaptureFunc, newID func() string
 
 // ServeHTTP handles one intercepted publish. d is the result of Detect.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, d DetectResult) {
-	body, _ := io.ReadAll(r.Body)
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "awsmsg: read body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	var ev domain.Event
-	var err error
 	switch d.Service {
 	case domain.EventServiceSNS:
 		var form url.Values

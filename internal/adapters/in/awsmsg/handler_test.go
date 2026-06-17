@@ -1,6 +1,8 @@
 package awsmsg
 
 import (
+	"fmt"
+	"io"
 	"net/http/httptest"
 	"net/url"
 	"strings"
@@ -82,5 +84,19 @@ func TestHandlerUnsupportedService(t *testing.T) {
 	h.ServeHTTP(rec, r, DetectResult{Service: domain.EventServiceSQS})
 	if rec.Code != 501 {
 		t.Fatalf("expected 501 for sqs in phase 1, got %d", rec.Code)
+	}
+}
+
+type errReader struct{}
+
+func (errReader) Read([]byte) (int, error) { return 0, fmt.Errorf("boom") }
+
+func TestHandlerBodyReadError(t *testing.T) {
+	h := NewHandler(func() Matcher { return fakeMatcher{} }, func(domain.Event, string, string) {}, func() string { return "x" })
+	r := httptest.NewRequest("POST", "http://mock/", io.NopCloser(errReader{}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, r, DetectResult{Service: domain.EventServiceSNS})
+	if rec.Code != 400 {
+		t.Fatalf("expected 400 on body read error, got %d", rec.Code)
 	}
 }
