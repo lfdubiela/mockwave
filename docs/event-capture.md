@@ -1,22 +1,28 @@
 # Outgoing Event Capture (AWS)
 
-Mockwave can intercept your application's AWS SNS publishes on the mock port,
-capture them to state for assertion, and return a valid SDK response so the
-publish call succeeds. This extends Mockwave's regressive e2e model to the
-**outgoing event** side: after your system-under-test completes a flow, assert
-not just the HTTP response it returned, but also the exact event it emitted —
-target ARN, message payload, attributes, and publisher identity.
+Mockwave can intercept your application's AWS SNS, SQS, and EventBridge publishes
+on the mock port, capture them to state for assertion, and return a valid SDK
+response so the publish call succeeds. This extends Mockwave's regressive e2e
+model to the **outgoing event** side: after your system-under-test completes a
+flow, assert not just the HTTP response it returned, but also the exact event it
+emitted — target ARN / queue URL / event bus, message payload, attributes, and
+publisher identity.
 
 Capture is **opt-in** (default off, zero overhead when disabled).
 
-Phase 1 covers SNS. SQS, EventBridge, re-signed forward, and persistence are on
-the [roadmap](roadmap.md).
+Phases 1 and 2 cover SNS, SQS, and EventBridge. Re-signed forward and persistence
+are on the [roadmap](roadmap.md).
 
 - [Why this exists](#why-this-exists)
 - [Pointing your AWS SDK at Mockwave](#pointing-your-aws-sdk-at-mockwave)
 - [Enabling event capture](#enabling-event-capture)
 - [Config — event\_rules](#config--event_rules)
 - [EventMatch fields](#eventmatch-fields)
+- [Service-specific behaviour](#service-specific-behaviour)
+  - [SNS](#sns)
+  - [SQS](#sqs)
+  - [EventBridge](#eventbridge)
+- [Matcher caveat — target globs and slashes](#matcher-caveat--target-globs-and-slashes)
 - [Admin API](#admin-api)
 - [Worked example](#worked-example)
 - [Limitations and roadmap](#limitations-and-roadmap)
@@ -30,14 +36,15 @@ The regressive e2e flow that event capture enables:
 1. Define event rules in Mockwave (which publishes to intercept).
 2. Point your application's AWS SDK at Mockwave via endpoint override.
 3. Trigger the flow under test.
-4. Your application publishes to SNS; Mockwave intercepts it, captures it, and
-   returns a valid `PublishResponse` so the SDK proceeds normally.
+4. Your application publishes to SNS / SQS / EventBridge; Mockwave intercepts it,
+   captures it, and returns a valid response so the SDK proceeds normally.
 5. Assert the response your application returned to its caller.
-6. Assert the event your application emitted — target ARN, message, attributes,
+6. Assert the event your application emitted — target, message, attributes,
    publisher access key — via `GET /api/event-captures/{ruleID}`.
 
 Without step 6 you only know your application returned the right response given a
-mocked SNS. With it you also know it published the right event to the right topic.
+mocked broker. With it you also know it published the right event to the right
+destination.
 
 ---
 
@@ -45,7 +52,8 @@ mocked SNS. With it you also know it published the right event to the right topi
 
 Mockwave listens for AWS calls on the same mock port as HTTP (`8080` by default).
 Detection is automatic: requests are identified as AWS messaging by the SigV4
-`Authorization` credential scope (`sns`, `sqs`, or `events` service component).
+`Authorization` credential scope (`sns`, `sqs`, or `events` service component) or
+by the `X-Amz-Target` header (`AmazonSQS.*` / `AWSEvents.*`).
 
 Override the endpoint in your application before the flow starts.
 
@@ -148,17 +156,85 @@ SDK is never blocked.
 
 | Field | Required | Description |
 |---|---|---|
-| `service` | yes | `sns` — the AWS service. (SQS and EventBridge in a later phase.) |
-| `operation` | no | Exact operation name, e.g. `Publish`. Omit to match any. |
-| `target` | no | Glob against the topic ARN (SNS), queue URL (SQS), or event bus name (EventBridge). `*` matches any single segment; `**` matches any number. |
-| `source` | no | EventBridge `source` field. Glob. (EventBridge only; reserved for a later phase.) |
-| `detail_type` | no | EventBridge `detail-type` field. Glob. (Reserved for a later phase.) |
+| `service` | yes | `sns`, `sqs`, or `eventbridge`. |
+| `operation` | no | Exact operation name, e.g. `Publish`, `SendMessage`, `PutEvents`. Omit to match any. |
+| `target` | no | Glob against the topic ARN (SNS), queue URL (SQS), or event bus name (EventBridge). Uses Go `path.Match`; see [caveat below](#matcher-caveat--target-globs-and-slashes). |
+| `source` | no | EventBridge `source` field. Glob. |
+| `detail_type` | no | EventBridge `detail-type` field. Glob. |
 | `attributes` | no | Map of message attribute key → expected value. Exact match; all specified attributes must be present. |
 | `message` | no | Map of JSONPath expression → expected scalar value, applied to the published message body. Reuses the same JSONPath matcher as HTTP rule body matching. |
 
 The `forward` field on an event rule (sibling of `match`) is reserved for a
 later phase (re-signed forward to the real broker). Omit it or leave it null;
 Mockwave will synthesize a valid response in its place.
+
+---
+
+## Service-specific behaviour
+
+### SNS
+
+- **Wire format:** query-string over HTTP POST (AWS SDK default).
+- **Detection:** SigV4 credential scope `sns`.
+- **Captured as:** protocol `aws-sns`, method `Publish`, path = topic ARN.
+- **Synthesized response:** valid XML `PublishResponse` with a generated
+  `MessageId`. The SDK asserts no checksum on SNS `Publish`, so the XML alone is
+  sufficient.
+
+### SQS
+
+- **Wire format:** JSON body over HTTP POST (`X-Amz-Target: AmazonSQS.SendMessage`).
+- **Detection:** `X-Amz-Target` header prefix `AmazonSQS.` (also confirmed by
+  SigV4 credential scope `sqs`).
+- **Captured as:** protocol `aws-sqs`, method `SendMessage`, path = queue URL
+  (the `QueueUrl` field from the request body).
+- **FIFO metadata:** `MessageGroupId` and `MessageDeduplicationId` are extracted
+  and stored in the capture (`group_id` / `dedup_id` on the event).
+- **Synthesized response:** JSON with `MD5OfMessageBody` computed faithfully
+  from the raw message body bytes, and `MD5OfMessageAttributes` (included only
+  when message attributes are present). The Go SDK v2 validates both checksums,
+  so both must be correct for the call to succeed.
+
+### EventBridge
+
+- **Wire format:** JSON body over HTTP POST (`X-Amz-Target: AWSEvents.PutEvents`).
+- **Detection:** `X-Amz-Target` header prefix `AWSEvents.` (also confirmed by
+  SigV4 credential scope `events`).
+- **Batch:** `PutEvents` is a batch operation. Each entry in `Entries` is captured
+  as a **separate** event.
+- **Captured as:** protocol `aws-eventbridge`, method `PutEvents`, path = event
+  bus name (from the entry's `EventBusName` field; defaults to `default` when
+  absent). The entry's `Source` and `DetailType` are stored as `source` /
+  `detail_type` on the capture; the entry's `Detail` JSON string is stored as
+  the request body.
+- **Synthesized response:** JSON with `FailedEntryCount: 0` and one `EventId`
+  per input entry, in order.
+
+---
+
+## Matcher caveat — target globs and slashes
+
+`target` globs use Go `path.Match`, whose `*` wildcard does **not** cross a `/`
+boundary.
+
+- **SNS topic ARNs** contain no `/` (e.g.
+  `arn:aws:sns:us-east-1:123456789012:order-placed`), so `*` globs the account
+  number or suffix freely:
+  `arn:aws:sns:us-east-1:*:order-placed` works as expected.
+
+- **SQS queue URLs** contain slashes (e.g.
+  `https://sqs.us-east-1.amazonaws.com/123456789012/my-queue`). A single `*`
+  cannot span those slashes. Prefer either an exact `target` string, or leave
+  `target` empty and rely on `service: sqs` (with optional `message` / `attributes`
+  filters) to match all queues:
+
+  ```json
+  { "service": "sqs" }
+  ```
+
+- **EventBridge bus names** are plain identifiers without slashes (e.g.
+  `default`, `my-bus`), so `*` globs work fine. Match on `source` and
+  `detail_type` for finer-grained filtering.
 
 ---
 
@@ -198,7 +274,7 @@ needed to identify and filter.
 | `limit` | `20` | Max items per page (max 100). |
 | `cursor` | — | Opaque pagination cursor from a previous response. |
 | `method` | — | Filter by operation name (`Publish`, `SendMessage`, `PutEvents`). |
-| `path` | — | Glob match against the captured target ARN / queue URL. |
+| `path` | — | Glob match against the captured target ARN / queue URL / bus name. |
 
 **Response `200`:**
 
@@ -247,12 +323,12 @@ Captured fields:
 
 | Field | Description |
 |---|---|
-| `protocol` | `aws-sns` (SQS and EventBridge protocols in a later phase). |
-| `method` | The AWS operation: `Publish` for SNS. |
-| `path` | The target topic ARN. |
+| `protocol` | `aws-sns`, `aws-sqs`, or `aws-eventbridge`. |
+| `method` | The AWS operation: `Publish` (SNS), `SendMessage` (SQS), or `PutEvents` (EventBridge). |
+| `path` | The target: topic ARN (SNS), queue URL (SQS), or event bus name (EventBridge). |
 | `identity` | The access key ID of the publisher (extracted from the SigV4 `Authorization` header). |
-| `request_body` | The published message payload. |
-| `response_body` | The synthesized response Mockwave returned to the SDK (includes the generated `MessageId`). |
+| `request_body` | The published message payload (SNS `Message`, SQS `MessageBody`, EventBridge entry `Detail`). |
+| `response_body` | The synthesized response Mockwave returned to the SDK. |
 
 ---
 
@@ -326,29 +402,35 @@ resp, err := http.Get("http://localhost:9090/api/event-captures/order-placed-sns
 
 ## Limitations and roadmap
 
-**Phase 1 ships:**
+**Phases 1 and 2 ship:**
 
 - SNS `Publish` interception and synthesized `PublishResponse` (valid XML, with
   a generated `MessageId` the SDK accepts).
+- SQS `SendMessage` interception (JSON protocol) and synthesized response with
+  faithful `MD5OfMessageBody` and `MD5OfMessageAttributes` checksums.
+- EventBridge `PutEvents` interception (JSON, batch) — each entry captured
+  separately, synthesized response with one `EventId` per entry.
 - In-memory capture, paginated query, and identity recording (publisher access
-  key ID).
+  key ID) for all three services.
 
 **Known constraints:**
 
-- **SNS only.** SQS `SendMessage` and EventBridge `PutEvents` are on the
-  [roadmap](roadmap.md).
 - **In-memory capture only.** Event captures are held in the ring buffer; they
-  do not survive a restart and are not written to the configured store backend
-  in v1. Persistence is on the roadmap.
+  do not survive a restart and are not written to the configured store backend.
+  Persistence is on the roadmap (Phase 4).
 - **No forward.** The `forward` field on an event rule is reserved but not yet
   active. Forward requires Mockwave to re-sign the request with its own AWS
   credentials — it cannot reuse the app's SigV4 token verbatim because the
   signature commits to the `host` header and that host is Mockwave, not the
-  real AWS endpoint. Re-signed forward is on the roadmap.
+  real AWS endpoint. Re-signed forward is on the roadmap (Phase 3).
+- **No batch variants.** `PublishBatch` (SNS) and `SendMessageBatch` (SQS) are
+  not yet supported. (`PutEvents` is natively batch and is complete.)
+- **No consumer side.** SQS `ReceiveMessage` polling and SNS HTTP subscription
+  delivery are deferred.
 - **No fault injection.** Simulating broker errors (throttling, `AccessDenied`)
   on intercepted publishes is deferred.
 - **No weighted buckets.** Traffic splitting per event rule is deferred.
 
 See [`docs/roadmap.md`](roadmap.md) for the full list of deferred items
-including SQS/EventBridge, batch ops, consumer-side polling, and non-Go SDK
-fixtures.
+including batch ops, consumer-side polling, non-Go SDK fixtures, and GCP/Azure
+brokers.

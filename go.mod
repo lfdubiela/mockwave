@@ -7,7 +7,9 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.32.25
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.24
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.57.4
+	github.com/aws/aws-sdk-go-v2/service/eventbridge v1.46.6
 	github.com/aws/aws-sdk-go-v2/service/sns v1.40.1
+	github.com/aws/aws-sdk-go-v2/service/sqs v1.44.0
 	github.com/dop251/goja v0.0.0-20260311135729-065cd970411c
 	github.com/getkin/kin-openapi v0.139.0
 	github.com/google/uuid v1.6.0
