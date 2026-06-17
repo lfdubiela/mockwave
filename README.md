@@ -139,7 +139,7 @@ Flags (start):
   -f, --config string            Path to JSON config file (required for --store=json)
       --port int                 Mock server port (default 8080)
       --admin-port int           Admin UI/API port (default 9090)
-      --protocols string         Comma-separated: http,graphql,soap,grpc (default "http")
+      --protocols string         Comma-separated: http,graphql,soap,grpc,aws (default "http")
       --grpc-port int            gRPC server port (default 50051)
       --grpc-proto string        Path to compiled .pb descriptor for gRPC proto conversion
 
@@ -165,6 +165,12 @@ Flags (start):
       --matched-ttl int            Capture TTL in seconds (default 3600)
       --matched-buffer-size int    In-memory ring buffer capacity (default 10000)
       --matched-sync-interval int  Write-behind sync interval in seconds (default 30)
+
+  # AWS event capture (use with --protocols aws)
+      --event-capture              Enable AWS event interception + capture (default false)
+      --event-ttl int              Capture TTL in seconds (default 3600)
+      --event-buffer-size int      In-memory buffer capacity (default 10000)
+      --event-sync-interval int    Write-behind sync interval in seconds (default 30)
 ```
 
 ### Examples
