@@ -118,7 +118,7 @@ func TestE2E_SQSEventCapture(t *testing.T) {
 			"env": {DataType: aws.String("String"), StringValue: aws.String("prod")},
 		},
 	})
-	require.NoError(t, err, "SDK must accept the response and its MD5 checksums")
+	require.NoError(t, err, "SDK must accept the response (validates MD5OfMessageBody)")
 	require.NotNil(t, out.MessageId)
 
 	resp, err := http.Get(admin.URL + "/api/event-captures/sqs-orders")
