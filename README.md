@@ -29,11 +29,14 @@
 
 ```bash
 brew tap lfdubiela/mockwave
-brew install mockwave
+brew trust lfdubiela/mockwave
+brew install mockwave   # or: brew upgrade mockwave (if already installed)
 
 # Verify installation
 mockwave version
 ```
+
+> **Note:** `brew trust lfdubiela/mockwave` is only needed if Homebrew prompts to trust the tap. Skip it if no prompt appears.
 
 ```bash
 # Create a minimal config
