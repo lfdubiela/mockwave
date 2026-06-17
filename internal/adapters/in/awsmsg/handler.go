@@ -40,37 +40,69 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, d DetectResu
 		return
 	}
 
-	var ev domain.Event
 	switch d.Service {
 	case domain.EventServiceSNS:
-		var form url.Values
-		form, err = url.ParseQuery(string(body))
-		if err == nil {
-			ev, err = parseSNS(form)
+		form, perr := url.ParseQuery(string(body))
+		if perr != nil {
+			http.Error(w, perr.Error(), http.StatusBadRequest)
+			return
 		}
+		ev, perr := parseSNS(form)
+		if perr != nil {
+			http.Error(w, perr.Error(), http.StatusBadRequest)
+			return
+		}
+		h.stamp(&ev, d, body)
+		messageID := h.matchAndCapture(ev)
+		respondSNS(w, messageID, h.newID())
+
+	case domain.EventServiceSQS:
+		ev, attrs, perr := parseSQS(body)
+		if perr != nil {
+			http.Error(w, perr.Error(), http.StatusBadRequest)
+			return
+		}
+		h.stamp(&ev, d, body)
+		messageID := h.matchAndCapture(ev)
+		respondSQS(w, string(ev.Message), attrs, messageID)
+
+	case domain.EventServiceEventBridge:
+		evs, perr := parseEventBridge(body)
+		if perr != nil {
+			http.Error(w, perr.Error(), http.StatusBadRequest)
+			return
+		}
+		ids := make([]string, len(evs))
+		for i := range evs {
+			h.stamp(&evs[i], d, body)
+			ids[i] = h.matchAndCapture(evs[i])
+		}
+		respondEventBridge(w, ids)
+
 	default:
-		// SQS / EventBridge land in Phase 2.
 		http.Error(w, "awsmsg: unsupported service "+d.Service, http.StatusNotImplemented)
-		return
 	}
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
+}
+
+// stamp annotates a parsed event with request-scoped metadata.
+func (h *Handler) stamp(ev *domain.Event, d DetectResult, body []byte) {
 	ev.Region = d.Region
 	ev.Identity = d.Identity
 	ev.RawBody = body
+}
 
+// matchAndCapture matches the event, captures it when matched, and returns the
+// synthesized id (used as MessageId/EventId in the response).
+func (h *Handler) matchAndCapture(ev domain.Event) string {
 	ruleID := ""
 	if m := h.matcher(); m != nil {
 		if rule := m.Match(ev); rule != nil {
 			ruleID = rule.ID
 		}
 	}
-	messageID := h.newID()
+	id := h.newID()
 	if ruleID != "" {
-		h.capture(ev, ruleID, messageID)
+		h.capture(ev, ruleID, id)
 	}
-
-	respondSNS(w, messageID, h.newID())
+	return id
 }
