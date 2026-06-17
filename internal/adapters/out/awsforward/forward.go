@@ -46,7 +46,7 @@ func (f *Forwarder) Forward(ctx context.Context, ev domain.Event, fwd domain.Eve
 			MessageAttributes:      snsAttrs(ev.Attributes),
 		})
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("awsforward: sns publish: %w", err)
 		}
 		return aws.ToString(out.MessageId), nil
 
@@ -64,7 +64,7 @@ func (f *Forwarder) Forward(ctx context.Context, ev domain.Event, fwd domain.Eve
 			MessageAttributes:      sqsAttrs(ev.Attributes),
 		})
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("awsforward: sqs send: %w", err)
 		}
 		return aws.ToString(out.MessageId), nil
 
@@ -83,7 +83,7 @@ func (f *Forwarder) Forward(ctx context.Context, ev domain.Event, fwd domain.Eve
 			}},
 		})
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("awsforward: eventbridge putevents: %w", err)
 		}
 		if len(out.Entries) == 0 {
 			return "", fmt.Errorf("awsforward: PutEvents returned no entries")
