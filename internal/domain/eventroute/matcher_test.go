@@ -32,7 +32,7 @@ func TestMatch(t *testing.T) {
 		t.Fatalf("Match = %v, want orders-created", got)
 	}
 
-	// Attribute mismatch falls through specificity.
+	// Attribute mismatch rejects the rule.
 	e := ev()
 	e.Attributes = map[string]string{"env": "dev"}
 	r := []domain.EventRule{{ID: "prod-only", Match: domain.EventMatch{Service: domain.EventServiceSNS, Attributes: map[string]string{"env": "prod"}}}}
@@ -51,5 +51,30 @@ func TestMatch(t *testing.T) {
 	e2.Service = domain.EventServiceSQS
 	if got := m.Match(e2); got != nil {
 		t.Fatalf("Match = %v, want nil (service mismatch)", got)
+	}
+}
+
+func TestMatchRejectPaths(t *testing.T) {
+	// Operation mismatch: rule requires Publish, event carries DeleteMessage.
+	e := ev()
+	e.Operation = "DeleteMessage"
+	r := []domain.EventRule{{ID: "publish-only", Match: domain.EventMatch{Service: domain.EventServiceSNS, Operation: "Publish"}}}
+	if got := NewMatcher(r).Match(e); got != nil {
+		t.Fatalf("operation mismatch: Match = %v, want nil", got)
+	}
+
+	// Glob reject: rule targets payments topic, event targets orders topic.
+	e2 := ev()
+	r2 := []domain.EventRule{{ID: "payments", Match: domain.EventMatch{Service: domain.EventServiceSNS, Target: "arn:aws:sns:*:*:payments"}}}
+	if got := NewMatcher(r2).Match(e2); got != nil {
+		t.Fatalf("glob reject: Match = %v, want nil", got)
+	}
+
+	// Malformed message JSON: rule has a message filter, event body is not JSON.
+	e3 := ev()
+	e3.Message = []byte("not json")
+	r3 := []domain.EventRule{{ID: "json-filter", Match: domain.EventMatch{Service: domain.EventServiceSNS, Message: map[string]string{"$.type": "created"}}}}
+	if got := NewMatcher(r3).Match(e3); got != nil {
+		t.Fatalf("malformed json: Match = %v, want nil", got)
 	}
 }
