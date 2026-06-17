@@ -157,6 +157,8 @@ type Config struct {
 	FaultProfiles []FaultProfile `json:"fault_profiles,omitempty"`
 
 	Scenarios []Scenario `json:"scenarios,omitempty"`
+
+	EventRules []EventRule `json:"event_rules,omitempty"`
 }
 
 // ScenarioPhase is one timed step of a Scenario. FaultProfileID "" means a
@@ -300,6 +302,89 @@ func (p FaultProfile) Validate() error {
 		if err := f.Validate(); err != nil {
 			return fmt.Errorf("fault[%d]: %w", i, err)
 		}
+	}
+	return nil
+}
+
+// --- AWS outgoing event interception ---------------------------------------
+
+// Event service identifiers for intercepted AWS messaging publishes.
+const (
+	EventServiceSNS         = "sns"
+	EventServiceSQS         = "sqs"
+	EventServiceEventBridge = "eventbridge"
+)
+
+// Event is a normalized outgoing message intercepted from the app under test.
+// Produced by the awsmsg parser; used for matching and capture.
+type Event struct {
+	Service    string            `json:"service"`               // sns | sqs | eventbridge
+	Operation  string            `json:"operation"`             // Publish | SendMessage | PutEvents
+	Target     string            `json:"target"`                // topic ARN | queue URL | event bus name
+	Source     string            `json:"source,omitempty"`      // EventBridge source
+	DetailType string            `json:"detail_type,omitempty"` // EventBridge detail-type
+	Subject    string            `json:"subject,omitempty"`     // SNS subject
+	Message    []byte            `json:"message"`               // SNS Message / SQS body / EB Detail
+	Attributes map[string]string `json:"attributes,omitempty"`
+	GroupID    string            `json:"group_id,omitempty"` // FIFO MessageGroupId
+	DedupID    string            `json:"dedup_id,omitempty"` // FIFO MessageDeduplicationId
+	Region     string            `json:"region,omitempty"`
+	Identity   string            `json:"identity,omitempty"` // access key id of the publisher
+	RawBody    []byte            `json:"-"`                  // original wire body (forward verbatim)
+}
+
+// EventRule declares how to match and handle an intercepted outgoing event.
+// Separate from the HTTP Rule: its own store seam and admin endpoints.
+type EventRule struct {
+	ID       string        `json:"id"`
+	Name     string        `json:"name"`
+	Disabled bool          `json:"disabled,omitempty"`
+	Match    EventMatch    `json:"match"`
+	Forward  *EventForward `json:"forward,omitempty"` // nil = capture + synthesized response
+}
+
+// EventMatch filters intercepted events. Empty fields are wildcards.
+type EventMatch struct {
+	Service    string            `json:"service"`               // required: sns|sqs|eventbridge
+	Operation  string            `json:"operation,omitempty"`   // optional
+	Target     string            `json:"target,omitempty"`      // glob (path.Match)
+	Source     string            `json:"source,omitempty"`      // EventBridge, glob
+	DetailType string            `json:"detail_type,omitempty"` // EventBridge, glob
+	Attributes map[string]string `json:"attributes,omitempty"`  // exact
+	Message    map[string]string `json:"message,omitempty"`     // JSONPath → expected scalar
+}
+
+// EventForward configures optional re-signed forwarding to the real broker.
+// Used from Phase 3 onward; validated here so configs are forward-compatible.
+type EventForward struct {
+	Endpoint   string `json:"endpoint,omitempty"`   // "" = default AWS endpoint for Region
+	Region     string `json:"region,omitempty"`
+	Credential string `json:"credential,omitempty"` // "" | "default" | "profile:<n>" | "static:<n>"
+	DelayMs    int    `json:"delay_ms,omitempty"`
+}
+
+// Validate reports whether the event rule is well-formed.
+func (e EventRule) Validate() error {
+	if e.ID == "" {
+		return fmt.Errorf("event rule id is required")
+	}
+	switch e.Match.Service {
+	case EventServiceSNS, EventServiceSQS, EventServiceEventBridge:
+	default:
+		return fmt.Errorf("event rule match.service must be one of sns|sqs|eventbridge, got %q", e.Match.Service)
+	}
+	if e.Forward != nil {
+		if err := e.Forward.Validate(); err != nil {
+			return fmt.Errorf("forward: %w", err)
+		}
+	}
+	return nil
+}
+
+// Validate reports whether the forward config is well-formed.
+func (f EventForward) Validate() error {
+	if f.DelayMs < 0 {
+		return fmt.Errorf("delay_ms must be >= 0, got %d", f.DelayMs)
 	}
 	return nil
 }
