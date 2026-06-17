@@ -11,7 +11,11 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awscfg "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
+	ebtypes "github.com/aws/aws-sdk-go-v2/service/eventbridge/types"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
+	sqstypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -79,4 +83,97 @@ func TestE2E_SNSEventCapture(t *testing.T) {
 	var full matched.FullRequest
 	require.NoError(t, json.NewDecoder(detResp.Body).Decode(&full))
 	assert.JSONEq(t, `{"type":"created","total":42}`, string(full.RequestBody))
+}
+
+func TestE2E_SQSEventCapture(t *testing.T) {
+	st := jsonfile.NewMemStore(domain.Config{
+		EventRules: []domain.EventRule{{
+			ID:    "sqs-orders",
+			Match: domain.EventMatch{Service: domain.EventServiceSQS},
+		}},
+	})
+	srv, err := server.New(server.Config{
+		Store: st,
+		Event: server.EventConfig{Enabled: true, BufferSize: 100, SyncInterval: time.Hour},
+	})
+	require.NoError(t, err)
+	defer srv.Close()
+
+	mock := httptest.NewServer(srv.MockHandler([]string{"http", "aws"}, srv.NewProxy()))
+	defer mock.Close()
+	admin := httptest.NewServer(srv.AdminMux())
+	defer admin.Close()
+
+	cfg, err := awscfg.LoadDefaultConfig(context.Background(),
+		awscfg.WithRegion("us-east-1"),
+		awscfg.WithCredentialsProvider(credentials.NewStaticCredentialsProvider("AKIDEXAMPLE", "secret", "")),
+	)
+	require.NoError(t, err)
+	client := sqs.NewFromConfig(cfg, func(o *sqs.Options) { o.BaseEndpoint = aws.String(mock.URL) })
+
+	out, err := client.SendMessage(context.Background(), &sqs.SendMessageInput{
+		QueueUrl:    aws.String(mock.URL + "/000000000000/orders"),
+		MessageBody: aws.String(`{"type":"created"}`),
+		MessageAttributes: map[string]sqstypes.MessageAttributeValue{
+			"env": {DataType: aws.String("String"), StringValue: aws.String("prod")},
+		},
+	})
+	require.NoError(t, err, "SDK must accept the response and its MD5 checksums")
+	require.NotNil(t, out.MessageId)
+
+	resp, err := http.Get(admin.URL + "/api/event-captures/sqs-orders")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	var page matched.Page
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&page))
+	require.Len(t, page.Items, 1)
+	assert.Equal(t, "aws-sqs", page.Items[0].Protocol)
+	assert.Equal(t, "SendMessage", page.Items[0].Method)
+	assert.Equal(t, "AKIDEXAMPLE", page.Items[0].Identity)
+}
+
+func TestE2E_EventBridgeEventCapture(t *testing.T) {
+	st := jsonfile.NewMemStore(domain.Config{
+		EventRules: []domain.EventRule{{
+			ID:    "eb-orders",
+			Match: domain.EventMatch{Service: domain.EventServiceEventBridge, Source: "orders.service"},
+		}},
+	})
+	srv, err := server.New(server.Config{
+		Store: st,
+		Event: server.EventConfig{Enabled: true, BufferSize: 100, SyncInterval: time.Hour},
+	})
+	require.NoError(t, err)
+	defer srv.Close()
+
+	mock := httptest.NewServer(srv.MockHandler([]string{"http", "aws"}, srv.NewProxy()))
+	defer mock.Close()
+	admin := httptest.NewServer(srv.AdminMux())
+	defer admin.Close()
+
+	cfg, err := awscfg.LoadDefaultConfig(context.Background(),
+		awscfg.WithRegion("us-east-1"),
+		awscfg.WithCredentialsProvider(credentials.NewStaticCredentialsProvider("AKIDEXAMPLE", "secret", "")),
+	)
+	require.NoError(t, err)
+	client := eventbridge.NewFromConfig(cfg, func(o *eventbridge.Options) { o.BaseEndpoint = aws.String(mock.URL) })
+
+	out, err := client.PutEvents(context.Background(), &eventbridge.PutEventsInput{
+		Entries: []ebtypes.PutEventsRequestEntry{
+			{Source: aws.String("orders.service"), DetailType: aws.String("OrderCreated"), Detail: aws.String(`{"id":1}`)},
+			{Source: aws.String("orders.service"), DetailType: aws.String("OrderShipped"), Detail: aws.String(`{"id":2}`)},
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, int32(0), out.FailedEntryCount)
+	require.Len(t, out.Entries, 2)
+
+	resp, err := http.Get(admin.URL + "/api/event-captures/eb-orders")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	var page matched.Page
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&page))
+	require.Len(t, page.Items, 2)
+	assert.Equal(t, "aws-eventbridge", page.Items[0].Protocol)
+	assert.Equal(t, "PutEvents", page.Items[0].Method)
 }
