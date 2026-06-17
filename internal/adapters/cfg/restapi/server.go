@@ -44,6 +44,11 @@ func WithMatched(buf *matched.Buffer) MuxOption {
 	return func(a *adminAPI) { a.matchedBuf = buf }
 }
 
+// WithEventCapture enables the event-captures admin endpoints.
+func WithEventCapture(buf *matched.Buffer) MuxOption {
+	return func(a *adminAPI) { a.eventCaptureBuf = buf }
+}
+
 // NewMux builds the admin HTTP mux.
 // collector, buffer, broker, and engine may be nil — those endpoints return empty responses.
 func NewMux(store store.DataStore, onReload OnReload, collector *metrics.Collector, buffer *unmatched.Buffer, broker *metrics.Broker, engine *scripting.Engine, opts ...MuxOption) *http.ServeMux {
@@ -83,6 +88,9 @@ func NewMux(store store.DataStore, onReload OnReload, collector *metrics.Collect
 	mux.HandleFunc("/api/scenarios/", api.scenarioByID)
 	mux.HandleFunc("/api/matched", api.matchedByRule)
 	mux.HandleFunc("/api/matched/", api.matchedByRule)
+	mux.HandleFunc("/api/event-rules", api.eventRules)
+	mux.HandleFunc("/api/event-rules/", api.eventRuleByID)
+	mux.HandleFunc("/api/event-captures/", api.eventCaptures)
 	serveUI(mux)
 	return mux
 }
@@ -98,6 +106,7 @@ type adminAPI struct {
 	killSwitch      *chaos.KillSwitch  // may be nil — chaos endpoints return 501
 	scenarioControl ScenarioControl    // may be nil — scenario start/stop return 501
 	matchedBuf      *matched.Buffer    // may be nil — capture disabled
+	eventCaptureBuf *matched.Buffer    // may be nil — event capture disabled
 }
 
 // duplicateMatchError returns a 409-ready, human-readable message if rule's

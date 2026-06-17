@@ -71,6 +71,9 @@ func (s *Server) adminMuxOptions() []restapi.MuxOption {
 	if s.matchedBuf != nil {
 		opts = append(opts, restapi.WithMatched(s.matchedBuf))
 	}
+	if s.eventCaptureBuf != nil {
+		opts = append(opts, restapi.WithEventCapture(s.eventCaptureBuf))
+	}
 	return opts
 }
 
