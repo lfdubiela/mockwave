@@ -827,6 +827,12 @@ make coverage
 
 ---
 
+## Roadmap
+
+Planned-but-not-yet-built work — including scope deliberately deferred from shipped features — is tracked in [`docs/roadmap.md`](docs/roadmap.md).
+
+---
+
 ## Contributing
 
 Contributions are welcome. Please open an issue before submitting a large PR.
