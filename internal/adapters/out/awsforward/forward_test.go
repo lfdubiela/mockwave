@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/mockwave/mockwave/domain"
 )
 
@@ -94,6 +95,28 @@ func TestForwardUnsupportedService(t *testing.T) {
 	f := New()
 	if _, err := f.Forward(context.Background(), domain.Event{Service: "kinesis"}, domain.EventForward{Region: "us-east-1", Credential: "static:test"}); err == nil {
 		t.Fatal("expected error for unsupported service")
+	}
+}
+
+func TestAttributeConversion(t *testing.T) {
+	// Empty input → nil (so the SDK omits the field).
+	if snsAttrs(nil) != nil {
+		t.Fatal("snsAttrs(nil) should be nil")
+	}
+	if sqsAttrs(nil) != nil {
+		t.Fatal("sqsAttrs(nil) should be nil")
+	}
+
+	m := map[string]string{"env": "prod"}
+
+	sns := snsAttrs(m)
+	if len(sns) != 1 || aws.ToString(sns["env"].DataType) != "String" || aws.ToString(sns["env"].StringValue) != "prod" {
+		t.Fatalf("snsAttrs = %+v", sns)
+	}
+
+	sqsm := sqsAttrs(m)
+	if len(sqsm) != 1 || aws.ToString(sqsm["env"].DataType) != "String" || aws.ToString(sqsm["env"].StringValue) != "prod" {
+		t.Fatalf("sqsAttrs = %+v", sqsm)
 	}
 }
 
