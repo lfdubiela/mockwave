@@ -145,12 +145,15 @@ Flags (start):
 
   # Store backend
       --store string             Storage backend: json|dynamodb|mongo|cosmos (default "json")
+      --reload-interval duration Version-poll reload interval for remote stores (default 15s)
 
   # DynamoDB
-      --dynamo-rules-table string  DynamoDB table for rules (default "mockwave-rules")
-      --dynamo-sims-table string   DynamoDB table for simulations (default "mockwave-simulations")
-      --dynamo-region string       AWS region (default "us-east-1")
-      --dynamo-endpoint string     Custom endpoint, e.g. http://localhost:8000
+      --dynamo-rules-table string      DynamoDB table for rules (default "mockwave-rules")
+      --dynamo-sims-table string       DynamoDB table for simulations (default "mockwave-simulations")
+      --dynamo-faults-table string     DynamoDB table for fault profiles (default "mockwave-fault-profiles")
+      --dynamo-scenarios-table string  DynamoDB table for scenarios (default "mockwave-scenarios")
+      --dynamo-region string           AWS region (default "us-east-1")
+      --dynamo-endpoint string         Custom endpoint, e.g. http://localhost:8000
 
   # MongoDB
       --mongo-uri string          MongoDB connection URI (default "mongodb://localhost:27017")
