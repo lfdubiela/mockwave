@@ -34,3 +34,15 @@ func TestRequestIdentityRoundTrip(t *testing.T) {
 		t.Fatalf("identity = %q", out.Identity)
 	}
 }
+
+func TestRequestForwardedRoundTrip(t *testing.T) {
+	r := matched.Request{ID: "1", RuleID: "r", Protocol: "aws-sns", Forwarded: true, ForwardTarget: "https://sns.real"}
+	b, _ := json.Marshal(r)
+	var out matched.Request
+	if err := json.Unmarshal(b, &out); err != nil {
+		t.Fatal(err)
+	}
+	if !out.Forwarded || out.ForwardTarget != "https://sns.real" {
+		t.Fatalf("forward fields lost: %+v", out)
+	}
+}

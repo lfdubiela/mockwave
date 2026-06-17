@@ -37,6 +37,12 @@ type Request struct {
 	// key id). Empty for HTTP captures.
 	Identity string `json:"identity,omitempty"`
 
+	// Forwarded is true when the captured event was re-emitted to a real broker
+	// (Phase 3 forward). ForwardTarget is the forward destination (endpoint or
+	// "aws:<region>"). Both empty/false for synthesized (mock) responses.
+	Forwarded     bool   `json:"forwarded,omitempty"`
+	ForwardTarget string `json:"forward_target,omitempty"`
+
 	ResponseStatus  int               `json:"response_status"`
 	ResponseHeaders map[string]string `json:"response_headers"`
 
