@@ -235,3 +235,36 @@ func (s *Store) DeleteScenario(id string) error {
 	}
 	return fmt.Errorf("jsonfile: scenario %q not found", id)
 }
+
+func (s *Store) GetEventRules() ([]domain.EventRule, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]domain.EventRule, len(s.config.EventRules))
+	copy(out, s.config.EventRules)
+	return out, nil
+}
+
+func (s *Store) SaveEventRule(r domain.EventRule) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, existing := range s.config.EventRules {
+		if existing.ID == r.ID {
+			s.config.EventRules[i] = r
+			return s.flush()
+		}
+	}
+	s.config.EventRules = append(s.config.EventRules, r)
+	return s.flush()
+}
+
+func (s *Store) DeleteEventRule(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, existing := range s.config.EventRules {
+		if existing.ID == id {
+			s.config.EventRules = append(s.config.EventRules[:i], s.config.EventRules[i+1:]...)
+			return s.flush()
+		}
+	}
+	return fmt.Errorf("jsonfile: event rule %q not found", id)
+}

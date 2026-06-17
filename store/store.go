@@ -51,6 +51,14 @@ type ScenarioStore interface {
 	DeleteScenario(id string) error
 }
 
+// EventRuleStore is an optional capability for stores that persist AWS event
+// interception rules. GetEventRules returns the full set; Save upserts by id.
+type EventRuleStore interface {
+	GetEventRules() ([]domain.EventRule, error)
+	SaveEventRule(r domain.EventRule) error
+	DeleteEventRule(id string) error
+}
+
 // MatchedQuery and MatchedPage are re-exported from the matched package so
 // embedders implementing MatchedStore need not import an internal package for
 // these value types.
