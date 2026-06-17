@@ -249,6 +249,106 @@ func TestEventCaptureDetail(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// Test: error / edge branches in the event-rule + capture handlers
+// ---------------------------------------------------------------------------
+
+func TestEventRules_BadJSON_405(t *testing.T) {
+	api := newEventAPI(newEventRuleMemStore())
+
+	t.Run("POST invalid JSON → 400", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/event-rules", bytes.NewBufferString("{not json"))
+		api.eventRules(rec, req)
+		assert.Equal(t, 400, rec.Code)
+	})
+
+	t.Run("PATCH → 405", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPatch, "/api/event-rules", nil)
+		api.eventRules(rec, req)
+		assert.Equal(t, 405, rec.Code)
+	})
+}
+
+func TestEventRuleByID_Branches(t *testing.T) {
+	api := newEventAPI(newEventRuleMemStore())
+
+	t.Run("empty id → 404", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodDelete, "/api/event-rules/", nil)
+		api.eventRuleByID(rec, req)
+		assert.Equal(t, 404, rec.Code)
+	})
+
+	t.Run("PUT invalid JSON → 400", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPut, "/api/event-rules/r1", bytes.NewBufferString("{bad"))
+		api.eventRuleByID(rec, req)
+		assert.Equal(t, 400, rec.Code)
+	})
+
+	t.Run("PUT invalid service → 422", func(t *testing.T) {
+		body, _ := json.Marshal(domain.EventRule{Match: domain.EventMatch{Service: "kinesis"}})
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPut, "/api/event-rules/r1", bytes.NewReader(body))
+		api.eventRuleByID(rec, req)
+		assert.Equal(t, 422, rec.Code)
+	})
+
+	t.Run("PATCH → 405", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPatch, "/api/event-rules/r1", nil)
+		api.eventRuleByID(rec, req)
+		assert.Equal(t, 405, rec.Code)
+	})
+}
+
+func TestEventCaptures_MethodAndDelete(t *testing.T) {
+	buf := matched.NewBuffer(10)
+	buf.Add(matched.Request{ID: "1", RuleID: "orders", At: time.Now(), Protocol: "aws-sns", Method: "Publish", Path: "arn:orders"}, []byte(`{"id":1}`), nil)
+	api := &adminAPI{eventCaptureBuf: buf}
+
+	t.Run("DELETE rule captures → 204 and clears", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodDelete, "/api/event-captures/orders", nil)
+		api.eventCaptures(rec, req)
+		require.Equal(t, http.StatusNoContent, rec.Code)
+		page := buf.List("orders", matched.Query{})
+		assert.Len(t, page.Items, 0)
+	})
+
+	t.Run("PATCH → 405", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPatch, "/api/event-captures/orders", nil)
+		api.eventCaptures(rec, req)
+		assert.Equal(t, 405, rec.Code)
+	})
+
+	t.Run("GET too many path parts → 404", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/event-captures/orders/abc/extra", nil)
+		api.eventCaptures(rec, req)
+		assert.Equal(t, 404, rec.Code)
+	})
+}
+
+func TestEventCaptureList_LimitQuery(t *testing.T) {
+	buf := matched.NewBuffer(10)
+	for i := 0; i < 3; i++ {
+		buf.Add(matched.Request{ID: fmt.Sprintf("c%d", i), RuleID: "orders", At: time.Now(), Protocol: "aws-sns", Method: "Publish", Path: "arn:orders"}, nil, nil)
+	}
+	api := &adminAPI{eventCaptureBuf: buf}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/event-captures/orders?limit=2&method=Publish&path=arn:orders", nil)
+	api.eventCaptures(rec, req)
+	require.Equal(t, 200, rec.Code)
+	var page matched.Page
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&page))
+	assert.Len(t, page.Items, 2)
+}
+
+// ---------------------------------------------------------------------------
 // Original test (preserved)
 // ---------------------------------------------------------------------------
 
