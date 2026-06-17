@@ -27,6 +27,7 @@ import (
 	grpcadapter "github.com/mockwave/mockwave/internal/adapters/in/grpc"
 	"github.com/mockwave/mockwave/internal/adapters/in/httprest"
 	soapadapter "github.com/mockwave/mockwave/internal/adapters/in/soap"
+	awsforward "github.com/mockwave/mockwave/internal/adapters/out/awsforward"
 	"github.com/mockwave/mockwave/internal/chaos"
 	eventroute "github.com/mockwave/mockwave/internal/domain/eventroute"
 	"github.com/mockwave/mockwave/internal/domain/matching"
@@ -266,21 +267,28 @@ func (s *Server) currentEventMatcher() awsmsg.Matcher {
 }
 
 // captureEvent records a matched intercepted event into the in-memory buffer.
-func (s *Server) captureEvent(ev domain.Event, ruleID, messageID string) {
+func (s *Server) captureEvent(c awsmsg.Capture) {
 	if s.eventCaptureBuf == nil {
 		return
 	}
+	ev := c.Event
 	now := time.Now()
+	status := c.Status
+	if status == 0 {
+		status = 200
+	}
 	r := matched.Request{
 		ID:             matched.NewID(),
-		RuleID:         ruleID,
+		RuleID:         c.RuleID,
 		At:             now,
 		Protocol:       "aws-" + ev.Service,
 		Method:         ev.Operation,
 		Path:           ev.Target,
 		Query:          eventQuery(ev),
 		Identity:       ev.Identity,
-		ResponseStatus: 200,
+		ResponseStatus: status,
+		Forwarded:      c.Forwarded,
+		ForwardTarget:  c.ForwardTarget,
 	}
 	if ttl := s.cfg.Event.ttlSeconds(); ttl > 0 {
 		r.TTL = now.Add(time.Duration(ttl) * time.Second).Unix()
@@ -291,7 +299,7 @@ func (s *Server) captureEvent(ev domain.Event, ruleID, messageID string) {
 		reqBody = ev.Message
 	}
 	r.ResponseBodyID = matched.NewID()
-	respBody := map[string]string{"messageId": messageID}
+	respBody := map[string]string{"messageId": c.MessageID}
 	s.eventCaptureBuf.Add(r, reqBody, respBody)
 }
 
@@ -447,7 +455,7 @@ func (s *Server) MockHandler(protocols []string, exec Executor) http.Handler {
 			soapH = soapadapter.NewHandler(exec)
 		case "aws":
 			if s.eventCaptureBuf != nil {
-				awsH = awsmsg.NewHandler(s.currentEventMatcher, s.captureEvent, matched.NewID)
+				awsH = awsmsg.NewHandler(s.currentEventMatcher, s.captureEvent, matched.NewID, awsforward.New())
 			}
 		}
 	}

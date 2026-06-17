@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/mockwave/mockwave/domain"
+	awsmsg "github.com/mockwave/mockwave/internal/adapters/in/awsmsg"
 	"github.com/mockwave/mockwave/internal/adapters/out/jsonfile"
 	"github.com/mockwave/mockwave/internal/matched"
 )
@@ -70,7 +71,7 @@ func TestCaptureEvent(t *testing.T) {
 		Identity:  "AKIDEXAMPLE",
 		Message:   []byte(`{"k":"v"}`),
 	}
-	srv.captureEvent(ev, "orders", "msg-123")
+	srv.captureEvent(awsmsg.Capture{Event: ev, RuleID: "orders", MessageID: "msg-123"})
 
 	page := srv.eventCaptureBuf.List("orders", matched.Query{})
 	if len(page.Items) != 1 {
@@ -97,7 +98,7 @@ func TestCaptureEventEmptyMessage(t *testing.T) {
 	}
 	defer srv.Close()
 
-	srv.captureEvent(domain.Event{Service: domain.EventServiceSNS, Operation: "Publish"}, "r", "m")
+	srv.captureEvent(awsmsg.Capture{Event: domain.Event{Service: domain.EventServiceSNS, Operation: "Publish"}, RuleID: "r", MessageID: "m"})
 	page := srv.eventCaptureBuf.List("r", matched.Query{})
 	if len(page.Items) != 1 || page.Items[0].RequestBodyID != "" {
 		t.Fatalf("empty-message capture = %+v", page.Items)
@@ -166,5 +167,5 @@ func TestCaptureEventDisabledNoop(t *testing.T) {
 		t.Fatal("buffer should be nil when capture disabled")
 	}
 	// Must not panic on the nil buffer.
-	srv.captureEvent(domain.Event{Operation: "Publish"}, "r", "m")
+	srv.captureEvent(awsmsg.Capture{Event: domain.Event{Operation: "Publish"}, RuleID: "r", MessageID: "m"})
 }
