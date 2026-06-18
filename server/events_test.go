@@ -157,6 +157,22 @@ func TestMockHandlerAWSBranch(t *testing.T) {
 	}
 }
 
+func TestAWSCaptureFilters(t *testing.T) {
+	items := []matched.Request{
+		{ID: "1", Protocol: "aws-sns"},
+		{ID: "2", Protocol: "http"},
+		{ID: "3", Protocol: "aws-sqs"},
+	}
+	aws := awsCaptures(items)
+	if len(aws) != 2 || aws[0].Protocol != "aws-sns" || aws[1].Protocol != "aws-sqs" {
+		t.Fatalf("awsCaptures = %+v", aws)
+	}
+	non := nonAWSCaptures(items)
+	if len(non) != 1 || non[0].Protocol != "http" {
+		t.Fatalf("nonAWSCaptures = %+v", non)
+	}
+}
+
 func TestCaptureEventDisabledNoop(t *testing.T) {
 	srv, err := New(Config{Store: memStore()})
 	if err != nil {
