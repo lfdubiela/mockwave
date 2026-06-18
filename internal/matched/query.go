@@ -20,6 +20,8 @@ type Query struct {
 	Path    string            // glob (path.Match); "" = any
 	Status  int               // exact response status; 0 = any
 	Headers map[string]string // AND-matched, exact value, case-insensitive key
+	Query   map[string]string // matched against Request.Query, exact key (case-sensitive) + value
+	Body    map[string]string // JSONPath expr → expected scalar value (applied in Buffer.List, not here)
 }
 
 // EffectiveLimit resolves Limit against the default and cap.
@@ -50,6 +52,11 @@ func (q Query) Matches(r Request) bool {
 	}
 	for k, v := range q.Headers {
 		if headerLookup(r.Headers, k) != v {
+			return false
+		}
+	}
+	for k, v := range q.Query {
+		if r.Query[k] != v {
 			return false
 		}
 	}
