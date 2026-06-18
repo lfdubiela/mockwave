@@ -58,6 +58,11 @@ Available MCP tools:
     update_event_rule   Replace an existing event rule
     delete_event_rule   Delete an event rule
 
+  Event Captures
+    list_event_captures  List captured events for a rule (supports body/attr/query filters)
+    get_event_capture    Get the full detail of a single captured event (including bodies)
+    clear_event_captures Delete all captured events for a rule
+
   Observability
     get_metrics         Traffic metrics snapshot (requests, hits, p95 latency)
     list_unmatched      Requests that matched no rule
