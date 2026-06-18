@@ -137,6 +137,9 @@ func NewServer(adminURL, version string) *server.MCPServer {
 	// Scenarios (chaos test orchestration)
 	registerScenarioTools(s, c)
 
+	// Config import/export
+	registerTransferTools(s, c)
+
 	// OpenAPI import
 	s.AddTool(
 		mcpsdk.NewTool("generate_from_openapi",

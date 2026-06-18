@@ -89,6 +89,10 @@ Available MCP tools:
     start_scenario      Start a chaos scenario (applies fault phases to targeted rules)
     stop_scenario       Stop a running chaos scenario (restores normal rule behavior)
 
+  Config Import/Export
+    export_config       Export the full Mockwave config (rules, simulations, fault profiles, scenarios, event rules) as JSON
+    import_config       Bulk-import a config; use preview:true for a dry-run conflict report
+
   Observability
     get_metrics         Traffic metrics snapshot (requests, hits, p95 latency)
     list_unmatched      Requests that matched no rule
