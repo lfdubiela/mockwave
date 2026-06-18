@@ -29,3 +29,18 @@ func (c *Client) UpdateFaultProfile(id string, fp domain.FaultProfile) (*domain.
 func (c *Client) DeleteFaultProfile(id string) error {
 	return c.doDelete("/api/faults/" + id)
 }
+
+// --- Chaos control ---
+
+func (c *Client) HaltChaos() error {
+	return c.post("/api/chaos/halt", nil, nil)
+}
+
+func (c *Client) ResumeChaos() error {
+	return c.post("/api/chaos/resume", nil, nil)
+}
+
+func (c *Client) ChaosStatus() (map[string]any, error) {
+	var status map[string]any
+	return status, c.get("/api/chaos/status", &status)
+}

@@ -279,3 +279,139 @@ func TestHandler_DeleteFault_Error(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, res.IsError)
 }
+
+// --- chaos control fake server ---
+
+// fakeAdminServerWithChaosControl starts an httptest server that serves
+// POST /api/chaos/halt, POST /api/chaos/resume, GET /api/chaos/status.
+func fakeAdminServerWithChaosControl() *httptest.Server {
+	mux := http.NewServeMux()
+
+	mux.HandleFunc("/api/chaos/halt", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", 405)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	mux.HandleFunc("/api/chaos/resume", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", 405)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	mux.HandleFunc("/api/chaos/status", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", 405)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"halted":          false,
+			"active_scenario": "flaky-db",
+		})
+	})
+
+	return httptest.NewServer(mux)
+}
+
+// invokeChaosControl is a convenience helper for the chaos control tools.
+func invokeChaosControl(t *testing.T, toolName string, args map[string]any) *mcpsdk.CallToolResult {
+	t.Helper()
+	srv := fakeAdminServerWithChaosControl()
+	defer srv.Close()
+	s := mockwavemcp.NewServer(srv.URL, "test")
+	tool := s.GetTool(toolName)
+	require.NotNil(t, tool, "tool %s not found", toolName)
+	res, err := tool.Handler(context.Background(), makeReq(toolName, args))
+	require.NoError(t, err)
+	return res
+}
+
+// --- client tests ---
+
+func TestClient_HaltChaos(t *testing.T) {
+	srv := fakeAdminServerWithChaosControl()
+	defer srv.Close()
+	c := mockwavemcp.NewClient(srv.URL)
+	err := c.HaltChaos()
+	require.NoError(t, err)
+}
+
+func TestClient_ResumeChaos(t *testing.T) {
+	srv := fakeAdminServerWithChaosControl()
+	defer srv.Close()
+	c := mockwavemcp.NewClient(srv.URL)
+	err := c.ResumeChaos()
+	require.NoError(t, err)
+}
+
+func TestClient_ChaosStatus(t *testing.T) {
+	srv := fakeAdminServerWithChaosControl()
+	defer srv.Close()
+	c := mockwavemcp.NewClient(srv.URL)
+	status, err := c.ChaosStatus()
+	require.NoError(t, err)
+	require.NotNil(t, status)
+	assert.Equal(t, false, status["halted"])
+	assert.Equal(t, "flaky-db", status["active_scenario"])
+}
+
+// --- halt_chaos tool ---
+
+func TestHandler_HaltChaos_Success(t *testing.T) {
+	res := invokeChaosControl(t, "halt_chaos", nil)
+	assert.False(t, res.IsError, "expected success, got error: %v", res.Content)
+	require.Len(t, res.Content, 1)
+	text, ok := res.Content[0].(mcpsdk.TextContent)
+	require.True(t, ok)
+	assert.Contains(t, text.Text, "halted")
+}
+
+func TestHandler_HaltChaos_Error(t *testing.T) {
+	s := mockwavemcp.NewServer("http://127.0.0.1:1", "test")
+	tool := s.GetTool("halt_chaos")
+	require.NotNil(t, tool)
+	res, err := tool.Handler(context.Background(), makeReq("halt_chaos", nil))
+	require.NoError(t, err)
+	assert.True(t, res.IsError)
+}
+
+// --- resume_chaos tool ---
+
+func TestHandler_ResumeChaos_Success(t *testing.T) {
+	res := invokeChaosControl(t, "resume_chaos", nil)
+	assert.False(t, res.IsError, "expected success, got error: %v", res.Content)
+	require.Len(t, res.Content, 1)
+	text, ok := res.Content[0].(mcpsdk.TextContent)
+	require.True(t, ok)
+	assert.Contains(t, text.Text, "resumed")
+}
+
+func TestHandler_ResumeChaos_Error(t *testing.T) {
+	s := mockwavemcp.NewServer("http://127.0.0.1:1", "test")
+	tool := s.GetTool("resume_chaos")
+	require.NotNil(t, tool)
+	res, err := tool.Handler(context.Background(), makeReq("resume_chaos", nil))
+	require.NoError(t, err)
+	assert.True(t, res.IsError)
+}
+
+// --- get_chaos_status tool ---
+
+func TestHandler_GetChaosStatus_Success(t *testing.T) {
+	res := invokeChaosControl(t, "get_chaos_status", nil)
+	assert.False(t, res.IsError, "expected success, got error: %v", res.Content)
+}
+
+func TestHandler_GetChaosStatus_Error(t *testing.T) {
+	s := mockwavemcp.NewServer("http://127.0.0.1:1", "test")
+	tool := s.GetTool("get_chaos_status")
+	require.NotNil(t, tool)
+	res, err := tool.Handler(context.Background(), makeReq("get_chaos_status", nil))
+	require.NoError(t, err)
+	assert.True(t, res.IsError)
+}

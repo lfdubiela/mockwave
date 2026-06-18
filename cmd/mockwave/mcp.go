@@ -75,6 +75,11 @@ Available MCP tools:
     update_fault        Replace an existing fault profile
     delete_fault        Delete a fault profile
 
+  Chaos Control
+    halt_chaos          Pause all active chaos faults immediately (kill-switch)
+    resume_chaos        Resume chaos fault injection after a halt
+    get_chaos_status    Get current chaos state: halted flag and active-scenario name
+
   Observability
     get_metrics         Traffic metrics snapshot (requests, hits, p95 latency)
     list_unmatched      Requests that matched no rule

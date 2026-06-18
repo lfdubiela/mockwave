@@ -79,6 +79,58 @@ func handleDeleteFault(c *Client) func(context.Context, mcpsdk.CallToolRequest) 
 	}
 }
 
+// --- Chaos control tools ---
+
+func handleHaltChaos(c *Client) func(context.Context, mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	return func(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+		if err := c.HaltChaos(); err != nil {
+			return mcpsdk.NewToolResultError(err.Error()), nil
+		}
+		return mcpsdk.NewToolResultText("chaos halted"), nil
+	}
+}
+
+func handleResumeChaos(c *Client) func(context.Context, mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	return func(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+		if err := c.ResumeChaos(); err != nil {
+			return mcpsdk.NewToolResultError(err.Error()), nil
+		}
+		return mcpsdk.NewToolResultText("chaos resumed"), nil
+	}
+}
+
+func handleChaosStatus(c *Client) func(context.Context, mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	return func(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+		status, err := c.ChaosStatus()
+		if err != nil {
+			return mcpsdk.NewToolResultError(err.Error()), nil
+		}
+		return jsonResult(status)
+	}
+}
+
+// registerChaosControlTools adds the three chaos kill-switch tools to s.
+func registerChaosControlTools(s *server.MCPServer, c *Client) {
+	s.AddTool(
+		mcpsdk.NewTool("halt_chaos",
+			mcpsdk.WithDescription("Pause all active chaos faults immediately (kill-switch). Resume with resume_chaos."),
+		),
+		handleHaltChaos(c),
+	)
+	s.AddTool(
+		mcpsdk.NewTool("resume_chaos",
+			mcpsdk.WithDescription("Resume chaos fault injection after a halt."),
+		),
+		handleResumeChaos(c),
+	)
+	s.AddTool(
+		mcpsdk.NewTool("get_chaos_status",
+			mcpsdk.WithDescription("Get current chaos state: kill-switch (halted) flag and active-scenario name."),
+		),
+		handleChaosStatus(c),
+	)
+}
+
 // registerFaultTools adds all five fault-profile CRUD tools to s.
 func registerFaultTools(s *server.MCPServer, c *Client) {
 	s.AddTool(
