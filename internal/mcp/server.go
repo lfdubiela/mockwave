@@ -125,6 +125,9 @@ func NewServer(adminURL, version string) *server.MCPServer {
 	// Event captures
 	registerEventCaptureTools(s, c)
 
+	// Matched HTTP captures
+	registerMatchedTools(s, c)
+
 	// OpenAPI import
 	s.AddTool(
 		mcpsdk.NewTool("generate_from_openapi",

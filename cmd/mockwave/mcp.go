@@ -63,6 +63,11 @@ Available MCP tools:
     get_event_capture    Get the full detail of a single captured event (including bodies)
     clear_event_captures Delete all captured events for a rule
 
+  Matched Requests
+    list_matched         List matched HTTP requests for a rule (supports body/query filters)
+    get_matched          Get the full detail of a single matched HTTP request (including bodies)
+    clear_matched        Delete all matched HTTP requests for a rule
+
   Observability
     get_metrics         Traffic metrics snapshot (requests, hits, p95 latency)
     list_unmatched      Requests that matched no rule
