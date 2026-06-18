@@ -750,3 +750,100 @@ func TestExportImport_RoundTripWithProfiles(t *testing.T) {
 	require.Len(t, dst.profiles, 1)
 	assert.Equal(t, "p1", dst.profiles[0].ID)
 }
+
+// --- event rule import/export ---
+
+// eventRuleTransferStore extends scenarioMemStore with the store.EventRuleStore
+// capability so event-rule round-trip and conflict tests can use it.
+type eventRuleTransferStore struct {
+	scenarioMemStore
+	eventRules []domain.EventRule
+}
+
+func (s *eventRuleTransferStore) GetEventRules() ([]domain.EventRule, error) {
+	return s.eventRules, nil
+}
+func (s *eventRuleTransferStore) SaveEventRule(r domain.EventRule) error {
+	for i, existing := range s.eventRules {
+		if existing.ID == r.ID {
+			s.eventRules[i] = r
+			return nil
+		}
+	}
+	s.eventRules = append(s.eventRules, r)
+	return nil
+}
+func (s *eventRuleTransferStore) DeleteEventRule(id string) error {
+	for i, r := range s.eventRules {
+		if r.ID == id {
+			s.eventRules = append(s.eventRules[:i], s.eventRules[i+1:]...)
+			return nil
+		}
+	}
+	return fmt.Errorf("event rule not found: %s", id)
+}
+
+func validEventRule(id string) domain.EventRule {
+	return domain.EventRule{
+		ID:   id,
+		Name: "EventRule " + id,
+		Match: domain.EventMatch{Service: "sns"},
+	}
+}
+
+func transferEventRuleStore() *eventRuleTransferStore {
+	s := &eventRuleTransferStore{}
+	s.eventRules = []domain.EventRule{validEventRule("er1"), validEventRule("er2")}
+	return s
+}
+
+func TestExportImport_RoundTripWithEventRules(t *testing.T) {
+	src := transferEventRuleStore()
+	srcMux := restapi.NewMux(src, nil, nil, nil, nil, nil, restapi.WithImportExport())
+	w := httptest.NewRecorder()
+	srcMux.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/export", nil))
+	require.Equal(t, 200, w.Code)
+
+	// exported config must include the event rules
+	var exported domain.Config
+	require.NoError(t, json.NewDecoder(bytes.NewReader(w.Body.Bytes())).Decode(&exported))
+	require.Len(t, exported.EventRules, 2)
+
+	// import into a fresh destination store
+	dst := &eventRuleTransferStore{}
+	dstMux := restapi.NewMux(dst, func() {}, nil, nil, nil, nil, restapi.WithImportExport())
+	w2 := httptest.NewRecorder()
+	dstMux.ServeHTTP(w2, httptest.NewRequest(http.MethodPost, "/api/import", bytes.NewReader(w.Body.Bytes())))
+	require.Equal(t, 200, w2.Code, w2.Body.String())
+
+	got, err := dst.GetEventRules()
+	require.NoError(t, err)
+	ids := make(map[string]bool, len(got))
+	for _, er := range got {
+		ids[er.ID] = true
+	}
+	assert.True(t, ids["er1"], "er1 must be present after import")
+	assert.True(t, ids["er2"], "er2 must be present after import")
+}
+
+func TestImportPreview_EventRuleIDConflict(t *testing.T) {
+	src := transferEventRuleStore() // has er1, er2
+	mux := restapi.NewMux(src, nil, nil, nil, nil, nil, restapi.WithImportExport())
+
+	cfg := domain.Config{EventRules: []domain.EventRule{validEventRule("er1")}}
+	w := previewReq(t, mux, cfg)
+	require.Equal(t, 200, w.Code, w.Body.String())
+
+	var resp struct {
+		EventRuleConflicts []struct {
+			Reason   string `json:"reason"`
+			Incoming struct{ ID, Name string }
+			Existing struct{ ID, Name string }
+		} `json:"event_rule_conflicts"`
+	}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	require.Len(t, resp.EventRuleConflicts, 1)
+	assert.Equal(t, "id", resp.EventRuleConflicts[0].Reason)
+	assert.Equal(t, "er1", resp.EventRuleConflicts[0].Incoming.ID)
+	assert.Equal(t, "er1", resp.EventRuleConflicts[0].Existing.ID)
+}
