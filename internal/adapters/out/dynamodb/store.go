@@ -20,6 +20,7 @@ var (
 	_ store.VersionedStore = (*Store)(nil)
 	_ store.FaultStore     = (*Store)(nil)
 	_ store.ScenarioStore  = (*Store)(nil)
+	_ store.EventRuleStore = (*Store)(nil)
 )
 
 // versionItemID is the reserved rules-table key holding the config-version
@@ -38,23 +39,25 @@ type DynamoClient interface {
 
 // Config holds DynamoDB connection parameters.
 type Config struct {
-	RulesTable     string // DynamoDB table name for rules (PK: "id")
-	SimsTable      string // DynamoDB table name for simulations (PK: "id")
-	FaultsTable    string // DynamoDB table for fault profiles (PK: "id")
-	ScenariosTable string // DynamoDB table for scenarios (PK: "id")
-	MatchedTable   string // DynamoDB table for matched requests (PK: "rule_id", SK: "sk")
-	Region         string // AWS region (e.g. "us-east-1")
-	Endpoint       string // optional custom endpoint for local DynamoDB
+	RulesTable      string // DynamoDB table name for rules (PK: "id")
+	SimsTable       string // DynamoDB table name for simulations (PK: "id")
+	FaultsTable     string // DynamoDB table for fault profiles (PK: "id")
+	ScenariosTable  string // DynamoDB table for scenarios (PK: "id")
+	MatchedTable    string // DynamoDB table for matched requests (PK: "rule_id", SK: "sk")
+	EventRulesTable string // DynamoDB table for AWS event rules (PK: "id")
+	Region          string // AWS region (e.g. "us-east-1")
+	Endpoint        string // optional custom endpoint for local DynamoDB
 }
 
 // Store is a DataStore backed by DynamoDB.
 type Store struct {
-	client         DynamoClient
-	rulesTable     string
-	simsTable      string
-	faultsTable    string
-	scenariosTable string
-	matchedTable_  string
+	client          DynamoClient
+	rulesTable      string
+	simsTable       string
+	faultsTable     string
+	scenariosTable  string
+	matchedTable_   string
+	eventRulesTable string
 }
 
 // NewStore creates a Store using the default AWS credential chain
@@ -82,12 +85,13 @@ func NewStoreFromClient(client DynamoClient, cfg Config) *Store {
 		matchedTable = "mockwave-matched-requests"
 	}
 	return &Store{
-		client:         client,
-		rulesTable:     cfg.RulesTable,
-		simsTable:      cfg.SimsTable,
-		faultsTable:    cfg.FaultsTable,
-		scenariosTable: cfg.ScenariosTable,
-		matchedTable_:  matchedTable,
+		client:          client,
+		rulesTable:      cfg.RulesTable,
+		simsTable:       cfg.SimsTable,
+		faultsTable:     cfg.FaultsTable,
+		scenariosTable:  cfg.ScenariosTable,
+		matchedTable_:   matchedTable,
+		eventRulesTable: cfg.EventRulesTable,
 	}
 }
 

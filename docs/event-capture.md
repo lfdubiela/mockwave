@@ -13,8 +13,9 @@ Capture is **opt-in** (default off, zero overhead when disabled).
 Phases 1 and 2 cover SNS, SQS, and EventBridge interception with synthesized
 responses. Phase 3 adds optional **re-signed forwarding**: a matched rule with a
 `forward` block re-emits the event to the real broker via the AWS SDK, relays
-the broker's real id to the app, and records the outcome in the capture. Capture
-persistence is on the [roadmap](roadmap.md).
+the broker's real id to the app, and records the outcome in the capture. Phase 4
+adds **cloud persistence**: event rules and captures survive restarts on
+DynamoDB, MongoDB, and Cosmos backends.
 
 - [Why this exists](#why-this-exists)
 - [Pointing your AWS SDK at Mockwave](#pointing-your-aws-sdk-at-mockwave)
@@ -22,6 +23,7 @@ persistence is on the [roadmap](roadmap.md).
 - [Config — event\_rules](#config--event_rules)
 - [EventMatch fields](#eventmatch-fields)
 - [Forwarding](#forwarding)
+- [Persistence](#persistence)
 - [Service-specific behaviour](#service-specific-behaviour)
   - [SNS](#sns)
   - [SQS](#sqs)
@@ -264,6 +266,45 @@ environment.
 
 ---
 
+## Persistence
+
+### Event rules
+
+Event rules persist on the same store backends as HTTP rules:
+
+| Backend | Where rules live |
+|---|---|
+| `--store dynamodb` | Dedicated DynamoDB table. Flag `--dynamo-event-rules-table` (default `mockwave-event-rules`); env `MOCKWAVE_DYNAMO_EVENT_RULES_TABLE`. |
+| `--store mongo` / `--store cosmos` | Collection `event_rules` in the configured database. Created automatically. |
+| `--store json` | The `event_rules` array in the JSON config file. Captured events stay in-memory (no separate persistence). |
+
+Admin CRUD operations against a remote store (`POST /api/event-rules`, `PUT /api/event-rules/{id}`, `DELETE /api/event-rules/{id}`) trigger a config-version bump so every replica hot-reloads without a restart.
+
+### Event captures
+
+Event captures persist via write-behind to the same store table / collection that
+the matched-capture feature uses. The two capture streams share the store and are
+distinguished by protocol prefix: HTTP/GraphQL/SOAP/gRPC captures have no `aws-`
+prefix; event captures always begin with `aws-` (`aws-sns`, `aws-sqs`,
+`aws-eventbridge`). On hydration at startup each stream loads only its own
+records.
+
+Native TTL expiry applies (DynamoDB TTL attribute, MongoDB TTL index). Captures
+older than `--event-ttl` (default 3600 s) are purged automatically by the
+backend.
+
+On restart the server hydrates up to `--event-buffer-size` (default 10 000) of
+the newest captures back into memory. Under very heavy mixed HTTP + event load on
+a shared store, hydration is best-effort: the server loads the newest records up
+to the buffer limit. The store remains the authoritative source of truth and is
+queryable per-rule at any scale via `GET /api/event-captures/{ruleID}`.
+
+With `--store json`, event rules live in the config file's `event_rules` array,
+but event captures are held only in the in-memory matched store — they are not
+flushed to the config file and do not survive a restart.
+
+---
+
 ## Service-specific behaviour
 
 ### SNS
@@ -496,7 +537,7 @@ resp, err := http.Get("http://localhost:9090/api/event-captures/order-placed-sns
 
 ## Limitations and roadmap
 
-**Shipped (Phases 1 – 3):**
+**Shipped (Phases 1 – 4):**
 
 - SNS `Publish` interception and synthesized `PublishResponse` (valid XML, with
   a generated `MessageId` the SDK accepts).
@@ -509,12 +550,12 @@ resp, err := http.Get("http://localhost:9090/api/event-captures/order-placed-sns
 - Re-signed forward via `aws-sdk-go-v2` with `default` / `profile:` / `static:`
   credential resolution; real broker id relayed to the app; forward outcome
   captured with `forwarded`, `forward_target`, and response status.
+- Cloud persistence: `EventRuleStore` on DynamoDB / MongoDB / Cosmos with native
+  TTL; event captures written behind to the matched store (distinguished by
+  `aws-*` protocol prefix); restart hydration.
 
 **Known constraints:**
 
-- **In-memory capture only.** Event captures are held in the ring buffer; they
-  do not survive a restart and are not written to the configured store backend.
-  Persistence is on the roadmap (Phase 4).
 - **No batch variants.** `PublishBatch` (SNS) and `SendMessageBatch` (SQS) are
   not yet supported. (`PutEvents` is natively batch and is complete.)
 - **No consumer side.** SQS `ReceiveMessage` polling and SNS HTTP subscription

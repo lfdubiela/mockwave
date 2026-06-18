@@ -108,6 +108,8 @@ type Server struct {
 
 	eventCaptureBuf *matched.Buffer     // nil when event capture disabled
 	eventMatcher    *eventroute.Matcher // guarded by s.mu; rebuilt on reload
+	eventSyncer     *matched.Syncer
+	eventSweep      context.CancelFunc
 }
 
 // New creates a Server from cfg, loading rules from the store.
@@ -166,7 +168,7 @@ func New(cfg Config) (*Server, error) {
 		if sink := matchedSink(mc, s.cfg.Store); sink != nil {
 			if ms, ok := sink.(store.MatchedStore); ok {
 				if page, err := ms.ListMatched(context.Background(), "", store.MatchedQuery{Limit: mc.BufferSize}); err == nil {
-					s.matchedBuf.Hydrate(page.Items)
+					s.matchedBuf.Hydrate(nonAWSCaptures(page.Items))
 				}
 			}
 			s.matchedSyncer = matched.NewSyncer(s.matchedBuf, sink, mc.SyncInterval)
@@ -180,6 +182,19 @@ func New(cfg Config) (*Server, error) {
 	if ec := resolveEventConfig(cfg.Event); ec.Enabled {
 		s.cfg.Event = ec
 		s.eventCaptureBuf = matched.NewBuffer(ec.BufferSize)
+		if sink := eventSink(ec, s.cfg.Store); sink != nil {
+			if ms, ok := sink.(store.MatchedStore); ok {
+				if page, err := ms.ListMatched(context.Background(), "", store.MatchedQuery{Limit: ec.BufferSize}); err == nil {
+					s.eventCaptureBuf.Hydrate(awsCaptures(page.Items))
+				}
+			}
+			s.eventSyncer = matched.NewSyncer(s.eventCaptureBuf, sink, ec.SyncInterval)
+			go s.eventSyncer.Run(context.Background())
+		} else {
+			sctx, scancel := context.WithCancel(context.Background())
+			s.eventSweep = scancel
+			go s.runEventSweep(sctx, ec.SyncInterval)
+		}
 	}
 	if cfg.AdminPort > 0 {
 		if err := s.startAdmin(); err != nil {
@@ -221,8 +236,8 @@ func (s *Server) NewProxy() Executor {
 // MatchedBuffer returns the matched-capture buffer, or nil when capture is off.
 func (s *Server) MatchedBuffer() *matched.Buffer { return s.matchedBuf }
 
-// Close releases background resources: broker, reloader, and the matched syncer
-// (with a final flush). Safe to call once.
+// Close releases background resources: broker, reloader, and the matched and
+// event syncers/sweeps (with a final flush). Safe to call once.
 func (s *Server) Close() error {
 	if s.brokerCancel != nil {
 		s.brokerCancel()
@@ -233,8 +248,14 @@ func (s *Server) Close() error {
 	if s.matchedSyncer != nil {
 		_ = s.matchedSyncer.Close()
 	}
+	if s.eventSyncer != nil {
+		_ = s.eventSyncer.Close()
+	}
 	if s.matchedSweep != nil {
 		s.matchedSweep()
+	}
+	if s.eventSweep != nil {
+		s.eventSweep()
 	}
 	return nil
 }
@@ -249,6 +270,21 @@ func (s *Server) runMatchedSweep(ctx context.Context, interval time.Duration) {
 		case <-t.C:
 			if s.matchedBuf != nil {
 				s.matchedBuf.SweepExpired()
+			}
+		}
+	}
+}
+
+func (s *Server) runEventSweep(ctx context.Context, interval time.Duration) {
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			if s.eventCaptureBuf != nil {
+				s.eventCaptureBuf.SweepExpired()
 			}
 		}
 	}

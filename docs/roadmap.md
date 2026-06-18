@@ -4,11 +4,10 @@ Planned-but-not-yet-built work. Items land here when a shipped feature deliberat
 
 ## Outgoing event interception (AWS)
 
-Shipped (Phases 1 – 3): SNS `Publish`, SQS `SendMessage` (JSON protocol, faithful MD5 checksums), and EventBridge `PutEvents` (JSON, batch — each entry captured separately) interception, in-memory capture, protocol-faithful synthesized responses, identity recording, and optional re-signed forward via `aws-sdk-go-v2` (`default`/`profile:`/`static:` credential resolution, real broker id relayed, forward outcome captured). Design: [`docs/specs/2026-06-17-aws-event-interception-design.md`](specs/2026-06-17-aws-event-interception-design.md). Phase 3 plan: [`docs/plans/2026-06-17-aws-event-interception-phase3-plan.md`](plans/2026-06-17-aws-event-interception-phase3-plan.md).
+Shipped (Phases 1 – 4 — arc complete): SNS `Publish`, SQS `SendMessage` (JSON protocol, faithful MD5 checksums), and EventBridge `PutEvents` (JSON, batch — each entry captured separately) interception, in-memory capture, protocol-faithful synthesized responses, identity recording, optional re-signed forward via `aws-sdk-go-v2` (`default`/`profile:`/`static:` credential resolution, real broker id relayed, forward outcome captured), `EventRuleStore` on DynamoDB / MongoDB / Cosmos with native TTL, event-capture write-behind persistence to the matched store (distinguished by `aws-*` protocol prefix), and restart hydration. Design: [`docs/specs/2026-06-17-aws-event-interception-design.md`](specs/2026-06-17-aws-event-interception-design.md). Phase 4 plan: [`docs/plans/2026-06-17-aws-event-interception-phase4-plan.md`](plans/2026-06-17-aws-event-interception-phase4-plan.md).
 
 Deferred:
 
-- **Capture persistence (Phase 4)** — `EventRuleStore` + event-capture storage on DynamoDB / MongoDB / Cosmos with native TTL and restart hydration. Currently in-memory only.
 - **Forward: Number/Binary message attribute types** — forwarded attributes are sent as `String` only; the original data type is not preserved.
 - **Forward: EventBridge per-entry partial failure** — any entry error in `PutEvents` fails the whole request with 502; per-entry partial-failure fidelity is not modeled.
 - **Forward: SQS FIFO `SequenceNumber` relay** — the broker-assigned sequence number is not surfaced in the forwarded response.

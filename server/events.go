@@ -2,18 +2,22 @@ package server
 
 import (
 	"os"
+	"strings"
 	"time"
 
 	"github.com/mockwave/mockwave/domain"
+	"github.com/mockwave/mockwave/internal/matched"
+	"github.com/mockwave/mockwave/store"
 )
 
 // EventConfig configures AWS event interception + capture. Disabled by default.
 // Explicit non-zero fields win; otherwise env vars fill in; otherwise defaults.
 type EventConfig struct {
 	Enabled      bool
-	TTL          time.Duration // capture expiry; default 1h
-	BufferSize   int           // in-memory capacity; default 10000
-	SyncInterval time.Duration // write-behind cadence; default 30s
+	TTL          time.Duration      // capture expiry; default 1h
+	BufferSize   int                // in-memory capacity; default 10000
+	SyncInterval time.Duration      // write-behind cadence; default 30s
+	Store        store.MatchedStore // BYO override; nil → derived from backend
 }
 
 func resolveEventConfig(in EventConfig) EventConfig {
@@ -42,6 +46,42 @@ func resolveEventConfig(in EventConfig) EventConfig {
 }
 
 func (c EventConfig) ttlSeconds() int { return int(c.TTL / time.Second) }
+
+// eventSink picks the MatchedStore for event-capture persistence: explicit
+// override, else the backend when it implements MatchedStore, else nil.
+func eventSink(cfg EventConfig, backend store.DataStore) matched.Sink {
+	if cfg.Store != nil {
+		return cfg.Store
+	}
+	if ms, ok := backend.(store.MatchedStore); ok {
+		return ms
+	}
+	return nil
+}
+
+// awsCaptures keeps only aws-* protocol captures (intercepted events). Event
+// captures share the matched store with HTTP captures; the protocol prefix
+// separates the two views on hydration.
+func awsCaptures(items []matched.Request) []matched.Request {
+	out := make([]matched.Request, 0, len(items))
+	for _, r := range items {
+		if strings.HasPrefix(r.Protocol, "aws-") {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// nonAWSCaptures keeps everything except aws-* (HTTP/GraphQL/SOAP/gRPC).
+func nonAWSCaptures(items []matched.Request) []matched.Request {
+	out := make([]matched.Request, 0, len(items))
+	for _, r := range items {
+		if !strings.HasPrefix(r.Protocol, "aws-") {
+			out = append(out, r)
+		}
+	}
+	return out
+}
 
 // eventQuery flattens the non-body event metadata into the matched.Request
 // Query map so it is filterable/visible in the capture admin view.
