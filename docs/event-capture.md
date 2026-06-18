@@ -30,6 +30,7 @@ DynamoDB, MongoDB, and Cosmos backends.
   - [EventBridge](#eventbridge)
 - [Matcher caveat — target globs and slashes](#matcher-caveat--target-globs-and-slashes)
 - [Admin API](#admin-api)
+  - [Filtering captures](#filtering-captures)
 - [Worked example](#worked-example)
 - [Limitations and roadmap](#limitations-and-roadmap)
 
@@ -410,6 +411,9 @@ needed to identify and filter.
 | `cursor` | — | Opaque pagination cursor from a previous response. |
 | `method` | — | Filter by operation name (`Publish`, `SendMessage`, `PutEvents`). |
 | `path` | — | Glob match against the captured target ARN / queue URL / bus name. |
+| `body` | — | `<jsonpath>:<value>` — match a field in the published message body. Repeatable (AND). See [Filtering captures](#filtering-captures). |
+| `attr` | — | `<name>:<value>` — match a message attribute. Repeatable (AND). Maps internally to `attr.<name>`. |
+| `query` | — | `<key>:<value>` — match a raw capture-query key (`source`, `detail_type`, `subject`, `group_id`, `dedup_id`). Repeatable (AND). |
 
 **Response `200`:**
 
@@ -464,6 +468,79 @@ Captured fields:
 | `identity` | The access key ID of the publisher (extracted from the SigV4 `Authorization` header). |
 | `request_body` | The published message payload (SNS `Message`, SQS `MessageBody`, EventBridge entry `Detail`). |
 | `response_body` | The synthesized response Mockwave returned to the SDK. |
+
+---
+
+### Filtering captures
+
+All three filter params (`body`, `attr`, `query`) are **AND-combined** with each other and with `method`, `path`, `limit`, and `cursor`.
+
+#### `body=<jsonpath>:<value>`
+
+Filters by a field inside the published message body. The expression must be a JSONPath leaf (e.g. `$.correlation_id`, `$.order.items[0].sku`). The split is on the **first** `:`, so the value itself may contain colons (e.g. `body=$.url:http://example.com`). The param is repeatable — all entries must match (AND).
+
+**Constraints:**
+
+- **In-memory buffer only.** Body filtering is applied to the in-memory ring buffer. Captures that have been evicted to the cloud store are not body-filterable via this param; use the detail endpoint to inspect an individual evicted capture.
+- **JSON bodies only.** The filter resolves the body as JSON. Applicable message formats: SNS `Message` JSON, SQS `MessageBody` JSON, EventBridge entry `Detail`, HTTP JSON, GraphQL, gRPC. A non-JSON body (e.g. a plain string or XML) simply matches nothing when a `body` filter is present.
+
+**Example** — publish an SNS event with `{"correlation_id":"abc-123","orderId":"xyz"}`, then query for it:
+
+```bash
+curl 'http://localhost:9090/api/event-captures/orders?body=$.correlation_id:abc-123'
+```
+
+Only captures whose published message body has `$.correlation_id == "abc-123"` are returned.
+
+Multiple filters:
+
+```bash
+curl 'http://localhost:9090/api/event-captures/orders?body=$.correlation_id:abc-123&body=$.eventType:ORDER_PLACED'
+```
+
+#### `attr=<name>:<value>`
+
+Filters by a message attribute. Repeatable (AND). Internally the param maps to the query key `attr.<name>`, so `attr=env:prod` matches captures where the `env` message attribute equals `prod`.
+
+This is useful for SNS and SQS publishes that carry message attributes:
+
+```bash
+# Match captures where the "env" attribute is "prod"
+curl 'http://localhost:9090/api/event-captures/orders?attr=env:prod'
+
+# AND — both attributes must match
+curl 'http://localhost:9090/api/event-captures/orders?attr=env:prod&attr=tenant:acme'
+```
+
+#### `query=<key>:<value>`
+
+Filters by a raw capture-query key. The available keys for event captures are:
+
+| Key | Source |
+|---|---|
+| `source` | EventBridge entry `Source` field. |
+| `detail_type` | EventBridge entry `DetailType` field. |
+| `subject` | SNS `Subject` field. |
+| `group_id` | SQS FIFO `MessageGroupId`. |
+| `dedup_id` | SQS FIFO `MessageDeduplicationId`. |
+
+```bash
+# EventBridge: filter by source
+curl 'http://localhost:9090/api/event-captures/orders?query=source:com.example.orders'
+
+# EventBridge: AND source + detail_type
+curl 'http://localhost:9090/api/event-captures/orders?query=source:com.example.orders&query=detail_type:OrderPlaced'
+
+# SQS FIFO: filter by group
+curl 'http://localhost:9090/api/event-captures/sqs-orders?query=group_id:customer-42'
+```
+
+#### Combined example
+
+```bash
+# Body field AND message attribute AND EventBridge detail_type
+curl 'http://localhost:9090/api/event-captures/orders?body=$.correlation_id:abc-123&attr=env:prod&query=detail_type:OrderPlaced'
+```
 
 ---
 

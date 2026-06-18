@@ -55,3 +55,32 @@ func TestDecodeCursor_Invalid(t *testing.T) {
 	_, err := matched.DecodeCursor("!!!not-base64!!!")
 	assert.Error(t, err)
 }
+
+func TestQueryMapFilter(t *testing.T) {
+	r := matched.Request{Query: map[string]string{"attr.correlation_id": "abc", "source": "billing"}}
+
+	// Single match.
+	if !(matched.Query{Query: map[string]string{"attr.correlation_id": "abc"}}).Matches(r) {
+		t.Fatal("expected match on attr.correlation_id")
+	}
+	// AND of two.
+	if !(matched.Query{Query: map[string]string{"attr.correlation_id": "abc", "source": "billing"}}).Matches(r) {
+		t.Fatal("expected match on both")
+	}
+	// Value mismatch.
+	if (matched.Query{Query: map[string]string{"attr.correlation_id": "xyz"}}).Matches(r) {
+		t.Fatal("value mismatch should not match")
+	}
+	// Missing key.
+	if (matched.Query{Query: map[string]string{"tenant": "acme"}}).Matches(r) {
+		t.Fatal("missing key should not match")
+	}
+	// Case-sensitive key (unlike headers).
+	if (matched.Query{Query: map[string]string{"Source": "billing"}}).Matches(r) {
+		t.Fatal("query keys are case-sensitive")
+	}
+	// Zero-value query matches all.
+	if !(matched.Query{}).Matches(r) {
+		t.Fatal("zero-value query must match all")
+	}
+}

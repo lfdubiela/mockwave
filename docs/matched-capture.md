@@ -122,6 +122,8 @@ metadata needed to identify and filter.
 | `path` | — | Glob match against the captured path (e.g. `/users/*`). |
 | `status` | — | Exact response status code filter. |
 | `headers` | — | `key:value`; repeat for AND-matching (see [Filters](#filters)). |
+| `body` | — | `<jsonpath>:<value>` — match a field in the request body. Repeatable (AND). See [Filters](#filters). |
+| `query` | — | `<key>:<value>` — match a URL query parameter from the captured request. Repeatable (AND). |
 
 **Response `200`:**
 
@@ -231,10 +233,44 @@ curl -s 'http://localhost:9090/api/matched/hello?headers=x-cid:test-123'
 curl -s 'http://localhost:9090/api/matched/hello?headers=x-cid:test-123&headers=x-tenant:acme'
 ```
 
+**`body`** — `<jsonpath>:<value>`, repeated for AND matching. Filters by a
+field inside the captured HTTP request body using a JSONPath expression. The
+split is on the **first** `:`, so values may contain colons (e.g.
+`body=$.url:http://example.com`).
+
+```bash
+# Match captures where the JSON body has email == "ada@x.com"
+curl -s 'http://localhost:9090/api/matched/signup?body=$.email:ada@x.com'
+
+# AND — both fields must match
+curl -s 'http://localhost:9090/api/matched/orders?body=$.status:pending&body=$.region:us-east-1'
+```
+
+Constraints:
+
+- **In-memory buffer only.** Body filtering reads from the in-memory ring
+  buffer. Captures evicted to the cloud store are not body-filterable via this
+  param; fetch individual captures with the detail endpoint instead.
+- **JSON bodies only.** The request body is parsed as JSON. GraphQL and gRPC
+  bodies are also covered. A non-JSON body (SOAP/XML, form-encoded, binary)
+  simply matches nothing when a `body` filter is present.
+
+**`query`** — `<key>:<value>`, repeated for AND matching. Filters by a URL
+query parameter from the captured request.
+
+```bash
+# Match captures where ?page=2
+curl -s 'http://localhost:9090/api/matched/products?query=page:2'
+
+# AND — both query params must match
+curl -s 'http://localhost:9090/api/matched/products?query=page:2&query=sort:price'
+```
+
 Combine freely:
 
 ```bash
 curl -s 'http://localhost:9090/api/matched/hello?method=POST&status=201&headers=x-cid:test-123'
+curl -s 'http://localhost:9090/api/matched/orders?method=POST&body=$.email:ada@x.com&query=dry_run:true'
 ```
 
 ---

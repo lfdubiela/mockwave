@@ -191,3 +191,76 @@ func TestBuffer_SweepExpired(t *testing.T) {
 	assert.Len(t, b.List("r1", matched.Query{}).Items, 1)
 	assert.Empty(t, b.List("r2", matched.Query{}).Items)
 }
+
+func TestListBodyFilter(t *testing.T) {
+	b := matched.NewBuffer(100)
+	add := func(id, body string) {
+		b.Add(matched.Request{ID: id, RuleID: "r", Protocol: "aws-sns", RequestBodyID: id}, []byte(body), nil)
+	}
+	add("3", `{"correlation_id":"abc","total":42}`)
+	add("2", `{"correlation_id":"xyz","total":7}`)
+	add("1", `not json`)
+
+	page := b.List("r", matched.Query{Body: map[string]string{"$.correlation_id": "abc"}})
+	if len(page.Items) != 1 || page.Items[0].ID != "3" {
+		t.Fatalf("body filter = %+v", page.Items)
+	}
+	if got := b.List("r", matched.Query{Body: map[string]string{"$.correlation_id": "abc", "$.total": "42"}}); len(got.Items) != 1 {
+		t.Fatalf("AND body filter = %+v", got.Items)
+	}
+	if got := b.List("r", matched.Query{Body: map[string]string{"$.correlation_id": "nope"}}); len(got.Items) != 0 {
+		t.Fatalf("mismatch should be empty, got %+v", got.Items)
+	}
+	if got := b.List("r", matched.Query{Body: map[string]string{"$.missing": "x"}}); len(got.Items) != 0 {
+		t.Fatalf("missing path should be empty")
+	}
+}
+
+func TestListBodyFilterNoBody(t *testing.T) {
+	b := matched.NewBuffer(100)
+	b.Add(matched.Request{ID: "1", RuleID: "r", Protocol: "http"}, nil, nil)
+	if got := b.List("r", matched.Query{Body: map[string]string{"$.x": "1"}}); len(got.Items) != 0 {
+		t.Fatalf("no-body request must not match a body filter: %+v", got.Items)
+	}
+}
+
+func TestListBodyFilterPagination(t *testing.T) {
+	b := matched.NewBuffer(100)
+	add := func(id, body string) {
+		b.Add(matched.Request{ID: id, RuleID: "r", Protocol: "aws-sns", RequestBodyID: id}, []byte(body), nil)
+	}
+	// 3 matching (type=order) interleaved with 2 non-matching (type=other).
+	add("5", `{"type":"order","n":5}`)
+	add("4", `{"type":"other","n":4}`)
+	add("3", `{"type":"order","n":3}`)
+	add("2", `{"type":"other","n":2}`)
+	add("1", `{"type":"order","n":1}`)
+
+	bodyFilter := map[string]string{"$.type": "order"}
+
+	// Page 1: limit 2 → ids 5,3 (newest-first, only matching), cursor present.
+	p1 := b.List("r", matched.Query{Limit: 2, Body: bodyFilter})
+	if len(p1.Items) != 2 || p1.Items[0].ID != "5" || p1.Items[1].ID != "3" {
+		t.Fatalf("page1 = %+v", p1.Items)
+	}
+	if p1.NextCursor == "" {
+		t.Fatal("page1 must have a next cursor (more matching items remain)")
+	}
+
+	// Page 2: → id 1 (the last matching), no further cursor.
+	p2 := b.List("r", matched.Query{Limit: 2, Cursor: p1.NextCursor, Body: bodyFilter})
+	if len(p2.Items) != 1 || p2.Items[0].ID != "1" {
+		t.Fatalf("page2 = %+v", p2.Items)
+	}
+	if p2.NextCursor != "" {
+		t.Fatal("page2 must NOT have a next cursor (no more matching items)")
+	}
+
+	// Sanity: all three matching ids covered, no non-matching leaked.
+	seen := map[string]bool{p1.Items[0].ID: true, p1.Items[1].ID: true, p2.Items[0].ID: true}
+	for _, id := range []string{"1", "3", "5"} {
+		if !seen[id] {
+			t.Fatalf("missing matching id %s", id)
+		}
+	}
+}

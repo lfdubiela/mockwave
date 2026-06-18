@@ -2,6 +2,7 @@ package restapi
 
 import (
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -50,24 +51,7 @@ func (a *adminAPI) matchedByRule(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *adminAPI) matchedList(w http.ResponseWriter, r *http.Request, ruleID string) {
-	q := r.URL.Query()
-	mq := matched.Query{
-		Cursor:  q.Get("cursor"),
-		Method:  q.Get("method"),
-		Path:    q.Get("path"),
-		Headers: parseHeaderFilters(q["headers"]),
-	}
-	if l := q.Get("limit"); l != "" {
-		if n, err := strconv.Atoi(l); err == nil {
-			mq.Limit = n
-		}
-	}
-	if s := q.Get("status"); s != "" {
-		if n, err := strconv.Atoi(s); err == nil {
-			mq.Status = n
-		}
-	}
-	page := a.matchedBuf.List(ruleID, mq)
+	page := a.matchedBuf.List(ruleID, parseCaptureQuery(r.URL.Query()))
 	if page.Items == nil {
 		page.Items = []matched.Request{}
 	}
@@ -105,9 +89,9 @@ func (a *adminAPI) matchedDetail(w http.ResponseWriter, r *http.Request, ruleID,
 	writeError(w, 404, "matched request not found")
 }
 
-// parseHeaderFilters turns repeated "key:value" params into a map. Only the
-// first ':' is the separator (values may contain ':'). Malformed entries skipped.
-func parseHeaderFilters(vals []string) map[string]string {
+// parseKVFilters parses repeated "key:value" query params into a map, splitting
+// each on the first ':'. Entries without a non-empty key are skipped.
+func parseKVFilters(vals []string) map[string]string {
 	if len(vals) == 0 {
 		return nil
 	}
@@ -120,4 +104,34 @@ func parseHeaderFilters(vals []string) map[string]string {
 		out[v[:i]] = v[i+1:]
 	}
 	return out
+}
+
+// parseCaptureQuery builds a matched.Query from the URL query params shared by
+// the matched- and event-capture list endpoints.
+func parseCaptureQuery(q url.Values) matched.Query {
+	mq := matched.Query{
+		Cursor:  q.Get("cursor"),
+		Method:  q.Get("method"),
+		Path:    q.Get("path"),
+		Headers: parseKVFilters(q["headers"]),
+		Query:   parseKVFilters(q["query"]),
+		Body:    parseKVFilters(q["body"]),
+	}
+	for k, v := range parseKVFilters(q["attr"]) {
+		if mq.Query == nil {
+			mq.Query = map[string]string{}
+		}
+		mq.Query["attr."+k] = v
+	}
+	if l := q.Get("limit"); l != "" {
+		if n, err := strconv.Atoi(l); err == nil {
+			mq.Limit = n
+		}
+	}
+	if s := q.Get("status"); s != "" {
+		if n, err := strconv.Atoi(s); err == nil {
+			mq.Status = n
+		}
+	}
+	return mq
 }

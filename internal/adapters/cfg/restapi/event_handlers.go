@@ -3,7 +3,6 @@ package restapi
 import (
 	"encoding/json"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/mockwave/mockwave/domain"
@@ -126,14 +125,7 @@ func (a *adminAPI) eventCaptures(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *adminAPI) eventCaptureList(w http.ResponseWriter, r *http.Request, ruleID string) {
-	q := r.URL.Query()
-	mq := matched.Query{Cursor: q.Get("cursor"), Method: q.Get("method"), Path: q.Get("path")}
-	if l := q.Get("limit"); l != "" {
-		if n, err := strconv.Atoi(l); err == nil {
-			mq.Limit = n
-		}
-	}
-	page := a.eventCaptureBuf.List(ruleID, mq)
+	page := a.eventCaptureBuf.List(ruleID, parseCaptureQuery(r.URL.Query()))
 	if page.Items == nil {
 		page.Items = []matched.Request{}
 	}
