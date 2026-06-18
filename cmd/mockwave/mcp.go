@@ -80,6 +80,15 @@ Available MCP tools:
     resume_chaos        Resume chaos fault injection after a halt
     get_chaos_status    Get current chaos state: halted flag and active-scenario name
 
+  Scenarios
+    list_scenarios      List all chaos scenarios
+    get_scenario        Get a chaos scenario by ID
+    create_scenario     Create a new chaos scenario
+    update_scenario     Replace an existing chaos scenario
+    delete_scenario     Delete a chaos scenario
+    start_scenario      Start a chaos scenario (applies fault phases to targeted rules)
+    stop_scenario       Stop a running chaos scenario (restores normal rule behavior)
+
   Observability
     get_metrics         Traffic metrics snapshot (requests, hits, p95 latency)
     list_unmatched      Requests that matched no rule

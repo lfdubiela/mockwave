@@ -134,6 +134,9 @@ func NewServer(adminURL, version string) *server.MCPServer {
 	// Chaos control (halt/resume/status)
 	registerChaosControlTools(s, c)
 
+	// Scenarios (chaos test orchestration)
+	registerScenarioTools(s, c)
+
 	// OpenAPI import
 	s.AddTool(
 		mcpsdk.NewTool("generate_from_openapi",
