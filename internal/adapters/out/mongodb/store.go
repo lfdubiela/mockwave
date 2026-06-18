@@ -18,6 +18,7 @@ var (
 	_ store.VersionedStore = (*Store)(nil)
 	_ store.FaultStore     = (*Store)(nil)
 	_ store.ScenarioStore  = (*Store)(nil)
+	_ store.EventRuleStore = (*Store)(nil)
 )
 
 const (
@@ -25,6 +26,7 @@ const (
 	colSims        = "simulations"
 	colFaults      = "fault_profiles"
 	colScenarios   = "scenarios"
+	colEventRules  = "event_rules"
 	connectTimeout = 10 * time.Second
 	// versionDocID is the reserved rules-collection _id holding the config-version
 	// marker; excluded from GetRules.
@@ -57,12 +59,13 @@ type scenarioDoc struct {
 
 // Store is a DataStore backed by MongoDB.
 type Store struct {
-	client    *mongo.Client
-	dbName    string
-	rules     *mongo.Collection
-	sims      *mongo.Collection
-	faults    *mongo.Collection
-	scenarios *mongo.Collection
+	client     *mongo.Client
+	dbName     string
+	rules      *mongo.Collection
+	sims       *mongo.Collection
+	faults     *mongo.Collection
+	scenarios  *mongo.Collection
+	eventRules *mongo.Collection
 }
 
 // NewStore creates a Store connected to the given MongoDB URI and database.
@@ -85,12 +88,13 @@ func NewStore(uri, dbName string) (*Store, error) {
 func NewStoreFromClient(client *mongo.Client, dbName string) *Store {
 	db := client.Database(dbName)
 	return &Store{
-		client:    client,
-		dbName:    dbName,
-		rules:     db.Collection(colRules),
-		sims:      db.Collection(colSims),
-		faults:    db.Collection(colFaults),
-		scenarios: db.Collection(colScenarios),
+		client:     client,
+		dbName:     dbName,
+		rules:      db.Collection(colRules),
+		sims:       db.Collection(colSims),
+		faults:     db.Collection(colFaults),
+		scenarios:  db.Collection(colScenarios),
+		eventRules: db.Collection(colEventRules),
 	}
 }
 
