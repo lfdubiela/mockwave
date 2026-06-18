@@ -370,3 +370,32 @@ func TestEventCapturesList(t *testing.T) {
 		t.Fatalf("page = %+v", page)
 	}
 }
+
+func TestEventCaptureListBodyAndAttrFilter(t *testing.T) {
+	buf := matched.NewBuffer(100)
+	buf.Add(matched.Request{ID: "2", RuleID: "orders", At: time.Now(), Protocol: "aws-sns",
+		Query: map[string]string{"attr.tenant": "acme"}, RequestBodyID: "2"},
+		[]byte(`{"correlation_id":"abc"}`), nil)
+	buf.Add(matched.Request{ID: "1", RuleID: "orders", At: time.Now(), Protocol: "aws-sns",
+		Query: map[string]string{"attr.tenant": "other"}, RequestBodyID: "1"},
+		[]byte(`{"correlation_id":"xyz"}`), nil)
+	api := &adminAPI{eventCaptureBuf: buf}
+
+	get := func(qs string) matched.Page {
+		rec := httptest.NewRecorder()
+		api.eventCaptures(rec, httptest.NewRequest("GET", "/api/event-captures/orders?"+qs, nil))
+		var p matched.Page
+		_ = json.NewDecoder(rec.Body).Decode(&p)
+		return p
+	}
+
+	if p := get("body=$.correlation_id:abc"); len(p.Items) != 1 || p.Items[0].ID != "2" {
+		t.Fatalf("body filter = %+v", p.Items)
+	}
+	if p := get("attr=tenant:acme"); len(p.Items) != 1 || p.Items[0].ID != "2" {
+		t.Fatalf("attr filter = %+v", p.Items)
+	}
+	if p := get("attr=tenant:acme&body=$.correlation_id:xyz"); len(p.Items) != 0 {
+		t.Fatalf("combined should be empty: %+v", p.Items)
+	}
+}
