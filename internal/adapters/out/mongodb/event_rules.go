@@ -19,7 +19,7 @@ type eventRuleDoc struct {
 // empty cursor (no error), so deployments without event rules start cleanly.
 func (s *Store) GetEventRules() ([]domain.EventRule, error) {
 	ctx := context.Background()
-	cur, err := s.eventRules.Find(ctx, bson.D{})
+	cur, err := s.eventRules.Find(ctx, bson.D{{Key: "_id", Value: bson.D{{Key: "$ne", Value: versionDocID}}}})
 	if err != nil {
 		return nil, fmt.Errorf("mongodb: find event rules: %w", err)
 	}
