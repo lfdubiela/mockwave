@@ -151,6 +151,17 @@ func (a *adminAPI) exportHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	// Auto-collect all event rules. EventRules are independent top-level
+	// entities (not filtered by exported rule set) analogous to scenarios.
+	// Stores without the EventRuleStore capability hold no event rules.
+	if ers, ok := a.store.(store.EventRuleStore); ok {
+		eventRules, err := ers.GetEventRules()
+		if err != nil {
+			writeError(w, 500, err.Error())
+			return
+		}
+		cfg.EventRules = eventRules
+	}
 	if cfg.Rules == nil {
 		cfg.Rules = []domain.Rule{}
 	}
@@ -208,6 +219,40 @@ func scenarioParty(s domain.Scenario) conflictParty {
 		name = s.ID
 	}
 	return conflictParty{ID: s.ID, Name: name}
+}
+
+func eventRuleParty(e domain.EventRule) conflictParty {
+	name := e.Name
+	if name == "" {
+		name = e.ID
+	}
+	return conflictParty{ID: e.ID, Name: name}
+}
+
+// detectEventRuleConflicts lists incoming event rules whose ID already exists
+// in the store. Uses a list-and-map approach because EventRuleStore provides
+// GetEventRules (bulk) rather than a per-id getter. On commit rules are
+// upserted, so these conflicts are informational (mirrors detectScenarioConflicts).
+func (a *adminAPI) detectEventRuleConflicts(cfg domain.Config) ([]importConflict, error) {
+	ers, ok := a.store.(store.EventRuleStore)
+	if !ok {
+		return nil, nil
+	}
+	existing, err := ers.GetEventRules()
+	if err != nil {
+		return nil, err
+	}
+	byID := make(map[string]domain.EventRule, len(existing))
+	for _, e := range existing {
+		byID[e.ID] = e
+	}
+	var out []importConflict
+	for _, in := range cfg.EventRules {
+		if ex, ok := byID[in.ID]; ok {
+			out = append(out, importConflict{Reason: "id", Incoming: eventRuleParty(in), Existing: eventRuleParty(ex)})
+		}
+	}
+	return out, nil
 }
 
 // detectScenarioConflicts lists incoming scenarios whose ID already exists in
@@ -331,6 +376,21 @@ func (a *adminAPI) validateImportPayload(cfg domain.Config) (string, error) {
 		return "", err
 	} else if msg != "" {
 		return msg, nil
+	}
+	if len(cfg.EventRules) > 0 {
+		if _, ok := a.store.(store.EventRuleStore); !ok {
+			return "payload contains event rules but the store does not support them", nil
+		}
+		seenEventRuleIDs := make(map[string]bool, len(cfg.EventRules))
+		for _, er := range cfg.EventRules {
+			if err := er.Validate(); err != nil {
+				return fmt.Sprintf("event rule %q: %v", er.ID, err), nil
+			}
+			if seenEventRuleIDs[er.ID] {
+				return fmt.Sprintf("payload contains duplicate event rule id %q", er.ID), nil
+			}
+			seenEventRuleIDs[er.ID] = true
+		}
 	}
 	return "", nil
 }
@@ -569,11 +629,27 @@ func (a *adminAPI) importHandler(w http.ResponseWriter, r *http.Request) {
 			scenariosImported = append(scenariosImported, sc.ID)
 		}
 	}
+	// Upsert ALL payload event rules. They are independent top-level entities;
+	// validateImportPayload guaranteed the EventRuleStore capability whenever
+	// the payload carries event rules.
+	var eventRulesImported []string
+	if len(cfg.EventRules) > 0 {
+		ers, _ := a.store.(store.EventRuleStore)
+		for _, er := range cfg.EventRules {
+			if err := ers.SaveEventRule(er); err != nil {
+				writeError(w, 500, err.Error())
+				return
+			}
+			wrote = true
+			eventRulesImported = append(eventRulesImported, er.ID)
+		}
+	}
 	writeJSON(w, 200, map[string]interface{}{
-		"imported":           imported,
-		"skipped":            skipped,
-		"overridden":         overridden,
-		"scenarios_imported": scenariosImported,
+		"imported":             imported,
+		"skipped":              skipped,
+		"overridden":           overridden,
+		"scenarios_imported":   scenariosImported,
+		"event_rules_imported": eventRulesImported,
 	})
 }
 
@@ -603,10 +679,19 @@ func (a *adminAPI) importPreviewHandler(w http.ResponseWriter, r *http.Request) 
 	if scenarioConflicts == nil {
 		scenarioConflicts = []importConflict{}
 	}
+	eventRuleConflicts, err := a.detectEventRuleConflicts(cfg)
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	if eventRuleConflicts == nil {
+		eventRuleConflicts = []importConflict{}
+	}
 	writeJSON(w, 200, map[string]interface{}{
 		"importable":              len(cfg.Rules) - len(conflicts),
 		"conflicts":               conflicts,
 		"fault_profile_conflicts": profileConflicts,
 		"scenario_conflicts":      scenarioConflicts,
+		"event_rule_conflicts":    eventRuleConflicts,
 	})
 }
