@@ -10,14 +10,18 @@ publisher identity.
 
 Capture is **opt-in** (default off, zero overhead when disabled).
 
-Phases 1 and 2 cover SNS, SQS, and EventBridge. Re-signed forward and persistence
-are on the [roadmap](roadmap.md).
+Phases 1 and 2 cover SNS, SQS, and EventBridge interception with synthesized
+responses. Phase 3 adds optional **re-signed forwarding**: a matched rule with a
+`forward` block re-emits the event to the real broker via the AWS SDK, relays
+the broker's real id to the app, and records the outcome in the capture. Capture
+persistence is on the [roadmap](roadmap.md).
 
 - [Why this exists](#why-this-exists)
 - [Pointing your AWS SDK at Mockwave](#pointing-your-aws-sdk-at-mockwave)
 - [Enabling event capture](#enabling-event-capture)
 - [Config — event\_rules](#config--event_rules)
 - [EventMatch fields](#eventmatch-fields)
+- [Forwarding](#forwarding)
 - [Service-specific behaviour](#service-specific-behaviour)
   - [SNS](#sns)
   - [SQS](#sqs)
@@ -164,9 +168,99 @@ SDK is never blocked.
 | `attributes` | no | Map of message attribute key → expected value. Exact match; all specified attributes must be present. |
 | `message` | no | Map of JSONPath expression → expected scalar value, applied to the published message body. Reuses the same JSONPath matcher as HTTP rule body matching. |
 
-The `forward` field on an event rule (sibling of `match`) is reserved for a
-later phase (re-signed forward to the real broker). Omit it or leave it null;
-Mockwave will synthesize a valid response in its place.
+The `forward` field on an event rule (sibling of `match`) is optional. When
+present, Mockwave re-emits the event to the real broker instead of synthesizing
+a response — see [Forwarding](#forwarding) below. Omit it or leave it null to
+receive a synthesized response.
+
+---
+
+## Forwarding
+
+An event rule may carry an optional `forward` block (sibling of `match`). When
+Mockwave matches an event to such a rule, it re-emits the event to the real
+broker via `aws-sdk-go-v2`, relays the broker's real message / event id to the
+app in the synthesized response, and records the outcome in the capture
+(`forwarded: true`, `forward_target`, and the response status).
+
+### Why re-signing is required
+
+The app's outgoing SigV4 signature is bound to the exact `host` header it sent
+(i.e. Mockwave's address). The AWS signature algorithm commits to the host in
+the canonical request, and the app's secret key never travels over the wire —
+only the HMAC'd signature does. Replaying the intercepted request verbatim
+against a real AWS endpoint would yield a 403 because the `host` header would
+not match the signature. Mockwave therefore signs the forwarded request from
+scratch using its own configured credential.
+
+### Forward block fields
+
+| Field | Default | Description |
+|---|---|---|
+| `endpoint` | `""` | Real broker endpoint URL. Empty uses the AWS SDK default for the region. |
+| `region` | `us-east-1` | AWS region used for endpoint selection and request signing. |
+| `credential` | `""` | Credential reference (see below). |
+| `delay_ms` | `0` | Extra latency injected after the forward call returns (additive; runs even on error). |
+
+### Credential references
+
+| Value | Resolution |
+|---|---|
+| `""` or `"default"` | AWS SDK default credential chain (env vars, EC2/ECS metadata, shared credentials file, etc.). |
+| `"profile:<name>"` | Named profile from the shared AWS config / credentials file. |
+| `"static:<name>"` | Environment variables `MOCKWAVE_AWS_STATIC_<NAME>_KEY`, `MOCKWAVE_AWS_STATIC_<NAME>_SECRET`, and optionally `MOCKWAVE_AWS_STATIC_<NAME>_TOKEN`, where `<NAME>` is the profile name upper-cased. |
+
+### Example — forwarding to real SNS
+
+```json
+{
+  "event_rules": [
+    {
+      "id": "orders",
+      "match": { "service": "sns" },
+      "forward": {
+        "endpoint": "https://sns.us-east-1.amazonaws.com",
+        "region": "us-east-1",
+        "credential": "static:prod"
+      }
+    }
+  ]
+}
+```
+
+With `credential: "static:prod"`, Mockwave reads
+`MOCKWAVE_AWS_STATIC_PROD_KEY` and `MOCKWAVE_AWS_STATIC_PROD_SECRET` from the
+environment.
+
+### Forwarding semantics
+
+- **Forward failure → HTTP 502.** If the real broker rejects the call (network
+  error, invalid credentials, throttled, etc.) Mockwave returns HTTP 502 to the
+  app. A synthesized success is never returned on a forward error.
+- **Broker id relayed.** On success, Mockwave uses the broker's real
+  `MessageId` / `EventId` in the response it returns to the app (instead of a
+  generated id).
+- **Capture always recorded.** Regardless of success or failure, the event is
+  captured with `forwarded: true`, `forward_target` (endpoint or `aws:<region>`
+  when no explicit endpoint is set), and the HTTP status that was returned (200
+  or 502).
+- **`delay_ms` is additive.** The delay is injected after the forward call
+  returns (total observed latency ≈ upstream RTT + `delay_ms`). It runs even
+  when the forward call failed.
+- **FIFO pass-through.** `MessageGroupId` and `MessageDeduplicationId` are
+  forwarded to SNS and SQS as-is when present.
+
+### Known limitations (v1)
+
+- **Message attributes are forwarded as `String` type only.** The normalized
+  `Event` model does not retain the original data type of each attribute;
+  Number and Binary attributes are deferred to a future roadmap item.
+- **EventBridge per-entry partial failure is not modeled.** `PutEvents` accepts
+  a batch of entries, and individual entries can fail independently. Mockwave
+  treats any per-entry error as a full-request failure and returns 502.
+- **SQS FIFO `SequenceNumber` is not relayed.** The real broker assigns a
+  `SequenceNumber` to FIFO messages; Mockwave does not surface it in the
+  response.
 
 ---
 
@@ -402,7 +496,7 @@ resp, err := http.Get("http://localhost:9090/api/event-captures/order-placed-sns
 
 ## Limitations and roadmap
 
-**Phases 1 and 2 ship:**
+**Shipped (Phases 1 – 3):**
 
 - SNS `Publish` interception and synthesized `PublishResponse` (valid XML, with
   a generated `MessageId` the SDK accepts).
@@ -412,17 +506,15 @@ resp, err := http.Get("http://localhost:9090/api/event-captures/order-placed-sns
   separately, synthesized response with one `EventId` per entry.
 - In-memory capture, paginated query, and identity recording (publisher access
   key ID) for all three services.
+- Re-signed forward via `aws-sdk-go-v2` with `default` / `profile:` / `static:`
+  credential resolution; real broker id relayed to the app; forward outcome
+  captured with `forwarded`, `forward_target`, and response status.
 
 **Known constraints:**
 
 - **In-memory capture only.** Event captures are held in the ring buffer; they
   do not survive a restart and are not written to the configured store backend.
   Persistence is on the roadmap (Phase 4).
-- **No forward.** The `forward` field on an event rule is reserved but not yet
-  active. Forward requires Mockwave to re-sign the request with its own AWS
-  credentials — it cannot reuse the app's SigV4 token verbatim because the
-  signature commits to the `host` header and that host is Mockwave, not the
-  real AWS endpoint. Re-signed forward is on the roadmap (Phase 3).
 - **No batch variants.** `PublishBatch` (SNS) and `SendMessageBatch` (SQS) are
   not yet supported. (`PutEvents` is natively batch and is complete.)
 - **No consumer side.** SQS `ReceiveMessage` polling and SNS HTTP subscription
@@ -430,6 +522,12 @@ resp, err := http.Get("http://localhost:9090/api/event-captures/order-placed-sns
 - **No fault injection.** Simulating broker errors (throttling, `AccessDenied`)
   on intercepted publishes is deferred.
 - **No weighted buckets.** Traffic splitting per event rule is deferred.
+- **Forward: `String`-type attributes only.** Number and Binary message
+  attribute types are not preserved on forward (deferred).
+- **Forward: EventBridge per-entry partial failure not modeled.** Any entry
+  error fails the whole request with 502 (deferred).
+- **Forward: SQS FIFO `SequenceNumber` not relayed.** The broker-assigned
+  sequence number is not surfaced in the response (deferred).
 
 See [`docs/roadmap.md`](roadmap.md) for the full list of deferred items
 including batch ops, consumer-side polling, non-Go SDK fixtures, and GCP/Azure

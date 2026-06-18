@@ -1,9 +1,11 @@
 package awsmsg
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
@@ -21,17 +23,22 @@ func (f fakeMatcher) Match(ev domain.Event) *domain.EventRule {
 	return &domain.EventRule{ID: f.id}
 }
 
+type matcherFunc func(domain.Event) *domain.EventRule
+
+func (m matcherFunc) Match(ev domain.Event) *domain.EventRule { return m(ev) }
+
 func TestHandlerSNS(t *testing.T) {
 	var captured *domain.Event
 	var capturedRule, capturedMsgID string
 	h := NewHandler(
 		func() Matcher { return fakeMatcher{id: "orders"} },
-		func(ev domain.Event, ruleID, messageID string) {
-			captured = &ev
-			capturedRule = ruleID
-			capturedMsgID = messageID
+		func(c Capture) {
+			captured = &c.Event
+			capturedRule = c.RuleID
+			capturedMsgID = c.MessageID
 		},
 		func() string { return "fixed-id" },
+		nil,
 	)
 
 	form := url.Values{}
@@ -63,8 +70,9 @@ func TestHandlerUnmatchedStillResponds(t *testing.T) {
 	captureCalled := false
 	h := NewHandler(
 		func() Matcher { return fakeMatcher{id: ""} }, // no match
-		func(domain.Event, string, string) { captureCalled = true },
+		func(c Capture) { captureCalled = true },
 		func() string { return "x" },
+		nil,
 	)
 	form := url.Values{"Action": {"Publish"}, "TopicArn": {"arn:aws:sns:::t"}, "Message": {"{}"}}
 	r := httptest.NewRequest("POST", "http://mock/", strings.NewReader(form.Encode()))
@@ -79,7 +87,7 @@ func TestHandlerUnmatchedStillResponds(t *testing.T) {
 }
 
 func TestHandlerUnsupportedService(t *testing.T) {
-	h := NewHandler(func() Matcher { return fakeMatcher{} }, func(domain.Event, string, string) {}, func() string { return "x" })
+	h := NewHandler(func() Matcher { return fakeMatcher{} }, func(c Capture) {}, func() string { return "x" }, nil)
 	r := httptest.NewRequest("POST", "http://mock/", strings.NewReader(""))
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, r, DetectResult{Service: "kinesis"})
@@ -93,7 +101,7 @@ type errReader struct{}
 func (errReader) Read([]byte) (int, error) { return 0, fmt.Errorf("boom") }
 
 func TestHandlerBodyReadError(t *testing.T) {
-	h := NewHandler(func() Matcher { return fakeMatcher{} }, func(domain.Event, string, string) {}, func() string { return "x" })
+	h := NewHandler(func() Matcher { return fakeMatcher{} }, func(c Capture) {}, func() string { return "x" }, nil)
 	r := httptest.NewRequest("POST", "http://mock/", io.NopCloser(errReader{}))
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, r, DetectResult{Service: domain.EventServiceSNS})
@@ -107,8 +115,9 @@ func TestHandlerSQS(t *testing.T) {
 	var capturedRule string
 	h := NewHandler(
 		func() Matcher { return fakeMatcher{id: "orders"} },
-		func(ev domain.Event, ruleID, messageID string) { captured = &ev; capturedRule = ruleID },
+		func(c Capture) { captured = &c.Event; capturedRule = c.RuleID },
 		func() string { return "msg-7" },
+		nil,
 	)
 	body := `{"QueueUrl":"https://sqs/q/orders","MessageBody":"hello","MessageAttributes":{"env":{"DataType":"String","StringValue":"prod"}}}`
 	r := httptest.NewRequest("POST", "http://mock/", strings.NewReader(body))
@@ -143,8 +152,9 @@ func TestHandlerEventBridge(t *testing.T) {
 	next := 0
 	h := NewHandler(
 		func() Matcher { return fakeMatcher{id: "ev"} },
-		func(domain.Event, string, string) { captures++ },
+		func(c Capture) { captures++ },
 		func() string { id := ids[next%len(ids)]; next++; return id },
+		nil,
 	)
 	body := `{"Entries":[{"Source":"s","DetailType":"A","Detail":"{}"},{"Source":"s","DetailType":"B","Detail":"{}"}]}`
 	r := httptest.NewRequest("POST", "http://mock/", strings.NewReader(body))
@@ -167,5 +177,67 @@ func TestHandlerEventBridge(t *testing.T) {
 	}
 	if captures != 2 {
 		t.Fatalf("expected 2 captures, got %d", captures)
+	}
+}
+
+type fakeForwarder struct {
+	id  string
+	err error
+	got domain.Event
+}
+
+func (f *fakeForwarder) Forward(_ context.Context, ev domain.Event, _ domain.EventForward) (string, error) {
+	f.got = ev
+	return f.id, f.err
+}
+
+func TestHandlerSNSForward(t *testing.T) {
+	var cap Capture
+	ff := &fakeForwarder{id: "real-id"}
+	h := NewHandler(
+		func() Matcher {
+			return matcherFunc(func(ev domain.Event) *domain.EventRule {
+				return &domain.EventRule{ID: "orders", Forward: &domain.EventForward{Endpoint: "https://real", Region: "us-east-1"}}
+			})
+		},
+		func(c Capture) { cap = c },
+		func() string { return "synthetic" },
+		ff,
+	)
+	r := httptest.NewRequest("POST", "http://mock/", strings.NewReader("Action=Publish&TopicArn=arn:t&Message=hi"))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, r, DetectResult{Service: domain.EventServiceSNS})
+
+	if rec.Code != 200 {
+		t.Fatalf("code = %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "<MessageId>real-id</MessageId>") {
+		t.Fatalf("expected relayed real id, body=%s", rec.Body.String())
+	}
+	if ff.got.Target != "arn:t" {
+		t.Fatalf("forwarder got wrong event: %+v", ff.got)
+	}
+	if !cap.Forwarded || cap.ForwardTarget != "https://real" || cap.MessageID != "real-id" {
+		t.Fatalf("capture = %+v", cap)
+	}
+}
+
+func TestHandlerSNSForwardError(t *testing.T) {
+	ff := &fakeForwarder{err: fmt.Errorf("upstream down")}
+	h := NewHandler(
+		func() Matcher {
+			return matcherFunc(func(ev domain.Event) *domain.EventRule {
+				return &domain.EventRule{ID: "orders", Forward: &domain.EventForward{Region: "us-east-1"}}
+			})
+		},
+		func(c Capture) {},
+		func() string { return "x" },
+		ff,
+	)
+	r := httptest.NewRequest("POST", "http://mock/", strings.NewReader("Action=Publish&TopicArn=arn:t&Message=hi"))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, r, DetectResult{Service: domain.EventServiceSNS})
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("forward error must be 502, got %d", rec.Code)
 	}
 }

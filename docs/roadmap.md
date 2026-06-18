@@ -4,12 +4,14 @@ Planned-but-not-yet-built work. Items land here when a shipped feature deliberat
 
 ## Outgoing event interception (AWS)
 
-Shipped (Phases 1 + 2): SNS `Publish`, SQS `SendMessage` (JSON protocol, faithful MD5 checksums), and EventBridge `PutEvents` (JSON, batch — each entry captured separately) interception, in-memory capture, protocol-faithful synthesized responses, and identity recording. Design: [`docs/specs/2026-06-17-aws-event-interception-design.md`](specs/2026-06-17-aws-event-interception-design.md).
+Shipped (Phases 1 – 3): SNS `Publish`, SQS `SendMessage` (JSON protocol, faithful MD5 checksums), and EventBridge `PutEvents` (JSON, batch — each entry captured separately) interception, in-memory capture, protocol-faithful synthesized responses, identity recording, and optional re-signed forward via `aws-sdk-go-v2` (`default`/`profile:`/`static:` credential resolution, real broker id relayed, forward outcome captured). Design: [`docs/specs/2026-06-17-aws-event-interception-design.md`](specs/2026-06-17-aws-event-interception-design.md). Phase 3 plan: [`docs/plans/2026-06-17-aws-event-interception-phase3-plan.md`](plans/2026-06-17-aws-event-interception-phase3-plan.md).
 
 Deferred:
 
-- **Re-signed forward (Phase 3)** — optional forwarding to the real broker, re-signing with Mockwave's own AWS credentials. Deferred because the SigV4 signature commits to the `host` header; verbatim replay is not possible.
 - **Capture persistence (Phase 4)** — `EventRuleStore` + event-capture storage on DynamoDB / MongoDB / Cosmos with native TTL and restart hydration. Currently in-memory only.
+- **Forward: Number/Binary message attribute types** — forwarded attributes are sent as `String` only; the original data type is not preserved.
+- **Forward: EventBridge per-entry partial failure** — any entry error in `PutEvents` fails the whole request with 502; per-entry partial-failure fidelity is not modeled.
+- **Forward: SQS FIFO `SequenceNumber` relay** — the broker-assigned sequence number is not surfaced in the forwarded response.
 - **GCP Pub/Sub & Azure Service Bus** — additional brokers. The credential resolver already leaves a hook for verbatim bearer-token passthrough (OAuth2 / SAS), which — unlike AWS SigV4 — can reuse the app's original token on forward.
 - **Batch publish ops** — `PublishBatch` (SNS), `SendMessageBatch` (SQS). (`PutEvents` is natively batch and already shipped.)
 - **Consumer side** — SQS `ReceiveMessage` polling and SNS HTTP subscription delivery. Shipped phases cover only the outgoing/publish side.
