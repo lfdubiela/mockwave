@@ -51,6 +51,52 @@ Available MCP tools:
     delete_simulation   Delete a simulation
     generate_from_openapi  Generate rules + simulations from an OpenAPI 2.0/3.0 spec
 
+  Event Rules
+    list_event_rules    List all event rules
+    get_event_rule      Get an event rule by ID
+    create_event_rule   Create a new event rule
+    update_event_rule   Replace an existing event rule
+    delete_event_rule   Delete an event rule
+
+  Event Captures
+    list_event_captures  List captured events for a rule (supports body/attr/query filters)
+    get_event_capture    Get the full detail of a single captured event (including bodies)
+    clear_event_captures Delete all captured events for a rule
+
+  Matched Requests
+    list_matched         List matched HTTP requests for a rule (supports body/query filters)
+    get_matched          Get the full detail of a single matched HTTP request (including bodies)
+    clear_matched        Delete all matched HTTP requests for a rule
+
+  Fault Profiles (Chaos)
+    list_faults         List all fault profiles
+    get_fault           Get a fault profile by ID
+    create_fault        Create a new fault profile (types: jitter/error/hang/reset/halfResponse/slowBody/retryStorm)
+    update_fault        Replace an existing fault profile
+    delete_fault        Delete a fault profile
+
+  Chaos Control
+    halt_chaos          Pause all active chaos faults immediately (kill-switch)
+    resume_chaos        Resume chaos fault injection after a halt
+    get_chaos_status    Get current chaos state: halted flag and active-scenario name
+
+  Scenarios
+    list_scenarios      List all chaos scenarios
+    get_scenario        Get a chaos scenario by ID
+    create_scenario     Create a new chaos scenario
+    update_scenario     Replace an existing chaos scenario
+    delete_scenario     Delete a chaos scenario
+    start_scenario      Start a chaos scenario (applies fault phases to targeted rules)
+    stop_scenario       Stop a running chaos scenario (restores normal rule behavior)
+
+  Config Import/Export
+    export_config       Export the full Mockwave config (rules, simulations, fault profiles, scenarios) as JSON
+    import_config       Bulk-import a config; use preview:true for a dry-run conflict report
+
+  Dev / Debugging
+    eval_script         Evaluate a JS simulation script against a sample request to test computed responses
+    get_metrics_history Get the rolling metrics history (recent traffic time-series)
+
   Observability
     get_metrics         Traffic metrics snapshot (requests, hits, p95 latency)
     list_unmatched      Requests that matched no rule

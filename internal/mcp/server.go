@@ -119,6 +119,30 @@ func NewServer(adminURL, version string) *server.MCPServer {
 		handleHealth(c),
 	)
 
+	// Event rules
+	registerEventRuleTools(s, c)
+
+	// Event captures
+	registerEventCaptureTools(s, c)
+
+	// Matched HTTP captures
+	registerMatchedTools(s, c)
+
+	// Fault profiles (Chaos)
+	registerFaultTools(s, c)
+
+	// Chaos control (halt/resume/status)
+	registerChaosControlTools(s, c)
+
+	// Scenarios (chaos test orchestration)
+	registerScenarioTools(s, c)
+
+	// Config import/export
+	registerTransferTools(s, c)
+
+	// Dev / Debugging
+	registerDevTools(s, c)
+
 	// OpenAPI import
 	s.AddTool(
 		mcpsdk.NewTool("generate_from_openapi",
