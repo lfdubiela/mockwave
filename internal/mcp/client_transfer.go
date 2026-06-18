@@ -4,7 +4,7 @@ import "github.com/mockwave/mockwave/domain"
 
 // ExportConfig fetches the full config from GET /api/export.
 // The response is the domain.Config struct (rules, simulations, fault_profiles,
-// scenarios, event_rules).
+// scenarios).
 func (c *Client) ExportConfig() (*domain.Config, error) {
 	var out domain.Config
 	return &out, c.get("/api/export", &out)

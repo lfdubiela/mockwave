@@ -49,7 +49,7 @@ func handleImportConfig(c *Client) func(context.Context, mcpsdk.CallToolRequest)
 func registerTransferTools(s *server.MCPServer, c *Client) {
 	s.AddTool(
 		mcpsdk.NewTool("export_config",
-			mcpsdk.WithDescription("Export the full Mockwave config (rules, simulations, fault profiles, scenarios, event rules) as JSON"),
+			mcpsdk.WithDescription("Export the full Mockwave config (rules, simulations, fault profiles, scenarios) as JSON"),
 		),
 		handleExportConfig(c),
 	)
