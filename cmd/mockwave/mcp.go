@@ -68,6 +68,13 @@ Available MCP tools:
     get_matched          Get the full detail of a single matched HTTP request (including bodies)
     clear_matched        Delete all matched HTTP requests for a rule
 
+  Fault Profiles (Chaos)
+    list_faults         List all fault profiles
+    get_fault           Get a fault profile by ID
+    create_fault        Create a new fault profile (types: jitter/error/hang/reset/halfResponse/slowBody/retryStorm)
+    update_fault        Replace an existing fault profile
+    delete_fault        Delete a fault profile
+
   Observability
     get_metrics         Traffic metrics snapshot (requests, hits, p95 latency)
     list_unmatched      Requests that matched no rule

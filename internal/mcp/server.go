@@ -128,6 +128,9 @@ func NewServer(adminURL, version string) *server.MCPServer {
 	// Matched HTTP captures
 	registerMatchedTools(s, c)
 
+	// Fault profiles (Chaos)
+	registerFaultTools(s, c)
+
 	// OpenAPI import
 	s.AddTool(
 		mcpsdk.NewTool("generate_from_openapi",
