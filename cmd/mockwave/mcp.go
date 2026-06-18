@@ -93,6 +93,10 @@ Available MCP tools:
     export_config       Export the full Mockwave config (rules, simulations, fault profiles, scenarios, event rules) as JSON
     import_config       Bulk-import a config; use preview:true for a dry-run conflict report
 
+  Dev / Debugging
+    eval_script         Evaluate a JS simulation script against a sample request to test computed responses
+    get_metrics_history Get the rolling metrics history (recent traffic time-series)
+
   Observability
     get_metrics         Traffic metrics snapshot (requests, hits, p95 latency)
     list_unmatched      Requests that matched no rule

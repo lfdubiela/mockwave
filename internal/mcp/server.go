@@ -140,6 +140,9 @@ func NewServer(adminURL, version string) *server.MCPServer {
 	// Config import/export
 	registerTransferTools(s, c)
 
+	// Dev / Debugging
+	registerDevTools(s, c)
+
 	// OpenAPI import
 	s.AddTool(
 		mcpsdk.NewTool("generate_from_openapi",
