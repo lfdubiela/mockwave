@@ -381,6 +381,15 @@ When event capture is disabled (`--event-capture` not set), all
 
 The admin port is `:9090` in all examples below.
 
+> **Manage via MCP:** Event rules and captures are also accessible through the
+> `mockwave mcp` server. Claude Code can create event rules, query captures
+> (including body, attribute, and query filters), and clear captures without
+> touching the admin API directly. See the
+> [AI Integration (MCP)](../README.md#ai-integration-mcp) section of the README
+> for available tools (`list_event_rules`, `create_event_rule`,
+> `list_event_captures`, `get_event_capture`, `clear_event_captures`) and
+> example prompts.
+
 ### Event rules
 
 | Method | Path | Description |

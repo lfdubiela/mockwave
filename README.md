@@ -484,6 +484,8 @@ Multiple instances are supported — Claude Code namespaces the tools automatica
 
 ### Available tools
 
+**Rules**
+
 | Tool | Description |
 |------|-------------|
 | `list_rules` | List all rules |
@@ -491,12 +493,92 @@ Multiple instances are supported — Claude Code namespaces the tools automatica
 | `create_rule` | Create a new rule |
 | `update_rule` | Replace a rule |
 | `delete_rule` | Delete a rule |
+
+**Simulations**
+
+| Tool | Description |
+|------|-------------|
 | `list_simulations` | List all simulations |
 | `get_simulation` | Get a simulation by ID |
 | `create_simulation` | Create a new simulation |
 | `update_simulation` | Replace a simulation |
 | `delete_simulation` | Delete a simulation |
 | `generate_from_openapi` | Auto-generate rules + simulations from an OpenAPI 2.0/3.0 spec (URL or file) |
+
+**Event Rules**
+
+| Tool | Description |
+|------|-------------|
+| `list_event_rules` | List all event rules |
+| `get_event_rule` | Get an event rule by ID |
+| `create_event_rule` | Create a new event rule |
+| `update_event_rule` | Replace an existing event rule |
+| `delete_event_rule` | Delete an event rule |
+
+**Event Captures**
+
+| Tool | Description |
+|------|-------------|
+| `list_event_captures` | List captured events for a rule (supports body/attr/query filters) |
+| `get_event_capture` | Get the full detail of a single captured event (including bodies) |
+| `clear_event_captures` | Delete all captured events for a rule |
+
+**Matched (HTTP) Requests**
+
+| Tool | Description |
+|------|-------------|
+| `list_matched` | List matched HTTP requests for a rule (supports body/query filters) |
+| `get_matched` | Get the full detail of a single matched HTTP request (including bodies) |
+| `clear_matched` | Delete all matched HTTP requests for a rule |
+
+**Fault Profiles (Chaos)**
+
+| Tool | Description |
+|------|-------------|
+| `list_faults` | List all fault profiles |
+| `get_fault` | Get a fault profile by ID |
+| `create_fault` | Create a new fault profile (types: jitter/error/hang/reset/halfResponse/slowBody/retryStorm) |
+| `update_fault` | Replace an existing fault profile |
+| `delete_fault` | Delete a fault profile |
+
+**Chaos Control**
+
+| Tool | Description |
+|------|-------------|
+| `halt_chaos` | Pause all active chaos faults immediately (kill-switch) |
+| `resume_chaos` | Resume chaos fault injection after a halt |
+| `get_chaos_status` | Get current chaos state: halted flag and active-scenario name |
+
+**Scenarios**
+
+| Tool | Description |
+|------|-------------|
+| `list_scenarios` | List all chaos scenarios |
+| `get_scenario` | Get a chaos scenario by ID |
+| `create_scenario` | Create a new chaos scenario |
+| `update_scenario` | Replace an existing chaos scenario |
+| `delete_scenario` | Delete a chaos scenario |
+| `start_scenario` | Start a chaos scenario (applies fault phases to targeted rules) |
+| `stop_scenario` | Stop a running chaos scenario (restores normal rule behavior) |
+
+**Config Import/Export**
+
+| Tool | Description |
+|------|-------------|
+| `export_config` | Export the full Mockwave config (rules, simulations, fault profiles, scenarios, event rules) as JSON |
+| `import_config` | Bulk-import a config; use `preview:true` for a dry-run conflict report |
+
+**Dev / Debugging**
+
+| Tool | Description |
+|------|-------------|
+| `eval_script` | Evaluate a JS simulation script against a sample request to test computed responses |
+| `get_metrics_history` | Get the rolling metrics history (recent traffic time-series) |
+
+**Observability**
+
+| Tool | Description |
+|------|-------------|
 | `get_metrics` | Current metrics snapshot |
 | `list_unmatched` | List requests that matched no rule |
 | `clear_unmatched` | Clear the unmatched buffer |
@@ -546,6 +628,49 @@ Claude calls create_simulation with script:
   return { body: { id: id, name: "User " + id } };
 Claude calls create_rule → POST /api/rules
 Claude: "Done. GET /users/42 now returns {"id":"42","name":"User 42"}"
+```
+
+**Intercept and forward SNS publishes to real AWS:**
+```
+You: "Intercept SNS publishes to the orders topic and forward them to real AWS"
+
+Claude calls create_event_rule with match.service=sns, match.target=*:orders,
+  and a forward block pointing at the real SNS endpoint with static credentials.
+Claude: "Event rule created. SNS publishes to *:orders will be captured and
+         re-signed to real AWS. Check captures with list_event_captures."
+```
+
+**Query event captures by correlation ID:**
+```
+You: "What did my app publish with correlation_id abc-123?"
+
+Claude calls list_event_captures with body filter $.correlation_id:abc-123
+Claude: "Found 2 captures for rule 'order-placed-sns':
+         01J8X... — SNS Publish to arn:...:order-placed at 10:00:01Z
+         01J8Y... — SNS Publish to arn:...:order-placed at 10:00:05Z
+         Want me to fetch the full message body for either one?"
+```
+
+**Create and run a chaos scenario:**
+```
+You: "Create a chaos scenario that injects 500 errors on /orders for 30 seconds, then start it"
+
+Claude calls create_fault with type=error, status=500, targeting the /orders rule.
+Claude calls create_scenario with a single phase using that fault, duration=30s.
+Claude calls start_scenario.
+Claude: "Scenario started. /orders will return 500 for the next 30 seconds.
+         Call get_chaos_status to monitor, or halt_chaos to stop immediately."
+```
+
+**Inspect matched HTTP requests sent to a mock:**
+```
+You: "Show me the requests my service sent to the payments mock"
+
+Claude calls list_matched for the payments rule
+Claude: "Last 5 matched requests to rule 'payments':
+         POST /v1/charges  body: {"amount":4999,"currency":"usd"} at 10:01Z
+         POST /v1/charges  body: {"amount":1200,"currency":"usd"} at 10:02Z
+         ..."
 ```
 
 ### Tip — add to CLAUDE.md
