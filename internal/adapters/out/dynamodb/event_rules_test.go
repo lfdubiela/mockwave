@@ -33,6 +33,17 @@ func (m *mockDynamoWithScanErr) Scan(_ context.Context, in *dynamodb.ScanInput, 
 	return &dynamodb.ScanOutput{}, nil
 }
 
+// mockDynamoCountScan wraps mockDynamo to count how many times Scan is invoked.
+type mockDynamoCountScan struct {
+	mockDynamo
+	scanCalls int
+}
+
+func (m *mockDynamoCountScan) Scan(ctx context.Context, in *dynamodb.ScanInput, opts ...func(*dynamodb.Options)) (*dynamodb.ScanOutput, error) {
+	m.scanCalls++
+	return m.mockDynamo.Scan(ctx, in, opts...)
+}
+
 func eventRuleItem(r domain.EventRule) map[string]types.AttributeValue {
 	data, _ := json.Marshal(r)
 	return map[string]types.AttributeValue{
@@ -73,6 +84,19 @@ func TestDynamo_GetEventRules_MissingTableReturnsNil(t *testing.T) {
 	rules, err := s.GetEventRules()
 	require.NoError(t, err, "missing table must not be returned as an error")
 	assert.Nil(t, rules)
+}
+
+func TestDynamo_GetEventRules_EmptyTableReturnsNilWithoutScan(t *testing.T) {
+	client := &mockDynamoCountScan{}
+	// EventRulesTable deliberately left empty: embedders that don't use event
+	// interception build a Config without it.
+	s := dynamostore.NewStoreFromClient(client, dynamostore.Config{
+		RulesTable: "rules", SimsTable: "sims",
+	})
+	rules, err := s.GetEventRules()
+	require.NoError(t, err, "empty event-rules table must not be an error")
+	assert.Nil(t, rules)
+	assert.Zero(t, client.scanCalls, "guard must short-circuit before any Scan")
 }
 
 func TestDynamo_SaveEventRule(t *testing.T) {

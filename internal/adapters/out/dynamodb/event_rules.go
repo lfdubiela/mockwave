@@ -17,6 +17,12 @@ import (
 // event rules configured" (nil, nil) so deployments that don't use event
 // interception start cleanly.
 func (s *Store) GetEventRules() ([]domain.EventRule, error) {
+	// No event-rules table configured → event interception not in use on this
+	// store. Return empty rather than erroring so deployments/embedders that
+	// don't use events still start.
+	if s.eventRulesTable == "" {
+		return nil, nil
+	}
 	out, err := s.client.Scan(context.Background(), &dynamodb.ScanInput{
 		TableName: aws.String(s.eventRulesTable),
 	})
