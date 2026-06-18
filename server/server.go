@@ -236,8 +236,8 @@ func (s *Server) NewProxy() Executor {
 // MatchedBuffer returns the matched-capture buffer, or nil when capture is off.
 func (s *Server) MatchedBuffer() *matched.Buffer { return s.matchedBuf }
 
-// Close releases background resources: broker, reloader, and the matched syncer
-// (with a final flush). Safe to call once.
+// Close releases background resources: broker, reloader, and the matched and
+// event syncers/sweeps (with a final flush). Safe to call once.
 func (s *Server) Close() error {
 	if s.brokerCancel != nil {
 		s.brokerCancel()
