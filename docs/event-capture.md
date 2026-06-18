@@ -299,8 +299,9 @@ a shared store, hydration is best-effort: the server loads the newest records up
 to the buffer limit. The store remains the authoritative source of truth and is
 queryable per-rule at any scale via `GET /api/event-captures/{ruleID}`.
 
-`--store json` does not implement a matched store; event captures stay in-memory
-and are not separately persisted.
+With `--store json`, event rules live in the config file's `event_rules` array,
+but event captures are held only in the in-memory matched store — they are not
+flushed to the config file and do not survive a restart.
 
 ---
 
