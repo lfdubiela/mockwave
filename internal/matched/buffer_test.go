@@ -191,3 +191,35 @@ func TestBuffer_SweepExpired(t *testing.T) {
 	assert.Len(t, b.List("r1", matched.Query{}).Items, 1)
 	assert.Empty(t, b.List("r2", matched.Query{}).Items)
 }
+
+func TestListBodyFilter(t *testing.T) {
+	b := matched.NewBuffer(100)
+	add := func(id, body string) {
+		b.Add(matched.Request{ID: id, RuleID: "r", Protocol: "aws-sns", RequestBodyID: id}, []byte(body), nil)
+	}
+	add("3", `{"correlation_id":"abc","total":42}`)
+	add("2", `{"correlation_id":"xyz","total":7}`)
+	add("1", `not json`)
+
+	page := b.List("r", matched.Query{Body: map[string]string{"$.correlation_id": "abc"}})
+	if len(page.Items) != 1 || page.Items[0].ID != "3" {
+		t.Fatalf("body filter = %+v", page.Items)
+	}
+	if got := b.List("r", matched.Query{Body: map[string]string{"$.correlation_id": "abc", "$.total": "42"}}); len(got.Items) != 1 {
+		t.Fatalf("AND body filter = %+v", got.Items)
+	}
+	if got := b.List("r", matched.Query{Body: map[string]string{"$.correlation_id": "nope"}}); len(got.Items) != 0 {
+		t.Fatalf("mismatch should be empty, got %+v", got.Items)
+	}
+	if got := b.List("r", matched.Query{Body: map[string]string{"$.missing": "x"}}); len(got.Items) != 0 {
+		t.Fatalf("missing path should be empty")
+	}
+}
+
+func TestListBodyFilterNoBody(t *testing.T) {
+	b := matched.NewBuffer(100)
+	b.Add(matched.Request{ID: "1", RuleID: "r", Protocol: "http"}, nil, nil)
+	if got := b.List("r", matched.Query{Body: map[string]string{"$.x": "1"}}); len(got.Items) != 0 {
+		t.Fatalf("no-body request must not match a body filter: %+v", got.Items)
+	}
+}

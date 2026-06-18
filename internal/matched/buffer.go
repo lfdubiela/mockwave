@@ -1,9 +1,12 @@
 package matched
 
 import (
+	"encoding/json"
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/mockwave/mockwave/internal/domain/jsonpath"
 )
 
 // Buffer is a bounded, per-rule, thread-safe store of captured requests plus
@@ -139,12 +142,39 @@ func (b *Buffer) List(ruleID string, q Query) Page {
 		if !q.Matches(r) {
 			continue
 		}
+		if !b.matchesBody(r, q) {
+			continue
+		}
 		out = append(out, r)
 		if len(out) == limit {
 			return Page{Items: out, NextCursor: b.nextCursorLocked(ordered, r.ID, q, now)}
 		}
 	}
 	return Page{Items: out}
+}
+
+// matchesBody reports whether r's request body satisfies every JSONPath filter
+// in q.Body. Empty q.Body always matches. Buffer-only: resolves the out-of-line
+// body from b.reqB; an absent or non-JSON body matches nothing. Call with b.mu held.
+func (b *Buffer) matchesBody(r Request, q Query) bool {
+	if len(q.Body) == 0 {
+		return true
+	}
+	raw := b.reqB[r.RequestBodyID]
+	if raw == nil {
+		return false
+	}
+	var parsed interface{}
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		return false
+	}
+	for expr, want := range q.Body {
+		leaf, ok := jsonpath.Resolve(parsed, expr)
+		if !ok || jsonpath.LeafToString(leaf) != want {
+			return false
+		}
+	}
+	return true
 }
 
 // nextCursorLocked returns a cursor if any non-expired matching entry exists
@@ -158,7 +188,7 @@ func (b *Buffer) nextCursorLocked(ordered []Request, lastID string, q Query, now
 			}
 			continue
 		}
-		if !r.Expired(now) && q.Matches(r) {
+		if !r.Expired(now) && q.Matches(r) && b.matchesBody(r, q) {
 			return EncodeCursor(lastID)
 		}
 	}
