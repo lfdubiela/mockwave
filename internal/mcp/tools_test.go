@@ -586,6 +586,37 @@ paths:
 	assert.True(t, updatedRules["get-items"], "expected get-items rule to be updated")
 }
 
+func TestCaptureFilterArgs(t *testing.T) {
+	req := makeReq("any", map[string]any{
+		"body":   map[string]any{"$.correlation_id": "abc"},
+		"attr":   map[string]any{"tenant": "acme"},
+		"query":  map[string]any{"source": "billing"},
+		"method": "Publish",
+		"limit":  float64(5),
+	})
+	q := mockwavemcp.CaptureFilterArgs(req)
+	if got := q["body"]; len(got) != 1 || got[0] != "$.correlation_id:abc" {
+		t.Fatalf("body = %v", q["body"])
+	}
+	if q.Get("attr") != "tenant:acme" {
+		t.Fatalf("attr = %q", q.Get("attr"))
+	}
+	if q.Get("query") != "source:billing" {
+		t.Fatalf("query = %q", q.Get("query"))
+	}
+	if q.Get("method") != "Publish" {
+		t.Fatalf("method = %q", q.Get("method"))
+	}
+	if q.Get("limit") != "5" {
+		t.Fatalf("limit = %q", q.Get("limit"))
+	}
+	// Absent optional args produce no params.
+	empty := mockwavemcp.CaptureFilterArgs(makeReq("any", map[string]any{}))
+	if len(empty) != 0 {
+		t.Fatalf("empty args should yield no params, got %v", empty)
+	}
+}
+
 func TestHandler_GenerateFromOpenAPI_Overwrite_NewResource(t *testing.T) {
 	specYAML := `
 openapi: "3.0.0"

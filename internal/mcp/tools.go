@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
+	"strconv"
 
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mockwave/mockwave/domain"
@@ -60,6 +62,33 @@ func optStringParam(req mcpsdk.CallToolRequest, name string) string {
 	}
 	s, _ := v.(string)
 	return s
+}
+
+// CaptureFilterArgs reads the optional capture LIST filter arguments into a
+// url.Values. The map-typed args (body/attr/query) become repeated "key:value"
+// params; the scalar args pass through. Absent args produce nothing.
+func CaptureFilterArgs(req mcpsdk.CallToolRequest) url.Values {
+	q := url.Values{}
+	args := req.GetArguments()
+	for _, name := range []string{"body", "attr", "query"} {
+		if m, ok := args[name].(map[string]any); ok {
+			for k, v := range m {
+				q.Add(name, fmt.Sprintf("%s:%v", k, v))
+			}
+		}
+	}
+	for _, name := range []string{"method", "path", "cursor"} {
+		if s := optStringParam(req, name); s != "" {
+			q.Set(name, s)
+		}
+	}
+	if n, ok := args["status"].(float64); ok {
+		q.Set("status", strconv.Itoa(int(n)))
+	}
+	if n, ok := args["limit"].(float64); ok {
+		q.Set("limit", strconv.Itoa(int(n)))
+	}
+	return q
 }
 
 // upsertSimulation creates or (when overwrite=true) replaces a simulation.

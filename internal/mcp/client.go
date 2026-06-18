@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/mockwave/mockwave/domain"
@@ -107,6 +108,15 @@ func (c *Client) get(path string, out any) error {
 		return err
 	}
 	return decode(resp, out)
+}
+
+// GetWithQuery issues a GET to path with the given query params and decodes the
+// JSON response into dst.
+func (c *Client) GetWithQuery(path string, q url.Values, dst any) error {
+	if enc := q.Encode(); enc != "" {
+		path += "?" + enc
+	}
+	return c.get(path, dst)
 }
 
 func (c *Client) post(path string, body, out any) error {
