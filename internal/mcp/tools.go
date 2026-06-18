@@ -64,10 +64,10 @@ func optStringParam(req mcpsdk.CallToolRequest, name string) string {
 	return s
 }
 
-// CaptureFilterArgs reads the optional capture LIST filter arguments into a
+// captureFilterArgs reads the optional capture LIST filter arguments into a
 // url.Values. The map-typed args (body/attr/query) become repeated "key:value"
 // params; the scalar args pass through. Absent args produce nothing.
-func CaptureFilterArgs(req mcpsdk.CallToolRequest) url.Values {
+func captureFilterArgs(req mcpsdk.CallToolRequest) url.Values {
 	q := url.Values{}
 	args := req.GetArguments()
 	for _, name := range []string{"body", "attr", "query"} {
