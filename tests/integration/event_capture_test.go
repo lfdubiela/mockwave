@@ -177,3 +177,62 @@ func TestE2E_EventBridgeEventCapture(t *testing.T) {
 	assert.Equal(t, "aws-eventbridge", page.Items[0].Protocol)
 	assert.Equal(t, "PutEvents", page.Items[0].Method)
 }
+
+func TestE2E_SNSEventCaptureBodyFilter(t *testing.T) {
+	st := jsonfile.NewMemStore(domain.Config{
+		EventRules: []domain.EventRule{{
+			ID:    "orders",
+			Match: domain.EventMatch{Service: domain.EventServiceSNS},
+		}},
+	})
+	srv, err := server.New(server.Config{
+		Store: st,
+		Event: server.EventConfig{Enabled: true, BufferSize: 100, SyncInterval: time.Hour},
+	})
+	require.NoError(t, err)
+	defer srv.Close()
+
+	mock := httptest.NewServer(srv.MockHandler([]string{"http", "aws"}, srv.NewProxy()))
+	defer mock.Close()
+	admin := httptest.NewServer(srv.AdminMux())
+	defer admin.Close()
+
+	cfg, err := awscfg.LoadDefaultConfig(context.Background(),
+		awscfg.WithRegion("us-east-1"),
+		awscfg.WithCredentialsProvider(credentials.NewStaticCredentialsProvider("AKIDEXAMPLE", "secret", "")),
+	)
+	require.NoError(t, err)
+	client := sns.NewFromConfig(cfg, func(o *sns.Options) { o.BaseEndpoint = aws.String(mock.URL) })
+
+	for _, cid := range []string{"abc-123", "zzz-999"} {
+		_, err := client.Publish(context.Background(), &sns.PublishInput{
+			TopicArn: aws.String("arn:aws:sns:us-east-1:1:orders"),
+			Message:  aws.String(`{"correlation_id":"` + cid + `","total":42}`),
+		})
+		require.NoError(t, err)
+	}
+
+	// Body filter returns exactly the abc-123 event.
+	resp, err := http.Get(admin.URL + "/api/event-captures/orders?body=$.correlation_id:abc-123")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, 200, resp.StatusCode)
+	var page matched.Page
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&page))
+	require.Len(t, page.Items, 1)
+
+	det, err := http.Get(admin.URL + "/api/event-captures/orders/" + page.Items[0].ID)
+	require.NoError(t, err)
+	defer det.Body.Close()
+	var full matched.FullRequest
+	require.NoError(t, json.NewDecoder(det.Body).Decode(&full))
+	assert.JSONEq(t, `{"correlation_id":"abc-123","total":42}`, string(full.RequestBody))
+
+	// Unfiltered list returns both.
+	all, err := http.Get(admin.URL + "/api/event-captures/orders")
+	require.NoError(t, err)
+	defer all.Body.Close()
+	var allPage matched.Page
+	require.NoError(t, json.NewDecoder(all.Body).Decode(&allPage))
+	require.Len(t, allPage.Items, 2)
+}
