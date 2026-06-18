@@ -645,11 +645,11 @@ func (a *adminAPI) importHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, 200, map[string]interface{}{
-		"imported":              imported,
-		"skipped":               skipped,
-		"overridden":            overridden,
-		"scenarios_imported":    scenariosImported,
-		"event_rules_imported":  eventRulesImported,
+		"imported":             imported,
+		"skipped":              skipped,
+		"overridden":           overridden,
+		"scenarios_imported":   scenariosImported,
+		"event_rules_imported": eventRulesImported,
 	})
 }
 

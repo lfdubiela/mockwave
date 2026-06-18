@@ -137,7 +137,7 @@ func TestImportPreview_Validation422(t *testing.T) {
 		"dangling sim ref": {Rules: []domain.Rule{{ID: "rx", Match: domain.MatchCriteria{Path: "/x"},
 			Buckets: []domain.WeightedBucket{{Weight: 100, Action: domain.ActionSimulate, SimulationID: "nowhere"}}}}},
 		"internal dup id":    {Rules: []domain.Rule{validRule("dup", "/a"), validRule("dup", "/b")}},
-		"internal dup match":   {Rules: []domain.Rule{validRule("a", "/same"), validRule("b", "/same")}},
+		"internal dup match": {Rules: []domain.Rule{validRule("a", "/same"), validRule("b", "/same")}},
 		"internal dup sim id": {Rules: []domain.Rule{validRule("ok", "/fine")},
 			Simulations: []domain.Simulation{{ID: "s-dup", Protocol: "http"}, {ID: "s-dup", Protocol: "http"}}},
 	} {
@@ -701,7 +701,7 @@ func TestImportCommit_UpsertsScenarios(t *testing.T) {
 	updated := validImportScenario("sc-r1", []string{"r1"}, "p1")
 	updated.Name = "updated"
 	cfg := domain.Config{Scenarios: []domain.Scenario{
-		updated,                                          // upserts existing sc-r1
+		updated, // upserts existing sc-r1
 		validImportScenario("sc-fresh", []string{"r1"}, "p1"), // inserts new
 	}}
 	w := commitReq(t, mux, cfg, "")
@@ -785,8 +785,8 @@ func (s *eventRuleTransferStore) DeleteEventRule(id string) error {
 
 func validEventRule(id string) domain.EventRule {
 	return domain.EventRule{
-		ID:   id,
-		Name: "EventRule " + id,
+		ID:    id,
+		Name:  "EventRule " + id,
 		Match: domain.EventMatch{Service: "sns"},
 	}
 }
