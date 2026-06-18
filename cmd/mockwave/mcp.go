@@ -51,6 +51,13 @@ Available MCP tools:
     delete_simulation   Delete a simulation
     generate_from_openapi  Generate rules + simulations from an OpenAPI 2.0/3.0 spec
 
+  Event Rules
+    list_event_rules    List all event rules
+    get_event_rule      Get an event rule by ID
+    create_event_rule   Create a new event rule
+    update_event_rule   Replace an existing event rule
+    delete_event_rule   Delete an event rule
+
   Observability
     get_metrics         Traffic metrics snapshot (requests, hits, p95 latency)
     list_unmatched      Requests that matched no rule
