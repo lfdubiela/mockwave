@@ -298,7 +298,7 @@ func schemaZero(schema *openapi3.Schema) interface{} {
 	if schema == nil {
 		return nil
 	}
-	// schema.Type is *openapi3.Types (pointer to []string) in kin-openapi v0.139.
+	// schema.Type is *openapi3.Types (pointer to []string) in kin-openapi v0.145.
 	kind := ""
 	if schema.Type != nil && len(*schema.Type) > 0 {
 		kind = (*schema.Type)[0]
