@@ -12,14 +12,26 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Create GitHub Release
+      # Idempotent: publishing a release from the GitHub UI also pushes the tag,
+      # which triggers this workflow against a release that already exists. Plain
+      # `gh release create` fails that case with HTTP 422, taking down the build
+      # and update-tap jobs with it. Reuse the release instead.
+      - name: Create or reuse GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
         run: |
-          gh release create "${{ github.ref_name }}" \
-            --repo "${{ github.repository }}" \
-            --title "Mockwave ${{ github.ref_name }}" \
-            --generate-notes
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            echo "Release $TAG already exists - reusing it and normalising the title."
+            gh release edit "$TAG" --repo "$REPO" --title "Mockwave $TAG"
+          else
+            echo "Creating release $TAG."
+            gh release create "$TAG" \
+              --repo "$REPO" \
+              --title "Mockwave $TAG" \
+              --generate-notes
+          fi
 
   # ── Job 2: Build binaries (matrix) ────────────────────────────────────────
   build:
