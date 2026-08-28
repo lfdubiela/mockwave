@@ -125,6 +125,15 @@ docker run -p 8080:8080 -p 9090:9090 \
   start -f /config.json
 ```
 
+### Kubernetes
+
+A single pod served ~72,000 req/s in testing, so most deployments need
+`cpu: 100m` / `memory: 64Mi` and nothing more. Set `GOMAXPROCS` explicitly —
+the Go runtime does not reliably infer a container CPU limit, and getting
+this wrong causes latency spikes at low CPU utilisation.
+
+**→ [Kubernetes guide: sizing, reference manifest, probes, multi-replica rule sync](docs/kubernetes.md)**
+
 ---
 
 ## CLI Reference
