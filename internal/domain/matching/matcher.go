@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path"
+	"sort"
 	"strings"
 
 	"github.com/mockwave/mockwave/domain"
@@ -80,25 +81,33 @@ func matchRule(r *domain.Rule, req pipeline.NormalizedRequest) bool {
 
 // sortBySpecificity orders rules most-specific first using a strict tiered
 // (lexicographic) comparison. Stable: equal rules keep input order.
+//
+// Each rule's precedence tuple is computed once up front rather than inside the
+// comparator. specTuple calls urlScore, which splits the path and so allocates;
+// computing it per comparison made sorting allocate on every one of them.
 func sortBySpecificity(rules []domain.Rule) {
-	for i := 1; i < len(rules); i++ {
-		for j := i; j > 0; j-- {
-			if moreSpecific(rules[j], rules[j-1]) {
-				rules[j], rules[j-1] = rules[j-1], rules[j]
-			} else {
-				break
-			}
-		}
+	type entry struct {
+		rule domain.Rule
+		spec [4]int
+	}
+	entries := make([]entry, len(rules))
+	for i, r := range rules {
+		entries[i] = entry{rule: r, spec: specTuple(r)}
+	}
+	sort.SliceStable(entries, func(a, b int) bool {
+		return tupleMoreSpecific(entries[a].spec, entries[b].spec)
+	})
+	for i := range entries {
+		rules[i] = entries[i].rule
 	}
 }
 
-// moreSpecific reports whether a ranks strictly above b under the tiered order
-// (headers, url, body, query) compared element-wise.
-func moreSpecific(a, b domain.Rule) bool {
-	ta, tb := specTuple(a), specTuple(b)
-	for i := range ta {
-		if ta[i] != tb[i] {
-			return ta[i] > tb[i]
+// tupleMoreSpecific reports whether tuple a ranks strictly above b under the
+// tiered order (headers, url, body, query), compared element-wise.
+func tupleMoreSpecific(a, b [4]int) bool {
+	for i := range a {
+		if a[i] != b[i] {
+			return a[i] > b[i]
 		}
 	}
 	return false
@@ -131,4 +140,3 @@ func urlScore(p string) int {
 	}
 	return 100 + literal
 }
-
