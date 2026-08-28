@@ -437,6 +437,15 @@ All endpoints are on the admin port (default `:9090`).
 }
 ```
 
+`total_requests`, `misses` and `hits` count every request since start.
+
+Per-rule percentiles (`p50_ms`, `p95_ms`) are computed over a **recent
+window** — the last 2048 requests for that rule — not over all requests since
+start. Retaining every sample would grow without bound, and the snapshot sorts
+those samples under the lock the request path uses, so an unbounded window
+degraded tail latency the longer a process ran. Treat the percentiles as "how
+this rule is responding lately"; use `hits` when you need an exact count.
+
 ---
 
 ## AI Integration (MCP)
