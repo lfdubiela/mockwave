@@ -5,7 +5,7 @@ replica.
 
 The short version: Mockwave is far cheaper than most people size it for.
 A single core served **~72,000 req/s** in testing, so a typical workload
-needs a fraction of a core and well under 128Mi of memory. The one setting
+needs a fraction of a core and a modest memory limit. The one setting
 that is easy to get wrong, and costly when you do, is `GOMAXPROCS`.
 
 - [Resource sizing](#resource-sizing)
@@ -30,7 +30,9 @@ resources:
     memory: 64Mi
   limits:
     cpu: "1"
-    memory: 128Mi
+    # 256Mi, not 128Mi: memory scales with in-flight requests, not with
+    # request rate. See "Memory tracks concurrency" below before lowering it.
+    memory: 256Mi
 ```
 
 `requests.cpu: 100m` covers about 1,000 req/s with room to spare. The `1`
@@ -40,7 +42,8 @@ Scale `requests.cpu` roughly linearly with throughput and keep the limit at
 least 2-3x the request.
 
 **Memory tracks concurrency, not throughput.** For fast responses the two are
-nearly the same thing and 128Mi is plenty. But every request still in flight
+nearly the same thing and a small limit suffices. But every request still in
+flight
 holds a goroutine stack and connection buffers, measured at roughly **47KB
 each**:
 
@@ -60,11 +63,13 @@ multiply it:
 | 4,000/s | 500ms | 2,000 | ~115MiB |
 | 6,000/s | 500ms | 3,000 | ~161MiB |
 
-So the 128Mi limit above is the right default for a mock returning fast
-responses, and the wrong one past roughly **2,300 concurrent in-flight
-requests**. If your rules delay responses or forward upstream, size memory
-from expected concurrency rather than from request rate. Also raise it when
-enabling matched or event capture.
+The manifest above uses **256Mi**, which covers roughly 5,000 requests in
+flight. 128Mi would be enough for a mock returning fast responses — it is
+exceeded only past about **2,300 concurrent in-flight requests** — but the
+failure mode is bad enough (see below) that the extra headroom is worth more
+than the saved memory. If your rules delay responses or forward upstream,
+size from expected concurrency rather than from request rate, and raise it
+again when enabling matched or event capture.
 
 This was verified against a real cgroup, driving 800 req/s at a rule with a
 5s delay (about 4,000 requests in flight):
@@ -157,7 +162,8 @@ spec:
               value: "1"
           resources:
             requests: { cpu: 100m, memory: 64Mi }
-            limits:   { cpu: "1",  memory: 128Mi }
+            # memory limit is sized for concurrency, not request rate
+            limits:   { cpu: "1",  memory: 256Mi }
           readinessProbe:
             httpGet: { path: /api/health, port: admin }
             initialDelaySeconds: 2
