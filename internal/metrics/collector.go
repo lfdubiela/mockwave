@@ -27,12 +27,51 @@ type Snapshot struct {
 
 // Collector accumulates request metrics in memory.
 // All methods are safe for concurrent use.
+// maxLatencySamples caps the latency samples retained per rule. Percentiles
+// are computed over this most-recent window rather than over every request
+// since process start.
+//
+// Retaining every sample leaked one float64 per request for the lifetime of
+// the process, and made Snapshot's per-rule sort grow without bound -- costly
+// because Snapshot holds the same mutex RecordHit needs, so that sort stalls
+// every in-flight request.
+const maxLatencySamples = 2048
+
+// latencyRing retains the most recent maxLatencySamples latencies for one
+// rule, overwriting oldest-first once full.
+//
+// hits counts every request, not just retained samples: Hits is a request
+// counter, and deriving it from the sample buffer would silently cap it at
+// maxLatencySamples.
+type latencyRing struct {
+	buf  []float64
+	next int
+	hits int64
+}
+
+func (r *latencyRing) record(ms float64) {
+	r.hits++
+	if len(r.buf) < maxLatencySamples {
+		r.buf = append(r.buf, ms)
+		return
+	}
+	r.buf[r.next] = ms
+	r.next = (r.next + 1) % maxLatencySamples
+}
+
+// samples copies the retained window. Order is irrelevant: callers sort it.
+func (r *latencyRing) samples() []float64 {
+	out := make([]float64, len(r.buf))
+	copy(out, r.buf)
+	return out
+}
+
 type Collector struct {
 	mu        sync.Mutex
 	total     int64
 	misses    int64
-	latencies map[string][]float64 // ruleID -> latency samples in ms
-	names     map[string]string    // ruleID -> rule name
+	latencies map[string]*latencyRing // ruleID -> bounded recent-latency window
+	names     map[string]string       // ruleID -> rule name
 	hist      histRing
 	ruleHist  map[string]*histRing // ruleID -> per-minute ring
 }
@@ -40,7 +79,7 @@ type Collector struct {
 // NewCollector creates an empty Collector.
 func NewCollector() *Collector {
 	return &Collector{
-		latencies: make(map[string][]float64),
+		latencies: make(map[string]*latencyRing),
 		names:     make(map[string]string),
 		ruleHist:  make(map[string]*histRing),
 	}
@@ -50,7 +89,12 @@ func NewCollector() *Collector {
 func (c *Collector) RecordHit(ruleID, ruleName string, latencyMs float64) {
 	c.mu.Lock()
 	c.total++
-	c.latencies[ruleID] = append(c.latencies[ruleID], latencyMs)
+	lr, ok := c.latencies[ruleID]
+	if !ok {
+		lr = &latencyRing{}
+		c.latencies[ruleID] = lr
+	}
+	lr.record(latencyMs)
 	c.names[ruleID] = ruleName
 	rh, ok := c.ruleHist[ruleID]
 	if !ok {
@@ -80,9 +124,8 @@ func (c *Collector) Snapshot() Snapshot {
 	defer c.mu.Unlock()
 
 	rules := make([]RuleStats, 0, len(c.latencies))
-	for id, lats := range c.latencies {
-		sorted := make([]float64, len(lats))
-		copy(sorted, lats)
+	for id, lr := range c.latencies {
+		sorted := lr.samples()
 		sort.Float64s(sorted)
 
 		var tps float64
@@ -93,7 +136,7 @@ func (c *Collector) Snapshot() Snapshot {
 		rules = append(rules, RuleStats{
 			RuleID:     id,
 			RuleName:   c.names[id],
-			Hits:       int64(len(sorted)),
+			Hits:       lr.hits,
 			P50Ms:      percentile(sorted, 50),
 			P95Ms:      percentile(sorted, 95),
 			CurrentTPS: tps,

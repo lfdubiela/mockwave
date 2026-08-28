@@ -7,10 +7,16 @@ import (
 	"time"
 )
 
+// snapshotter is the part of Collector the Broker depends on. Narrowing it
+// keeps the broadcast loop testable without a live collector.
+type snapshotter interface {
+	Snapshot() Snapshot
+}
+
 // Broker fans out Snapshot JSON to all connected SSE clients every second.
 // All methods are safe for concurrent use.
 type Broker struct {
-	collector *Collector
+	collector snapshotter
 	mu        sync.Mutex
 	clients   map[chan string]struct{}
 }
@@ -31,6 +37,17 @@ func (b *Broker) Start(ctx context.Context) {
 	for {
 		select {
 		case <-ticker.C:
+			// Nobody is listening: skip the tick entirely. Snapshot holds the
+			// collector mutex that RecordHit needs, so taking one with no
+			// subscribers stalls live requests to produce a result that is
+			// then discarded. An idle dashboard is the common case.
+			b.mu.Lock()
+			idle := len(b.clients) == 0
+			b.mu.Unlock()
+			if idle {
+				continue
+			}
+
 			snap := b.collector.Snapshot()
 			data, _ := json.Marshal(snap)
 			b.mu.Lock()

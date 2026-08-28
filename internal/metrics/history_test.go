@@ -119,7 +119,7 @@ func TestCollector_CurrentTPS_FromCompletedMinute(t *testing.T) {
 	}
 	c.ruleHist["r1"] = rh
 	c.names["r1"] = "Rule One"
-	c.latencies["r1"] = []float64{5}
+	c.latencies["r1"] = &latencyRing{buf: []float64{5}, hits: 1}
 	c.total = 120
 
 	// Now is in a later minute, so 10:00 is the last completed minute.
