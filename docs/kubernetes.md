@@ -66,6 +66,21 @@ requests**. If your rules delay responses or forward upstream, size memory
 from expected concurrency rather than from request rate. Also raise it when
 enabling matched or event capture.
 
+This was verified against a real cgroup, driving 800 req/s at a rule with a
+5s delay (about 4,000 requests in flight):
+
+| `limits.memory` | Outcome |
+|-----------------|---------|
+| 128Mi | **OOMKilled**, exit code 137, within ~12s |
+| 256Mi | Stable, plateaus at 205MiB, zero errors |
+
+The formula predicted 208MiB for that load and the container settled at
+205MiB. Note that nothing degrades gracefully on the way to the kill:
+throughput and latency stayed perfect (800/s achieved, p99 5.002s) until the
+kernel killed the process. A pod sized on request rate alone will look
+completely healthy right up to the moment it disappears, and the restart puts
+it back into the same load. Size from concurrency instead.
+
 Latency itself holds up well under that concurrency: measured on a single
 core with a 500ms delay, p99 stayed at 500-505ms all the way to 10,000 req/s
 and 5,838 requests in flight, with no errors. Memory is the limit that binds
