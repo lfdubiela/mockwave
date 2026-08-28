@@ -23,7 +23,7 @@ func (s *Store) GetEventRules() ([]domain.EventRule, error) {
 	if s.eventRulesTable == "" {
 		return nil, nil
 	}
-	out, err := s.client.Scan(context.Background(), &dynamodb.ScanInput{
+	items, err := scanAllItems(context.Background(), s.client, &dynamodb.ScanInput{
 		TableName: aws.String(s.eventRulesTable),
 	})
 	if err != nil {
@@ -33,8 +33,8 @@ func (s *Store) GetEventRules() ([]domain.EventRule, error) {
 		}
 		return nil, fmt.Errorf("dynamodb: scan event rules: %w", err)
 	}
-	rules := make([]domain.EventRule, 0, len(out.Items))
-	for _, item := range out.Items {
+	rules := make([]domain.EventRule, 0, len(items))
+	for _, item := range items {
 		dataAttr, ok := item["data"].(*types.AttributeValueMemberS)
 		if !ok {
 			continue

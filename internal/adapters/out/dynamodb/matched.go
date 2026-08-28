@@ -310,16 +310,31 @@ func (s *Store) deleteAllMatched(ctx context.Context, table string) error {
 }
 
 func (s *Store) deleteMatchedByScan(ctx context.Context, table, ruleID string) error {
-	out, err := s.client.Scan(ctx, &dynamodb.ScanInput{
-		TableName:                 aws.String(table),
-		FilterExpression:          aws.String("rule_id = :rk"),
-		ExpressionAttributeValues: map[string]types.AttributeValue{":rk": &types.AttributeValueMemberS{Value: ruleID}},
-		ProjectionExpression:      aws.String("rule_id, sk"),
-	})
-	if err != nil {
-		return fmt.Errorf("dynamodb: scan for delete matched rule %q: %w", ruleID, err)
+	// Pages, like deleteAllMatched above. A filtered Scan is doubly prone to
+	// paging: DynamoDB applies the 1MB cap before the filter, so even a small
+	// result set can arrive split across pages, and some of those pages can be
+	// empty while more data still remains.
+	var lastKey map[string]types.AttributeValue
+	for {
+		out, err := s.client.Scan(ctx, &dynamodb.ScanInput{
+			TableName:                 aws.String(table),
+			FilterExpression:          aws.String("rule_id = :rk"),
+			ExpressionAttributeValues: map[string]types.AttributeValue{":rk": &types.AttributeValueMemberS{Value: ruleID}},
+			ProjectionExpression:      aws.String("rule_id, sk"),
+			ExclusiveStartKey:         lastKey,
+		})
+		if err != nil {
+			return fmt.Errorf("dynamodb: scan for delete matched rule %q: %w", ruleID, err)
+		}
+		if err := s.batchDelete(ctx, table, out.Items); err != nil {
+			return err
+		}
+		// len, not nil: an empty-but-non-nil key would otherwise loop forever.
+		if len(out.LastEvaluatedKey) == 0 {
+			return nil
+		}
+		lastKey = out.LastEvaluatedKey
 	}
-	return s.batchDelete(ctx, table, out.Items)
 }
 
 func (s *Store) batchDelete(ctx context.Context, table string, items []map[string]types.AttributeValue) error {
@@ -390,4 +405,3 @@ func decodeMatchedItem(item map[string]types.AttributeValue) (matched.Request, e
 	}
 	return r, nil
 }
-

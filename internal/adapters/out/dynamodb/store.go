@@ -95,15 +95,40 @@ func NewStoreFromClient(client DynamoClient, cfg Config) *Store {
 	}
 }
 
+// scanAllItems runs a Scan to completion, following LastEvaluatedKey.
+//
+// DynamoDB caps a Scan response at 1MB and reports that more data remains by
+// setting LastEvaluatedKey. A single Scan call therefore returns only a prefix
+// of a large table, silently and without an error, so every full-table read
+// must page.
+func scanAllItems(ctx context.Context, c DynamoClient, in *dynamodb.ScanInput) ([]map[string]types.AttributeValue, error) {
+	var items []map[string]types.AttributeValue
+	for {
+		out, err := c.Scan(ctx, in)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, out.Items...)
+		// len, not nil: an empty-but-non-nil key would otherwise loop forever.
+		if len(out.LastEvaluatedKey) == 0 {
+			return items, nil
+		}
+		// Copy rather than mutate: the caller owns the input it passed in.
+		next := *in
+		next.ExclusiveStartKey = out.LastEvaluatedKey
+		in = &next
+	}
+}
+
 func (s *Store) GetRules() ([]domain.Rule, error) {
-	out, err := s.client.Scan(context.Background(), &dynamodb.ScanInput{
+	items, err := scanAllItems(context.Background(), s.client, &dynamodb.ScanInput{
 		TableName: aws.String(s.rulesTable),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("dynamodb: scan rules: %w", err)
 	}
-	rules := make([]domain.Rule, 0, len(out.Items))
-	for _, item := range out.Items {
+	rules := make([]domain.Rule, 0, len(items))
+	for _, item := range items {
 		dataAttr, ok := item["data"].(*types.AttributeValueMemberS)
 		if !ok {
 			continue
@@ -142,14 +167,14 @@ func (s *Store) GetSimulation(id string) (*domain.Simulation, error) {
 }
 
 func (s *Store) ListSimulations() ([]domain.Simulation, error) {
-	out, err := s.client.Scan(context.Background(), &dynamodb.ScanInput{
+	items, err := scanAllItems(context.Background(), s.client, &dynamodb.ScanInput{
 		TableName: aws.String(s.simsTable),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("dynamodb: scan simulations: %w", err)
 	}
-	sims := make([]domain.Simulation, 0, len(out.Items))
-	for _, item := range out.Items {
+	sims := make([]domain.Simulation, 0, len(items))
+	for _, item := range items {
 		dataAttr, ok := item["data"].(*types.AttributeValueMemberS)
 		if !ok {
 			continue
@@ -222,14 +247,14 @@ func (s *Store) DeleteSimulation(id string) error {
 }
 
 func (s *Store) ListFaultProfiles() ([]domain.FaultProfile, error) {
-	out, err := s.client.Scan(context.Background(), &dynamodb.ScanInput{
+	items, err := scanAllItems(context.Background(), s.client, &dynamodb.ScanInput{
 		TableName: aws.String(s.faultsTable),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("dynamodb: scan fault profiles: %w", err)
 	}
-	profiles := make([]domain.FaultProfile, 0, len(out.Items))
-	for _, item := range out.Items {
+	profiles := make([]domain.FaultProfile, 0, len(items))
+	for _, item := range items {
 		dataAttr, ok := item["data"].(*types.AttributeValueMemberS)
 		if !ok {
 			continue
@@ -295,14 +320,14 @@ func (s *Store) DeleteFaultProfile(id string) error {
 }
 
 func (s *Store) ListScenarios() ([]domain.Scenario, error) {
-	out, err := s.client.Scan(context.Background(), &dynamodb.ScanInput{
+	items, err := scanAllItems(context.Background(), s.client, &dynamodb.ScanInput{
 		TableName: aws.String(s.scenariosTable),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("dynamodb: scan scenarios: %w", err)
 	}
-	scenarios := make([]domain.Scenario, 0, len(out.Items))
-	for _, item := range out.Items {
+	scenarios := make([]domain.Scenario, 0, len(items))
+	for _, item := range items {
 		dataAttr, ok := item["data"].(*types.AttributeValueMemberS)
 		if !ok {
 			continue
