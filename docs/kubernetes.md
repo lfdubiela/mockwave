@@ -37,10 +37,39 @@ resources:
 CPU limit exists for burst headroom, not because steady state needs it.
 
 Scale `requests.cpu` roughly linearly with throughput and keep the limit at
-least 2-3x the request. Memory is close to flat in throughput — it tracks
-config size and enabled features far more than traffic — so raise
-`memory` when you turn on matched capture or event capture, not when
-traffic grows.
+least 2-3x the request.
+
+**Memory tracks concurrency, not throughput.** For fast responses the two are
+nearly the same thing and 128Mi is plenty. But every request still in flight
+holds a goroutine stack and connection buffers, measured at roughly **47KB
+each**:
+
+```
+RSS ≈ 23MiB + 47KB × concurrent_in_flight_requests
+```
+
+Concurrency is what that depends on, and by Little's Law it is
+`throughput × response_time`. Rules that delay responses — a configured
+`delay_ms`, a `forward` to a slow upstream, or an injected chaos fault —
+multiply it:
+
+| Throughput | Response time | In flight | Expected RSS |
+|-----------:|--------------:|----------:|-------------:|
+| 1,000/s | 5ms | 5 | ~23MiB |
+| 1,000/s | 500ms | 500 | ~46MiB |
+| 4,000/s | 500ms | 2,000 | ~115MiB |
+| 6,000/s | 500ms | 3,000 | ~161MiB |
+
+So the 128Mi limit above is the right default for a mock returning fast
+responses, and the wrong one past roughly **2,300 concurrent in-flight
+requests**. If your rules delay responses or forward upstream, size memory
+from expected concurrency rather than from request rate. Also raise it when
+enabling matched or event capture.
+
+Latency itself holds up well under that concurrency: measured on a single
+core with a 500ms delay, p99 stayed at 500-505ms all the way to 10,000 req/s
+and 5,838 requests in flight, with no errors. Memory is the limit that binds
+first, not CPU.
 
 ## Set GOMAXPROCS explicitly
 
@@ -211,6 +240,12 @@ scaling signal.
 | p50 / p99 at 1,000 req/s | ~135µs / ~700µs |
 | Cold start to first request | ~1.7s |
 | Container image size | ~50MB |
+| Memory per concurrent in-flight request | ~47KB |
+| p99 at 10,000 req/s with a 500ms delay (1 core) | ~505ms, 0 errors |
+
+The throughput figures above use fast responses, where concurrency stays low.
+The last two rows come from a separate run against a single rule with a
+500ms `delay_ms`, which is what exposes the concurrency-driven memory cost.
 
 Store backend made no meaningful difference to request performance —
 DynamoDB and a JSON file landed within 3% of each other on throughput and
