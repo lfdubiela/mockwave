@@ -17,8 +17,8 @@ import (
 func TestServer_MatchedBufferExposed(t *testing.T) {
 	st := jsonfile.NewMemStore(domain.Config{
 		Rules: []domain.Rule{{
-			ID:    "r1",
-			Match: domain.MatchCriteria{Protocol: "http", Method: "GET", Path: "/ping"},
+			ID:      "r1",
+			Match:   domain.MatchCriteria{Protocol: "http", Method: "GET", Path: "/ping"},
 			Buckets: []domain.WeightedBucket{{Weight: 100, Action: "simulate", SimulationID: "s1"}},
 		}},
 		Simulations: []domain.Simulation{{ID: "s1", Protocol: "http", Response: domain.HTTPResponse{Status: 200, Body: map[string]any{"ok": true}}}},
@@ -53,8 +53,8 @@ func TestServer_MatchedDisabledByDefault(t *testing.T) {
 func TestServer_MatchedAdminEndpoint(t *testing.T) {
 	st := jsonfile.NewMemStore(domain.Config{
 		Rules: []domain.Rule{{
-			ID:    "r1",
-			Match: domain.MatchCriteria{Protocol: "http", Method: "GET", Path: "/ping"},
+			ID:      "r1",
+			Match:   domain.MatchCriteria{Protocol: "http", Method: "GET", Path: "/ping"},
 			Buckets: []domain.WeightedBucket{{Weight: 100, Action: "simulate", SimulationID: "s1"}},
 		}},
 		Simulations: []domain.Simulation{{ID: "s1", Protocol: "http", Response: domain.HTTPResponse{Status: 200, Body: map[string]any{"ok": true}}}},

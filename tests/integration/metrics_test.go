@@ -16,9 +16,9 @@ import (
 	"github.com/mockwave/mockwave/internal/adapters/cfg/restapi"
 	"github.com/mockwave/mockwave/internal/adapters/out/jsonfile"
 	"github.com/mockwave/mockwave/internal/metrics"
-	"github.com/mockwave/mockwave/server"
 	"github.com/mockwave/mockwave/internal/unmatched"
 	"github.com/mockwave/mockwave/observability"
+	"github.com/mockwave/mockwave/server"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -50,9 +50,9 @@ func startMetricsServer(t *testing.T, cfg domain.Config) (*httptest.Server, *htt
 func TestMetrics_HitRecordedAfterMatchedRequest(t *testing.T) {
 	cfg := domain.Config{
 		Rules: []domain.Rule{{
-			ID:   "r1",
-			Name: "Test Rule",
-			Match: domain.MatchCriteria{Method: "GET", Path: "/ping"},
+			ID:      "r1",
+			Name:    "Test Rule",
+			Match:   domain.MatchCriteria{Method: "GET", Path: "/ping"},
 			Buckets: []domain.WeightedBucket{{Weight: 100, Action: domain.ActionSimulate, SimulationID: "s1"}},
 		}},
 		Simulations: []domain.Simulation{{

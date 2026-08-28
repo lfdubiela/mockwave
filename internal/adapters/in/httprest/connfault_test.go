@@ -14,7 +14,9 @@ import (
 )
 
 // fakeExec injects a fixed pctx mutation so the handler executes a directive.
-type fakeExec struct{ mutate func(*pipeline.PipelineContext) }
+type fakeExec struct {
+	mutate func(*pipeline.PipelineContext)
+}
 
 func (f fakeExec) Execute(_ context.Context, pctx *pipeline.PipelineContext) error {
 	f.mutate(pctx)

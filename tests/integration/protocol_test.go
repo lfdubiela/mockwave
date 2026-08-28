@@ -11,9 +11,9 @@ import (
 
 	// Explicitly import the gRPC adapter to guarantee RawCodec is registered via
 	// its init(), even if server.go is ever refactored to drop its direct import.
+	"github.com/mockwave/mockwave/domain"
 	_ "github.com/mockwave/mockwave/internal/adapters/in/grpc"
 	"github.com/mockwave/mockwave/internal/adapters/out/jsonfile"
-	"github.com/mockwave/mockwave/domain"
 	"github.com/mockwave/mockwave/server"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

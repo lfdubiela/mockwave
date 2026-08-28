@@ -22,7 +22,7 @@ func TestScenarioController_OverlayForTargetedRule(t *testing.T) {
 	c := chaos.NewScenarioController()
 	c.SetActive(&chaos.ActiveRun{
 		ScenarioID: "drill", ScenarioName: "Drill",
-		RuleIDs: map[string]bool{"r1": true},
+		RuleIDs:    map[string]bool{"r1": true},
 		PhaseIndex: 0, PhaseProfileID: "mild", PhaseCount: 2,
 	})
 	profID, overridden := c.Overlay("r1")

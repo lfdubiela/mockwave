@@ -25,9 +25,9 @@ import (
 func TestE2E_MatchedRequestCapture(t *testing.T) {
 	st := jsonfile.NewMemStore(domain.Config{
 		Rules: []domain.Rule{{
-			ID:    "create-user",
-			Name:  "Create User",
-			Match: domain.MatchCriteria{Protocol: "http", Method: "POST", Path: "/users"},
+			ID:      "create-user",
+			Name:    "Create User",
+			Match:   domain.MatchCriteria{Protocol: "http", Method: "POST", Path: "/users"},
 			Buckets: []domain.WeightedBucket{{Weight: 100, Action: "simulate", SimulationID: "user-sim"}},
 		}},
 		Simulations: []domain.Simulation{{
@@ -120,9 +120,9 @@ func driveMockRequest(t *testing.T, mockURL, method, path string, extraHeaders m
 func TestE2E_MatchedPagination(t *testing.T) {
 	st := jsonfile.NewMemStore(domain.Config{
 		Rules: []domain.Rule{{
-			ID:    "get-item",
-			Name:  "Get Item",
-			Match: domain.MatchCriteria{Protocol: "http", Method: "GET", Path: "/item"},
+			ID:      "get-item",
+			Name:    "Get Item",
+			Match:   domain.MatchCriteria{Protocol: "http", Method: "GET", Path: "/item"},
 			Buckets: []domain.WeightedBucket{{Weight: 100, Action: "simulate", SimulationID: "item-sim"}},
 		}},
 		Simulations: []domain.Simulation{{
@@ -180,15 +180,15 @@ func TestE2E_MatchedFilters(t *testing.T) {
 	st := jsonfile.NewMemStore(domain.Config{
 		Rules: []domain.Rule{
 			{
-				ID:    "post-a",
-				Name:  "Post A",
-				Match: domain.MatchCriteria{Protocol: "http", Method: "POST", Path: "/a"},
+				ID:      "post-a",
+				Name:    "Post A",
+				Match:   domain.MatchCriteria{Protocol: "http", Method: "POST", Path: "/a"},
 				Buckets: []domain.WeightedBucket{{Weight: 100, Action: "simulate", SimulationID: "sim-201"}},
 			},
 			{
-				ID:    "get-b",
-				Name:  "Get B",
-				Match: domain.MatchCriteria{Protocol: "http", Method: "GET", Path: "/b"},
+				ID:      "get-b",
+				Name:    "Get B",
+				Match:   domain.MatchCriteria{Protocol: "http", Method: "GET", Path: "/b"},
 				Buckets: []domain.WeightedBucket{{Weight: 100, Action: "simulate", SimulationID: "sim-200"}},
 			},
 		},
@@ -252,9 +252,9 @@ func TestE2E_MatchedFilters(t *testing.T) {
 func TestE2E_MatchedEvictionFallback(t *testing.T) {
 	st := jsonfile.NewMemStore(domain.Config{
 		Rules: []domain.Rule{{
-			ID:    "evict-rule",
-			Name:  "Evict Rule",
-			Match: domain.MatchCriteria{Protocol: "http", Method: "GET", Path: "/evict"},
+			ID:      "evict-rule",
+			Name:    "Evict Rule",
+			Match:   domain.MatchCriteria{Protocol: "http", Method: "GET", Path: "/evict"},
 			Buckets: []domain.WeightedBucket{{Weight: 100, Action: "simulate", SimulationID: "evict-sim"}},
 		}},
 		Simulations: []domain.Simulation{{
@@ -337,9 +337,9 @@ func TestE2E_MatchedEvictionFallback(t *testing.T) {
 func TestE2E_MatchedRestartHydration(t *testing.T) {
 	cfg := domain.Config{
 		Rules: []domain.Rule{{
-			ID:    "hydrate-rule",
-			Name:  "Hydrate Rule",
-			Match: domain.MatchCriteria{Protocol: "http", Method: "GET", Path: "/hydrate"},
+			ID:      "hydrate-rule",
+			Name:    "Hydrate Rule",
+			Match:   domain.MatchCriteria{Protocol: "http", Method: "GET", Path: "/hydrate"},
 			Buckets: []domain.WeightedBucket{{Weight: 100, Action: "simulate", SimulationID: "hydrate-sim"}},
 		}},
 		Simulations: []domain.Simulation{{

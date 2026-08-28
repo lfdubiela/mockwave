@@ -48,7 +48,7 @@ func TestMD5OfAttributesKnownAnswer(t *testing.T) {
 	expectedBytes := []byte{
 		0, 0, 0, 3, 'e', 'n', 'v', // len("env")=3 + name
 		0, 0, 0, 6, 'S', 't', 'r', 'i', 'n', 'g', // len("String")=6 + type
-		1,                          // transport type: String
+		1,                              // transport type: String
 		0, 0, 0, 4, 'p', 'r', 'o', 'd', // len("prod")=4 + value
 	}
 	sum := md5.Sum(expectedBytes)
@@ -66,7 +66,7 @@ func TestMD5OfAttributesBinaryKnownAnswer(t *testing.T) {
 	expectedBytes := []byte{
 		0, 0, 0, 1, 'b', // len("b")=1 + name
 		0, 0, 0, 6, 'B', 'i', 'n', 'a', 'r', 'y', // len("Binary")=6 + type
-		2,                // transport type: Binary
+		2,                      // transport type: Binary
 		0, 0, 0, 2, 0xDE, 0xAD, // len(bin)=2 + value
 	}
 	sum := md5.Sum(expectedBytes)

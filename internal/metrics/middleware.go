@@ -19,13 +19,13 @@ type Executor interface {
 // Middleware wraps an Executor to record metrics, capture unmatched requests,
 // and emit observability signals (traces + external metrics).
 type Middleware struct {
-	next        Executor
-	collector   *Collector
-	buffer      *unmatched.Buffer
-	tracer      observability.Tracer
-	recorder    observability.MetricsRecorder
-	matchedBuf  *matched.Buffer // may be nil → capture disabled
-	matchedTTL  int             // seconds
+	next       Executor
+	collector  *Collector
+	buffer     *unmatched.Buffer
+	tracer     observability.Tracer
+	recorder   observability.MetricsRecorder
+	matchedBuf *matched.Buffer // may be nil → capture disabled
+	matchedTTL int             // seconds
 }
 
 // NewMiddleware creates a Middleware. tracer and recorder must not be nil;

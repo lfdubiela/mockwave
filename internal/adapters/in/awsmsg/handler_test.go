@@ -166,7 +166,7 @@ func TestHandlerEventBridge(t *testing.T) {
 		t.Fatalf("code = %d", rec.Code)
 	}
 	var out struct {
-		FailedEntryCount int `json:"FailedEntryCount"`
+		FailedEntryCount int                        `json:"FailedEntryCount"`
 		Entries          []struct{ EventId string } `json:"Entries"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {

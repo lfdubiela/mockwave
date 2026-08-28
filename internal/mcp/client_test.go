@@ -6,8 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	mockwavemcp "github.com/mockwave/mockwave/internal/mcp"
 	"github.com/mockwave/mockwave/domain"
+	mockwavemcp "github.com/mockwave/mockwave/internal/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

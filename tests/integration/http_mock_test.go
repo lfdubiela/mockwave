@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mockwave/mockwave/internal/adapters/out/jsonfile"
 	"github.com/mockwave/mockwave/domain"
+	"github.com/mockwave/mockwave/internal/adapters/out/jsonfile"
 	"github.com/mockwave/mockwave/server"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

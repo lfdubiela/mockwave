@@ -61,7 +61,7 @@ func (f *fakeScenarioControl) Start(id string) error {
 	f.startedIDs = append(f.startedIDs, id)
 	return f.startErr
 }
-func (f *fakeScenarioControl) Stop()           { f.stops++ }
+func (f *fakeScenarioControl) Stop()             { f.stops++ }
 func (f *fakeScenarioControl) ActiveStatus() any { return f.active }
 
 func validScenario(id string) domain.Scenario {

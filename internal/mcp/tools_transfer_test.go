@@ -18,11 +18,11 @@ func fakeAdminServerWithTransfer() *httptest.Server {
 	mux := http.NewServeMux()
 
 	sampleExport := map[string]any{
-		"rules":         []any{},
-		"simulations":   []any{},
+		"rules":          []any{},
+		"simulations":    []any{},
 		"fault_profiles": []any{},
-		"scenarios":     []any{},
-		"event_rules":   []any{},
+		"scenarios":      []any{},
+		"event_rules":    []any{},
 	}
 
 	// GET /api/export

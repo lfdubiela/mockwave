@@ -29,13 +29,13 @@ func (s *stubDataMatchedStore) put(ruleID, id string, full *matched.FullRequest)
 }
 
 // store.DataStore
-func (s *stubDataMatchedStore) GetRules() ([]domain.Rule, error)             { return nil, nil }
-func (s *stubDataMatchedStore) SaveRule(domain.Rule) error                   { return nil }
-func (s *stubDataMatchedStore) DeleteRule(string) error                      { return nil }
+func (s *stubDataMatchedStore) GetRules() ([]domain.Rule, error)                 { return nil, nil }
+func (s *stubDataMatchedStore) SaveRule(domain.Rule) error                       { return nil }
+func (s *stubDataMatchedStore) DeleteRule(string) error                          { return nil }
 func (s *stubDataMatchedStore) GetSimulation(string) (*domain.Simulation, error) { return nil, nil }
-func (s *stubDataMatchedStore) ListSimulations() ([]domain.Simulation, error)  { return nil, nil }
-func (s *stubDataMatchedStore) SaveSimulation(domain.Simulation) error       { return nil }
-func (s *stubDataMatchedStore) DeleteSimulation(string) error                { return nil }
+func (s *stubDataMatchedStore) ListSimulations() ([]domain.Simulation, error)    { return nil, nil }
+func (s *stubDataMatchedStore) SaveSimulation(domain.Simulation) error           { return nil }
+func (s *stubDataMatchedStore) DeleteSimulation(string) error                    { return nil }
 
 // store.MatchedStore
 func (s *stubDataMatchedStore) GetMatched(_ context.Context, ruleID, id string) (*matched.FullRequest, error) {

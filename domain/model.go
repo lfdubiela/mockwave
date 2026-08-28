@@ -357,10 +357,10 @@ type EventMatch struct {
 // EventForward configures optional re-signed forwarding to the real broker.
 // Used from Phase 3 onward; validated here so configs are forward-compatible.
 type EventForward struct {
-	Endpoint   string `json:"endpoint,omitempty"`   // "" = default AWS endpoint for Region
+	Endpoint   string `json:"endpoint,omitempty"` // "" = default AWS endpoint for Region
 	Region     string `json:"region,omitempty"`
 	Credential string `json:"credential,omitempty"` // "" | "default" | "profile:<n>" | "static:<n>"
-	DelayMs    int    `json:"delay_ms,omitempty"` // extra latency (ms) added after the forward call returns (additive, applied even on error)
+	DelayMs    int    `json:"delay_ms,omitempty"`   // extra latency (ms) added after the forward call returns (additive, applied even on error)
 }
 
 // Validate reports whether the event rule is well-formed.

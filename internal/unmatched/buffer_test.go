@@ -48,7 +48,7 @@ func TestBuffer_Empty(t *testing.T) {
 func TestBuffer_ListDeduped_CollapsesSamePathAndBody(t *testing.T) {
 	b := unmatched.NewBuffer(10)
 	b.Add(unmatched.Request{At: time.Unix(1, 0), Method: "GET", Path: "/a", Body: "x"})
-	b.Add(unmatched.Request{At: time.Unix(2, 0), Method: "GET", Path: "/b", Body: "x"}) // diff path
+	b.Add(unmatched.Request{At: time.Unix(2, 0), Method: "GET", Path: "/b", Body: "x"})  // diff path
 	b.Add(unmatched.Request{At: time.Unix(3, 0), Method: "POST", Path: "/a", Body: "x"}) // dup path+body (method differs, still dup)
 	b.Add(unmatched.Request{At: time.Unix(4, 0), Method: "GET", Path: "/a", Body: "y"})  // same path, diff body
 

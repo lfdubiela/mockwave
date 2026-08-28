@@ -23,7 +23,7 @@ func (f *fakeVersioned) ConfigVersion() (int64, error) {
 	defer f.mu.Unlock()
 	return f.version, f.err
 }
-func (f *fakeVersioned) set(v int64)   { f.mu.Lock(); f.version = v; f.mu.Unlock() }
+func (f *fakeVersioned) set(v int64) { f.mu.Lock(); f.version = v; f.mu.Unlock() }
 
 func TestReloader_ReloadsOnFirstTickAndOnChangeOnly(t *testing.T) {
 	fv := &fakeVersioned{version: 1}

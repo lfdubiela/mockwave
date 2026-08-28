@@ -21,7 +21,7 @@ func (f *fakeMatched) ListMatched(_ context.Context, ruleID string, _ store.Matc
 func (f *fakeMatched) GetMatched(_ context.Context, _, _ string) (*matched.FullRequest, error) {
 	return nil, nil
 }
-func (f *fakeMatched) DeleteMatched(_ context.Context, _ string) error { return nil }
+func (f *fakeMatched) DeleteMatched(_ context.Context, _ string) error      { return nil }
 func (f *fakeMatched) SweepExpired(_ context.Context, _ int64) (int, error) { return 0, nil }
 
 func TestMatchedStore_Satisfiable(t *testing.T) {

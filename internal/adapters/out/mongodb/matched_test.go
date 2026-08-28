@@ -138,7 +138,7 @@ func TestMongo_DeleteMatched_ByRule(t *testing.T) {
 		// Find (empty cursor for body ID collection), then DeleteMany.
 		mt.AddMockResponses(
 			mtest.CreateCursorResponse(0, "mockwave.matched_requests", mtest.FirstBatch), // Find for body IDs
-			bson.D{{Key: "ok", Value: 1}, {Key: "n", Value: 2}},                         // DeleteMany requests
+			bson.D{{Key: "ok", Value: 1}, {Key: "n", Value: 2}},                          // DeleteMany requests
 		)
 		s := mongodb.NewStoreFromClient(mt.Client, "mockwave")
 		err := s.DeleteMatched(context.Background(), "rule-1")
@@ -151,7 +151,7 @@ func TestMongo_DeleteMatched_All(t *testing.T) {
 	mt.Run("delete all", func(mt *mtest.T) {
 		mt.AddMockResponses(
 			mtest.CreateCursorResponse(0, "mockwave.matched_requests", mtest.FirstBatch), // Find (empty)
-			bson.D{{Key: "ok", Value: 1}, {Key: "n", Value: 0}},                         // DeleteMany requests
+			bson.D{{Key: "ok", Value: 1}, {Key: "n", Value: 0}},                          // DeleteMany requests
 		)
 		s := mongodb.NewStoreFromClient(mt.Client, "mockwave")
 		err := s.DeleteMatched(context.Background(), "")

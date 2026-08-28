@@ -23,8 +23,8 @@ type Buffer struct {
 
 	// dirty tracking: populated by Add, cleared by Drain.
 	// Hydrate does NOT mark dirty (those entries came from the store already).
-	pendingReqs      []ref
-	pendingReqBodies map[string]struct{}
+	pendingReqs       []ref
+	pendingReqBodies  map[string]struct{}
 	pendingRespBodies map[string]struct{}
 }
 

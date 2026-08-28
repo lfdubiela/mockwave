@@ -23,9 +23,9 @@ func NewID() string {
 // Request is the reduced shape stored in memory and persisted. Bodies are kept
 // out of line (referenced by *BodyID) so list queries stay small.
 type Request struct {
-	ID      string    `json:"id"`      // UUID v7, time-ordered
-	RuleID  string    `json:"rule_id"` // which rule matched
-	At      time.Time `json:"at"`      // capture timestamp
+	ID     string    `json:"id"`      // UUID v7, time-ordered
+	RuleID string    `json:"rule_id"` // which rule matched
+	At     time.Time `json:"at"`      // capture timestamp
 
 	Protocol string            `json:"protocol"` // http|graphql|soap|grpc
 	Method   string            `json:"method"`

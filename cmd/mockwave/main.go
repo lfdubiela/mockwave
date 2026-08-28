@@ -38,9 +38,9 @@ func rootCmd() *cobra.Command {
 
 func startCmd() *cobra.Command {
 	var (
-		configFile   string
-		mockPort     int
-		adminPort    int
+		configFile     string
+		mockPort       int
+		adminPort      int
 		protocolsStr   string
 		grpcPort       int
 		grpcProto      string

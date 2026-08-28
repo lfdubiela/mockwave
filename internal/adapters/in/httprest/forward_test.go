@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mockwave/mockwave/internal/adapters/in/httprest"
 	"github.com/mockwave/mockwave/domain"
+	"github.com/mockwave/mockwave/internal/adapters/in/httprest"
 	"github.com/mockwave/mockwave/internal/domain/pipeline"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

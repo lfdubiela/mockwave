@@ -47,7 +47,7 @@ func TestWeightedBucket_Validate(t *testing.T) {
 func TestRule_Validate(t *testing.T) {
 	t.Run("forward bucket requires forward_url", func(t *testing.T) {
 		r := domain.Rule{
-			ID: "r1",
+			ID:    "r1",
 			Match: domain.MatchCriteria{Protocol: "http", Method: "GET", Path: "/foo"},
 			Buckets: []domain.WeightedBucket{
 				{Weight: 1, Action: domain.ActionForward},
@@ -60,7 +60,7 @@ func TestRule_Validate(t *testing.T) {
 
 	t.Run("valid single-bucket rule passes with weight 100", func(t *testing.T) {
 		r := domain.Rule{
-			ID: "r1",
+			ID:    "r1",
 			Match: domain.MatchCriteria{Protocol: "http", Method: "GET", Path: "/foo"},
 			Buckets: []domain.WeightedBucket{
 				{Weight: 100, Action: domain.ActionSimulate, SimulationID: "sim1"},
