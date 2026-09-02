@@ -65,14 +65,20 @@ func (s *Store) SaveMatched(ctx context.Context, reqs []matched.Request, reqBodi
 		if err != nil {
 			return fmt.Errorf("dynamodb: marshal req body: %w", err)
 		}
+		item := map[string]types.AttributeValue{
+			"rule_id": &types.AttributeValueMemberS{Value: "body"},
+			"sk":      &types.AttributeValueMemberS{Value: skReqBody + rb.ID},
+			"id":      &types.AttributeValueMemberS{Value: rb.ID},
+			"data":    &types.AttributeValueMemberS{Value: string(bodyJSON)},
+		}
+		// Without this the row never expires: DynamoDB only reaps items that
+		// carry the ttl attribute, so bodies outlived the requests owning them.
+		if rb.TTL > 0 {
+			item["ttl"] = &types.AttributeValueMemberN{Value: strconv.FormatInt(rb.TTL, 10)}
+		}
 		_, err = s.client.PutItem(ctx, &dynamodb.PutItemInput{
 			TableName: aws.String(table),
-			Item: map[string]types.AttributeValue{
-				"rule_id": &types.AttributeValueMemberS{Value: "body"},
-				"sk":      &types.AttributeValueMemberS{Value: skReqBody + rb.ID},
-				"id":      &types.AttributeValueMemberS{Value: rb.ID},
-				"data":    &types.AttributeValueMemberS{Value: string(bodyJSON)},
-			},
+			Item:      item,
 		})
 		if err != nil {
 			return fmt.Errorf("dynamodb: put req body %q: %w", rb.ID, err)
@@ -83,14 +89,18 @@ func (s *Store) SaveMatched(ctx context.Context, reqs []matched.Request, reqBodi
 		if err != nil {
 			return fmt.Errorf("dynamodb: marshal resp body: %w", err)
 		}
+		item := map[string]types.AttributeValue{
+			"rule_id": &types.AttributeValueMemberS{Value: "body"},
+			"sk":      &types.AttributeValueMemberS{Value: skRespBody + sb.ID},
+			"id":      &types.AttributeValueMemberS{Value: sb.ID},
+			"data":    &types.AttributeValueMemberS{Value: string(bodyJSON)},
+		}
+		if sb.TTL > 0 {
+			item["ttl"] = &types.AttributeValueMemberN{Value: strconv.FormatInt(sb.TTL, 10)}
+		}
 		_, err = s.client.PutItem(ctx, &dynamodb.PutItemInput{
 			TableName: aws.String(table),
-			Item: map[string]types.AttributeValue{
-				"rule_id": &types.AttributeValueMemberS{Value: "body"},
-				"sk":      &types.AttributeValueMemberS{Value: skRespBody + sb.ID},
-				"id":      &types.AttributeValueMemberS{Value: sb.ID},
-				"data":    &types.AttributeValueMemberS{Value: string(bodyJSON)},
-			},
+			Item:      item,
 		})
 		if err != nil {
 			return fmt.Errorf("dynamodb: put resp body %q: %w", sb.ID, err)
@@ -114,7 +124,12 @@ func (s *Store) ListMatched(ctx context.Context, ruleID string, q store.MatchedQ
 		exprVals := map[string]types.AttributeValue{
 			":pfx": &types.AttributeValueMemberS{Value: skReqPrefix},
 		}
+		// Stop as soon as a full page is available. This previously read the
+		// entire table into memory and applied the limit afterwards, so a
+		// small page against a large table walked every row -- enough to hang
+		// startup once the table reached seven figures.
 		var lastKey map[string]types.AttributeValue
+		matching := 0
 		for {
 			input := &dynamodb.ScanInput{
 				TableName:                 aws.String(table),
@@ -129,7 +144,19 @@ func (s *Store) ListMatched(ctx context.Context, ruleID string, q store.MatchedQ
 				return store.MatchedPage{}, fmt.Errorf("dynamodb: scan matched requests: %w", err)
 			}
 			items = append(items, out.Items...)
-			if out.LastEvaluatedKey == nil {
+			// Count only rows that survive decoding and the caller's filters,
+			// mirroring what the page assembly below will keep.
+			for _, it := range out.Items {
+				r, err := decodeMatchedItem(it)
+				if err != nil || !q.Matches(r) {
+					continue
+				}
+				matching++
+			}
+			if matching >= limit {
+				break
+			}
+			if len(out.LastEvaluatedKey) == 0 {
 				break
 			}
 			lastKey = out.LastEvaluatedKey

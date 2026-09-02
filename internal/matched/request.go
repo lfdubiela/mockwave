@@ -65,11 +65,16 @@ func (r Request) Expired(now time.Time) bool {
 type RequestBody struct {
 	ID   string `json:"id"`
 	Body []byte `json:"body"`
+	// TTL mirrors the owning Request's expiry so stores with native TTL expire
+	// the body alongside it. Zero means no expiry hint set.
+	TTL int64 `json:"ttl,omitempty"`
 }
 
 type ResponseBody struct {
 	ID   string      `json:"id"`
 	Body interface{} `json:"body"`
+	// TTL mirrors the owning Request's expiry. See RequestBody.TTL.
+	TTL int64 `json:"ttl,omitempty"`
 }
 
 // FullRequest is a Request plus its resolved bodies, returned by the detail

@@ -19,7 +19,11 @@ type Buffer struct {
 	order  []ref
 	reqB   map[string][]byte
 	respB  map[string]interface{}
-	now    func() time.Time
+	// bodyTTL carries the owning Request's expiry, keyed by body id. Bodies are
+	// stored out of line and drained separately, so without this the link to
+	// the request's TTL is lost and stores with native TTL never expire them.
+	bodyTTL map[string]int64
+	now     func() time.Time
 
 	// dirty tracking: populated by Add, cleared by Drain.
 	// Hydrate does NOT mark dirty (those entries came from the store already).
@@ -43,6 +47,7 @@ func NewBuffer(capacity int) *Buffer {
 		byRule:            map[string][]Request{},
 		reqB:              map[string][]byte{},
 		respB:             map[string]interface{}{},
+		bodyTTL:           map[string]int64{},
 		now:               time.Now,
 		pendingReqBodies:  map[string]struct{}{},
 		pendingRespBodies: map[string]struct{}{},
@@ -65,10 +70,12 @@ func (b *Buffer) Add(r Request, reqBody []byte, respBody interface{}) {
 	b.pendingReqs = append(b.pendingReqs, ref{rule: r.RuleID, id: r.ID})
 	if r.RequestBodyID != "" && reqBody != nil {
 		b.reqB[r.RequestBodyID] = reqBody
+		b.bodyTTL[r.RequestBodyID] = r.TTL
 		b.pendingReqBodies[r.RequestBodyID] = struct{}{}
 	}
 	if r.ResponseBodyID != "" && respBody != nil {
 		b.respB[r.ResponseBodyID] = respBody
+		b.bodyTTL[r.ResponseBodyID] = r.TTL
 		b.pendingRespBodies[r.ResponseBodyID] = struct{}{}
 	}
 	b.evictLocked()
@@ -100,9 +107,11 @@ func (b *Buffer) removeEntryLocked(rule, id string) {
 		if entries[i].ID == id {
 			if entries[i].RequestBodyID != "" {
 				delete(b.reqB, entries[i].RequestBodyID)
+				delete(b.bodyTTL, entries[i].RequestBodyID)
 			}
 			if entries[i].ResponseBodyID != "" {
 				delete(b.respB, entries[i].ResponseBodyID)
+				delete(b.bodyTTL, entries[i].ResponseBodyID)
 			}
 			b.byRule[rule] = append(entries[:i], entries[i+1:]...)
 			break
@@ -238,6 +247,8 @@ func (b *Buffer) Clear(ruleID string) {
 	for _, r := range b.byRule[ruleID] {
 		delete(b.reqB, r.RequestBodyID)
 		delete(b.respB, r.ResponseBodyID)
+		delete(b.bodyTTL, r.RequestBodyID)
+		delete(b.bodyTTL, r.ResponseBodyID)
 	}
 	delete(b.byRule, ruleID)
 }
@@ -268,13 +279,13 @@ func (b *Buffer) Drain() ([]Request, []RequestBody, []ResponseBody) {
 	reqBodies := make([]RequestBody, 0, len(b.pendingReqBodies))
 	for id := range b.pendingReqBodies {
 		if body, ok := b.reqB[id]; ok {
-			reqBodies = append(reqBodies, RequestBody{ID: id, Body: body})
+			reqBodies = append(reqBodies, RequestBody{ID: id, Body: body, TTL: b.bodyTTL[id]})
 		}
 	}
 	respBodies := make([]ResponseBody, 0, len(b.pendingRespBodies))
 	for id := range b.pendingRespBodies {
 		if body, ok := b.respB[id]; ok {
-			respBodies = append(respBodies, ResponseBody{ID: id, Body: body})
+			respBodies = append(respBodies, ResponseBody{ID: id, Body: body, TTL: b.bodyTTL[id]})
 		}
 	}
 

@@ -85,17 +85,18 @@ func (c Config) reloadInterval() time.Duration {
 
 // Server holds the active pipeline and serves mock traffic across protocols.
 type Server struct {
-	cfg          Config
-	mu           sync.RWMutex
-	pipeline     *pipeline.Pipeline
-	engine       *scripting.Engine
-	collector    *metrics.Collector
-	buffer       *unmatched.Buffer
-	broker       *metrics.Broker
-	brokerCancel context.CancelFunc
-	reloadCancel context.CancelFunc
-	killSwitch   *chaos.KillSwitch
-	adminSrv     *http.Server
+	cfg           Config
+	mu            sync.RWMutex
+	pipeline      *pipeline.Pipeline
+	engine        *scripting.Engine
+	collector     *metrics.Collector
+	buffer        *unmatched.Buffer
+	broker        *metrics.Broker
+	brokerCancel  context.CancelFunc
+	reloadCancel  context.CancelFunc
+	hydrateCancel context.CancelFunc
+	killSwitch    *chaos.KillSwitch
+	adminSrv      *http.Server
 
 	scenario       *chaos.ScenarioController
 	scenarioCancel context.CancelFunc // cancels the active runner; nil when idle
@@ -167,9 +168,7 @@ func New(cfg Config) (*Server, error) {
 		s.matchedBuf = matched.NewBuffer(mc.BufferSize)
 		if sink := matchedSink(mc, s.cfg.Store); sink != nil {
 			if ms, ok := sink.(store.MatchedStore); ok {
-				if page, err := ms.ListMatched(context.Background(), "", store.MatchedQuery{Limit: mc.BufferSize}); err == nil {
-					s.matchedBuf.Hydrate(nonAWSCaptures(page.Items))
-				}
+				s.hydrateCaptures(ms, s.matchedBuf, mc.BufferSize, nonAWSCaptures)
 			}
 			s.matchedSyncer = matched.NewSyncer(s.matchedBuf, sink, mc.SyncInterval)
 			go s.matchedSyncer.Run(context.Background())
@@ -184,9 +183,7 @@ func New(cfg Config) (*Server, error) {
 		s.eventCaptureBuf = matched.NewBuffer(ec.BufferSize)
 		if sink := eventSink(ec, s.cfg.Store); sink != nil {
 			if ms, ok := sink.(store.MatchedStore); ok {
-				if page, err := ms.ListMatched(context.Background(), "", store.MatchedQuery{Limit: ec.BufferSize}); err == nil {
-					s.eventCaptureBuf.Hydrate(awsCaptures(page.Items))
-				}
+				s.hydrateCaptures(ms, s.eventCaptureBuf, ec.BufferSize, awsCaptures)
 			}
 			s.eventSyncer = matched.NewSyncer(s.eventCaptureBuf, sink, ec.SyncInterval)
 			go s.eventSyncer.Run(context.Background())
@@ -208,6 +205,73 @@ func New(cfg Config) (*Server, error) {
 // Rebuild reloads rules from the store and hot-swaps the active pipeline.
 func (s *Server) Rebuild() error {
 	return s.rebuild()
+}
+
+// hydrationTimeout caps a background hydration pass so it can never run for
+// the life of the process if the store is unreachable or pathologically slow.
+const hydrationTimeout = 30 * time.Second
+
+// captureRuleIDs lists the rule ids captures can be filed under: mock rules
+// plus, when the store supports them, AWS event rules. Deduplicated, since a
+// store may report overlapping ids.
+func (s *Server) captureRuleIDs() []string {
+	seen := map[string]bool{}
+	var ids []string
+	add := func(id string) {
+		if id == "" || seen[id] {
+			return
+		}
+		seen[id] = true
+		ids = append(ids, id)
+	}
+	if s.cfg.Store != nil {
+		if rules, err := s.cfg.Store.GetRules(); err == nil {
+			for _, r := range rules {
+				add(r.ID)
+			}
+		}
+		if ers, ok := s.cfg.Store.(store.EventRuleStore); ok {
+			if evs, err := ers.GetEventRules(); err == nil {
+				for _, r := range evs {
+					add(r.ID)
+				}
+			}
+		}
+	}
+	return ids
+}
+
+// hydrateCaptures seeds buf from previously persisted captures, in the
+// background.
+//
+// It queries each known rule id rather than passing an empty id. An empty id
+// makes stores without a global index fall back to a table scan, which grows
+// with total captures rather than with the page requested -- slow enough on a
+// large table to delay the server binding its ports until the readiness probe
+// gave up. Per-rule reads are bounded by the partition key and, in the
+// DynamoDB store, already ordered newest-first.
+//
+// Hydration only warms a cache, so failures are survivable: a rule that errors
+// is skipped and the buffer simply fills from live traffic instead.
+func (s *Server) hydrateCaptures(ms store.MatchedStore, buf *matched.Buffer, limit int, keep func([]matched.Request) []matched.Request) {
+	ctx, cancel := context.WithTimeout(context.Background(), hydrationTimeout)
+	s.hydrateCancel = cancel
+	ids := s.captureRuleIDs()
+	go func() {
+		defer cancel()
+		for _, id := range ids {
+			if ctx.Err() != nil {
+				return
+			}
+			page, err := ms.ListMatched(ctx, id, store.MatchedQuery{Limit: limit})
+			if err != nil {
+				continue
+			}
+			if kept := keep(page.Items); len(kept) > 0 {
+				buf.Hydrate(kept)
+			}
+		}
+	}()
 }
 
 // Executor is the pipeline entry point. Any type that wraps the server's
@@ -244,6 +308,9 @@ func (s *Server) Close() error {
 	}
 	if s.reloadCancel != nil {
 		s.reloadCancel()
+	}
+	if s.hydrateCancel != nil {
+		s.hydrateCancel()
 	}
 	if s.matchedSyncer != nil {
 		_ = s.matchedSyncer.Close()
